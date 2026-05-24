@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+data/
+uploads/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.tgz

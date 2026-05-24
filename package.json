@@ -1,0 +1,24 @@
+{
+  "name": "openoverlay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenOverlay livestream graphics monorepo.",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @openoverlay/backend & npm run dev --workspace @openoverlay/frontend",
+    "build": "npm run build --workspace @openoverlay/shared && npm run build --workspace @openoverlay/backend && npm run build --workspace @openoverlay/frontend",
+    "test": "npm run build --workspace @openoverlay/shared && npm run test --workspaces --if-present",
+    "test:backend": "npm run test --workspace @openoverlay/backend",
+    "test:e2e": "npm run test:e2e --workspace @openoverlay/frontend",
+    "typecheck": "npm run build --workspace @openoverlay/shared && npm run typecheck --workspace @openoverlay/backend && npm run typecheck --workspace @openoverlay/frontend",
+    "seed": "npm run seed --workspace @openoverlay/backend"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
+}

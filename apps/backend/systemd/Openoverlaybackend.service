@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenOverlay backend API and WebSocket server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=skylarenns
+Group=skylarenns
+WorkingDirectory=/home/skylarenns/Documents/GitHub/OpenOverlay/apps/backend
+EnvironmentFile=/etc/openoverlaybackend.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
