@@ -72,12 +72,9 @@ a {
 .brand-mark {
   width: 34px;
   height: 34px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, #36d399, #38bdf8);
-  color: #06111a;
-  font-weight: 900;
+  display: block;
+  flex: none;
+  object-fit: contain;
 }
 
 .nav-actions {
@@ -231,6 +228,44 @@ a {
   padding: 10px 12px;
   border-radius: 8px;
   margin-top: 14px;
+}
+
+.notice {
+  color: #bbf7d0;
+  background: rgba(22, 101, 52, 0.28);
+  border: 1px solid rgba(74, 222, 128, 0.28);
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-top: 14px;
+}
+
+.prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 11, 16, 0.72);
+}
+
+.prompt-dialog {
+  width: min(440px, 100%);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: #0f172a;
+  padding: 22px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+}
+
+.prompt-dialog h2 {
+  margin: 0 0 20px;
+  font-size: 24px;
+}
+
+.prompt-actions {
+  justify-content: flex-end;
+  margin-top: 22px;
 }
 
 .app-shell {
@@ -824,4 +859,3 @@ a {
     grid-template-columns: 1fr;
   }
 }
-

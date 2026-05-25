@@ -50,23 +50,107 @@ interface AuthContextValue {
   logout(): Promise<void>;
 }
 
+interface PromptDialogOptions {
+  title: string;
+  label: string;
+  defaultValue?: string;
+  placeholder?: string;
+  submitLabel?: string;
+  inputType?: string;
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null);
+const PromptDialogContext = createContext<((options: PromptDialogOptions) => Promise<string | null>) | null>(null);
 
 export function App() {
   return (
-    <AuthProvider>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login mode="login" />} />
-        <Route path="/signup" element={<Login mode="signup" />} />
-        <Route path="/overlay/:overlayId" element={<OverlayPage test={false} />} />
-        <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
-        <Route path="/dash" element={<RequireAuth><AppShell><Dashboard /></AppShell></RequireAuth>} />
-        <Route path="/dash/media" element={<RequireAuth><AppShell><MediaLibrary /></AppShell></RequireAuth>} />
-        <Route path="/dash/presets/:presetId" element={<RequireAuth><AppShell><PresetEditor /></AppShell></RequireAuth>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AuthProvider>
+    <PromptDialogProvider>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login mode="login" />} />
+          <Route path="/signup" element={<Login mode="signup" />} />
+          <Route path="/overlay/:overlayId" element={<OverlayPage test={false} />} />
+          <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
+          <Route path="/dash" element={<RequireAuth><AppShell><Dashboard /></AppShell></RequireAuth>} />
+          <Route path="/dash/media" element={<RequireAuth><AppShell><MediaLibrary /></AppShell></RequireAuth>} />
+          <Route path="/dash/presets/:presetId" element={<RequireAuth><AppShell><PresetEditor /></AppShell></RequireAuth>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
+    </PromptDialogProvider>
+  );
+}
+
+function PromptDialogProvider({ children }: { children: React.ReactNode }) {
+  const [dialog, setDialog] = useState<PromptDialogOptions | null>(null);
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const resolverRef = useRef<((value: string | null) => void) | null>(null);
+
+  const close = useCallback((result: string | null) => {
+    resolverRef.current?.(result);
+    resolverRef.current = null;
+    setDialog(null);
+    setValue("");
+  }, []);
+
+  const prompt = useCallback((options: PromptDialogOptions) => {
+    resolverRef.current?.(null);
+    setValue(options.defaultValue ?? "");
+    setDialog(options);
+    return new Promise<string | null>((resolve) => {
+      resolverRef.current = resolve;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!dialog) return;
+    const id = window.setTimeout(() => inputRef.current?.select(), 0);
+    return () => window.clearTimeout(id);
+  }, [dialog]);
+
+  useEffect(() => () => resolverRef.current?.(null), []);
+
+  return (
+    <PromptDialogContext.Provider value={prompt}>
+      {children}
+      {dialog ? (
+        <div className="prompt-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) close(null);
+        }}>
+          <form
+            className="prompt-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="prompt-dialog-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              close(value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") close(null);
+            }}
+          >
+            <h2 id="prompt-dialog-title">{dialog.title}</h2>
+            <label className="field">
+              <span>{dialog.label}</span>
+              <input
+                ref={inputRef}
+                type={dialog.inputType || "text"}
+                value={value}
+                placeholder={dialog.placeholder}
+                onChange={(event) => setValue(event.target.value)}
+              />
+            </label>
+            <div className="control-row prompt-actions">
+              <button className="button" type="button" onClick={() => close(null)}>Cancel</button>
+              <button className="button primary" type="submit">{dialog.submitLabel || "OK"}</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </PromptDialogContext.Provider>
   );
 }
 
@@ -103,6 +187,12 @@ function useAuth() {
   return ctx;
 }
 
+function usePromptDialog() {
+  const ctx = useContext(PromptDialogContext);
+  if (!ctx) throw new Error("Prompt dialog context missing");
+  return ctx;
+}
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="auth-page">Loading...</div>;
@@ -115,7 +205,7 @@ function Home() {
     <div className="site-shell marketing">
       <header className="topbar">
         <Link to="/" className="brand">
-          <span className="brand-mark">OO</span>
+          <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
           <span>OpenOverlay</span>
         </Link>
         <div className="nav-actions">
@@ -164,7 +254,7 @@ function Login({ mode }: { mode: "login" | "signup" }) {
     <div className="site-shell auth-page">
       <form className="auth-panel" onSubmit={submit}>
         <Link to="/" className="brand">
-          <span className="brand-mark">OO</span>
+          <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
           <span>OpenOverlay</span>
         </Link>
         <h1>{mode === "signup" ? "Create account" : "Login"}</h1>
@@ -195,7 +285,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     <div className="app-shell">
       <aside className="sidebar">
         <Link to="/dash" className="brand">
-          <span className="brand-mark">OO</span>
+          <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
           <span>OpenOverlay</span>
         </Link>
         <nav>
@@ -215,6 +305,7 @@ function Dashboard() {
   const [type, setType] = useState<PresetType>("soccer");
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const prompt = usePromptDialog();
 
   const load = useCallback(async () => {
     const response = await presetApi.list();
@@ -226,10 +317,21 @@ function Dashboard() {
   }, [load]);
 
   async function createPreset() {
-    const name = window.prompt("Preset name", type === "soccer" ? "Soccer" : type === "church" ? "Church Sunday" : "Custom");
-    if (!name) return;
-    const response = await presetApi.create(name, type);
-    navigate(`/dash/presets/${response.preset.id}`);
+    const name = await prompt({
+      title: "New preset",
+      label: "Preset name",
+      defaultValue: type === "soccer" ? "Soccer" : type === "church" ? "Church Sunday" : "Custom",
+      submitLabel: "Create preset"
+    });
+    const trimmedName = name?.trim();
+    if (!trimmedName) return;
+    setError(null);
+    try {
+      const response = await presetApi.create(trimmedName, type);
+      navigate(`/dash/presets/${response.preset.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create preset");
+    }
   }
 
   return (
@@ -273,11 +375,13 @@ function PresetEditor() {
   const [tab, setTab] = useState("control");
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [history, setHistory] = useState<PresetState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const prompt = usePromptDialog();
 
   const selectedElement = useMemo(() => {
     if (!preset) return undefined;
@@ -367,10 +471,22 @@ function PresetEditor() {
 
   async function sharePreset() {
     if (!preset) return;
-    const email = window.prompt("Recipient email");
-    if (!email) return;
-    await presetApi.share(preset.id, email);
-    window.alert("Preset duplicated into recipient account.");
+    const email = await prompt({
+      title: "Share preset",
+      label: "Recipient email",
+      inputType: "email",
+      submitLabel: "Share"
+    });
+    const trimmedEmail = email?.trim();
+    if (!trimmedEmail) return;
+    try {
+      await presetApi.share(preset.id, trimmedEmail);
+      setError(null);
+      setNotice("Preset duplicated into recipient account.");
+    } catch (err) {
+      setNotice(null);
+      setError(err instanceof Error ? err.message : "Could not share preset");
+    }
   }
 
   async function rotateActionKey() {
@@ -423,6 +539,7 @@ function PresetEditor() {
 
       {connection !== "connected" ? <div className="error">Backend or overlay WebSocket is disconnected. The overlay will keep showing its last known state.</div> : null}
       {error ? <div className="error">{error}</div> : null}
+      {notice ? <div className="notice">{notice}</div> : null}
 
       <div className="editor-layout">
         <section className="preview-column">
@@ -636,12 +753,21 @@ function TeamPanel({
 }
 
 function GraphicButton({ label, action, runAction }: { label: string; action: string; runAction: (action: string, payload?: Record<string, unknown>) => Promise<void> }) {
+  const prompt = usePromptDialog();
+
   return (
     <button
       className="button"
       onClick={() => {
-        const title = window.prompt(`${label} text`, label);
-        void runAction(action, { title: title || label, durationSeconds: 5 });
+        void prompt({
+          title: `${label} graphic`,
+          label: "Display text",
+          defaultValue: label,
+          submitLabel: "Trigger"
+        }).then((title) => {
+          if (title === null) return;
+          void runAction(action, { title: title.trim() || label, durationSeconds: 5 });
+        });
       }}
     >
       <Film size={17} /> {label}

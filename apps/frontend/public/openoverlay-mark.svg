@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">OpenOverlay mark</title>
+  <desc id="desc">A thick open frame with a red registration square.</desc>
+  <g fill="none" stroke="#111111" stroke-width="7" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M14 14H50V36" />
+    <path d="M14 14V50H36" />
+  </g>
+  <rect x="43" y="43" width="9" height="9" fill="#e30613" />
+</svg>
