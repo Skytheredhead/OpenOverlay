@@ -1,4 +1,4 @@
-import type { PresetState, PresetSummary, PresetType } from "@openoverlay/shared";
+import type { PresetState, PresetSummary, PresetType, TeamLibraryEntry } from "@openoverlay/shared";
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8734";
 export const WS_URL = import.meta.env.VITE_WS_URL || API_BASE.replace(/^http/, "ws");
@@ -86,6 +86,21 @@ export const presetApi = {
 export const overlayApi = {
   get(publicId: string) {
     return api<{ overlay: PresetSummary }>(`/api/overlay/${publicId}`);
+  }
+};
+
+export const teamApi = {
+  list() {
+    return api<{ teams: TeamLibraryEntry[] }>("/api/teams");
+  },
+  create(input: Partial<TeamLibraryEntry>) {
+    return api<{ team: TeamLibraryEntry }>("/api/teams", { method: "POST", body: JSON.stringify(input) });
+  },
+  patch(id: string, input: Partial<TeamLibraryEntry>) {
+    return api<{ team: TeamLibraryEntry }>(`/api/teams/${id}`, { method: "PATCH", body: JSON.stringify(input) });
+  },
+  remove(id: string) {
+    return api<{ ok: true }>(`/api/teams/${id}`, { method: "DELETE" });
   }
 };
 

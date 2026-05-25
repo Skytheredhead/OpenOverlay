@@ -6,12 +6,12 @@ test("soccer and church workflows render in dashboard and overlay", async ({ pag
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("password123");
   await page.getByRole("button", { name: "Sign up" }).click();
-  await expect(page.getByRole("heading", { name: "Presets" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Layouts" })).toBeVisible();
 
   page.once("dialog", async (dialog) => {
     await dialog.accept("E2E Soccer");
   });
-  await page.getByRole("button", { name: /New preset/ }).click();
+  await page.getByRole("button", { name: /New layout/ }).click();
   await expect(page.getByRole("heading", { name: "E2E Soccer" })).toBeVisible();
   await expect(page.getByText(/overlay clients/)).toBeVisible();
 
@@ -21,7 +21,7 @@ test("soccer and church workflows render in dashboard and overlay", async ({ pag
   await input.setInputFiles({ name: "logo.svg", mimeType: "image/svg+xml", buffer: Buffer.from(svg) });
   await expect(page.getByText("logo.svg")).toBeVisible();
 
-  await page.getByRole("link", { name: "Presets" }).click();
+  await page.getByRole("link", { name: "Layouts" }).click();
   await page.getByRole("link", { name: "Edit" }).click();
   await page.getByRole("button", { name: "teams" }).click();
   await page.getByLabel("Full name").first().fill("Home Academy");
@@ -57,14 +57,14 @@ test("soccer and church workflows render in dashboard and overlay", async ({ pag
   await expect(overlayPage.getByText("HOM")).toBeVisible();
   await overlayPage.close();
 
-  await page.getByRole("link", { name: "Presets" }).click();
+  await page.getByRole("link", { name: "Layouts" }).click();
   await expect(page).toHaveURL(/\/dash$/);
-  await expect(page.getByRole("heading", { name: "Presets" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Layouts" })).toBeVisible();
   await page.getByRole("combobox").first().selectOption("church");
   page.once("dialog", async (dialog) => {
     await dialog.accept("E2E Church");
   });
-  await page.getByRole("button", { name: /New preset/ }).click();
+  await page.getByRole("button", { name: /New layout/ }).click();
   await expect(page.getByRole("heading", { name: "E2E Church" })).toBeVisible();
   await page.getByRole("button", { name: "church" }).click();
   await page.getByRole("button", { name: "Text" }).click();

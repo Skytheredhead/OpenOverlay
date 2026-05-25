@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import type { PresetState, PresetType } from "@openoverlay/shared";
+import type { PresetState, PresetType, TeamLibraryEntry } from "@openoverlay/shared";
 import type { AppConfig } from "./config.js";
 
 export interface UserRow {
@@ -36,6 +36,14 @@ export interface MediaRow {
   size_bytes: number;
   path: string;
   created_at: string;
+}
+
+export interface TeamRow {
+  id: string;
+  owner_user_id: string;
+  team_json: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface EventLogRow {
@@ -186,6 +194,64 @@ export class Database {
     return result.changes > 0;
   }
 
+  createTeam(input: { ownerUserId: string; team: Omit<TeamLibraryEntry, "id" | "createdAt" | "updatedAt"> }): TeamRow {
+    const now = new Date().toISOString();
+    const id = randomUUID();
+    const team: TeamLibraryEntry = {
+      ...input.team,
+      id,
+      createdAt: now,
+      updatedAt: now
+    };
+    const row: TeamRow = {
+      id,
+      owner_user_id: input.ownerUserId,
+      team_json: JSON.stringify(team),
+      created_at: now,
+      updated_at: now
+    };
+    this.run("INSERT INTO teams (id, owner_user_id, team_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)", [
+      row.id,
+      row.owner_user_id,
+      row.team_json,
+      row.created_at,
+      row.updated_at
+    ]);
+    return row;
+  }
+
+  listTeamsForUser(ownerUserId: string): TeamRow[] {
+    return this.all<TeamRow>("SELECT * FROM teams WHERE owner_user_id = ? ORDER BY updated_at DESC", [ownerUserId]);
+  }
+
+  getTeamForUser(id: string, ownerUserId: string): TeamRow | undefined {
+    return this.get<TeamRow>("SELECT * FROM teams WHERE id = ? AND owner_user_id = ?", [id, ownerUserId]);
+  }
+
+  updateTeam(input: { id: string; ownerUserId: string; team: TeamLibraryEntry }): TeamRow | undefined {
+    const existing = this.getTeamForUser(input.id, input.ownerUserId);
+    if (!existing) return undefined;
+    const now = new Date().toISOString();
+    const team: TeamLibraryEntry = { ...input.team, id: existing.id, createdAt: parseTeam(existing).createdAt, updatedAt: now };
+    const row: TeamRow = {
+      ...existing,
+      team_json: JSON.stringify(team),
+      updated_at: now
+    };
+    this.run("UPDATE teams SET team_json = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?", [
+      row.team_json,
+      row.updated_at,
+      input.id,
+      input.ownerUserId
+    ]);
+    return row;
+  }
+
+  deleteTeam(id: string, ownerUserId: string): boolean {
+    const result = this.run("DELETE FROM teams WHERE id = ? AND owner_user_id = ?", [id, ownerUserId]);
+    return result.changes > 0;
+  }
+
   createMedia(input: {
     ownerUserId: string;
     filename: string;
@@ -304,6 +370,17 @@ export class Database {
       CREATE INDEX IF NOT EXISTS idx_presets_owner ON presets(owner_user_id);
       CREATE INDEX IF NOT EXISTS idx_presets_public_id ON presets(public_id);
 
+      CREATE TABLE IF NOT EXISTS teams (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL,
+        team_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_teams_owner ON teams(owner_user_id, updated_at DESC);
+
       CREATE TABLE IF NOT EXISTS media (
         id TEXT PRIMARY KEY,
         public_id TEXT NOT NULL UNIQUE,
@@ -340,6 +417,10 @@ export class Database {
 
 export function parsePresetState(row: PresetRow): PresetState {
   return JSON.parse(row.state_json) as PresetState;
+}
+
+export function parseTeam(row: TeamRow): TeamLibraryEntry {
+  return JSON.parse(row.team_json) as TeamLibraryEntry;
 }
 
 export function makePublicId(): string {

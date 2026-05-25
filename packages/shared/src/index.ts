@@ -54,6 +54,12 @@ export interface RosterEntry {
   position?: string;
 }
 
+export interface TeamRecord {
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
 export interface SoccerTeam {
   fullName: string;
   shortName: string;
@@ -66,6 +72,13 @@ export interface SoccerTeam {
   roster: RosterEntry[];
   coach: string;
   schoolName: string;
+  record: TeamRecord;
+}
+
+export interface TeamLibraryEntry extends SoccerTeam {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SoccerClockState {
@@ -267,7 +280,8 @@ export function defaultTeam(side: "home" | "away"): SoccerTeam {
     rosterText,
     roster: parseRoster(rosterText),
     coach: side === "home" ? "Coach Harper" : "Coach Lane",
-    schoolName: side === "home" ? "OpenOverlay High" : "Skyline Prep"
+    schoolName: side === "home" ? "OpenOverlay High" : "Skyline Prep",
+    record: { wins: 0, losses: 0, draws: 0 }
   };
 }
 

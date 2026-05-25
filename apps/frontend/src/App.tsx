@@ -37,10 +37,11 @@ import {
   type PresetSummary,
   type PresetType,
   type SoccerState,
-  type StyleVariant
+  type StyleVariant,
+  type TeamLibraryEntry
 } from "@openoverlay/shared";
 import { getElementById, OverlayRenderer, updateElementPlacement } from "./components/OverlayRenderer";
-import { API_BASE, WS_URL, authApi, mediaApi, overlayApi, presetApi, type MediaItem, type User } from "./lib/api";
+import { API_BASE, WS_URL, authApi, mediaApi, overlayApi, presetApi, teamApi, type MediaItem, type User } from "./lib/api";
 import { useDebouncedCallback, useLocalStorage } from "./lib/hooks";
 
 interface AuthContextValue {
@@ -73,6 +74,7 @@ export function App() {
           <Route path="/overlay/:overlayId" element={<OverlayPage test={false} />} />
           <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
           <Route path="/dash" element={<RequireAuth><AppShell><Dashboard /></AppShell></RequireAuth>} />
+          <Route path="/dash/teams" element={<RequireAuth><AppShell><TeamsLibrary /></AppShell></RequireAuth>} />
           <Route path="/dash/media" element={<RequireAuth><AppShell><MediaLibrary /></AppShell></RequireAuth>} />
           <Route path="/dash/presets/:presetId" element={<RequireAuth><AppShell><PresetEditor /></AppShell></RequireAuth>} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -252,35 +254,43 @@ function Login({ mode }: { mode: "login" | "signup" }) {
 
   return (
     <div className="site-shell auth-page">
-      <form className="auth-panel" onSubmit={submit}>
-        <Link to="/" className="brand">
+      <div className="auth-stack">
+        <Link to="/" className="brand auth-brand">
           <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
           <span>OpenOverlay</span>
         </Link>
-        <h1>{mode === "signup" ? "Create account" : "Login"}</h1>
-        <div className="form-grid">
-          <label className="field">
-            <span>Email</span>
-            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-          </label>
-          <label className="field">
-            <span>Password</span>
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={8} required />
-          </label>
-          <button className="button primary" type="submit">{mode === "signup" ? "Sign up" : "Login"}</button>
-        </div>
-        {error ? <div className="error">{error}</div> : null}
-        <p className="muted" style={{ marginTop: 16 }}>
-          {mode === "signup" ? "Already have an account? " : "Need an account? "}
-          <Link to={mode === "signup" ? "/login" : "/signup"}>{mode === "signup" ? "Login" : "Sign up"}</Link>
-        </p>
-      </form>
+        <form className="auth-panel" onSubmit={submit}>
+          <h1>{mode === "signup" ? "Create account" : "Login"}</h1>
+          <div className="form-grid">
+            <label className="field">
+              <span>Email</span>
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={8} required />
+            </label>
+            <button className="button primary" type="submit">{mode === "signup" ? "Sign up" : "Login"}</button>
+          </div>
+          {error ? <div className="error">{error}</div> : null}
+          <p className="muted" style={{ marginTop: 16 }}>
+            {mode === "signup" ? "Already have an account? " : "Need an account? "}
+            <Link to={mode === "signup" ? "/login" : "/signup"}>{mode === "signup" ? "Login" : "Sign up"}</Link>
+          </p>
+        </form>
+      </div>
     </div>
   );
 }
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const { logout, user } = useAuth();
+  const [layouts, setLayouts] = useState<PresetSummary[]>([]);
+
+  useEffect(() => {
+    void presetApi.list().then((response) => setLayouts(response.presets)).catch(() => setLayouts([]));
+  }, []);
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -289,11 +299,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <span>OpenOverlay</span>
         </Link>
         <nav>
-          <NavLink to="/dash" end><LayoutDashboard size={18} /> Presets</NavLink>
-          <NavLink to="/dash/media"><Image size={18} /> Media</NavLink>
-          <button onClick={() => void logout()}><LogOut size={18} /> Logout</button>
+          <NavLink to="/dash" end><LayoutDashboard size={18} /> <span className="nav-label">Layouts</span></NavLink>
+          {layouts.length > 0 ? (
+            <div className="sidebar-subnav" aria-label="Layouts">
+              {layouts.map((layout) => (
+                <NavLink key={layout.id} to={`/dash/presets/${layout.id}`}>
+                  <span className="nav-label">{layout.name}</span>
+                </NavLink>
+              ))}
+            </div>
+          ) : null}
+          <NavLink to="/dash/teams"><Users size={18} /> <span className="nav-label">Teams</span></NavLink>
+          <NavLink to="/dash/media"><Image size={18} /> <span className="nav-label">Media</span></NavLink>
         </nav>
-        <p className="muted" style={{ marginTop: 24, fontSize: 13 }}>{user?.email}</p>
+        <div className="sidebar-account">
+          <p className="muted">{user?.email}</p>
+          <button className="sidebar-logout" type="button" aria-label="Logout" title="Logout" onClick={() => void logout()}><LogOut size={20} strokeWidth={2.4} /></button>
+        </div>
       </aside>
       <main className="main">{children}</main>
     </div>
@@ -318,10 +340,10 @@ function Dashboard() {
 
   async function createPreset() {
     const name = await prompt({
-      title: "New preset",
-      label: "Preset name",
+      title: "New layout",
+      label: "Layout name",
       defaultValue: type === "soccer" ? "Soccer" : type === "church" ? "Church Sunday" : "Custom",
-      submitLabel: "Create preset"
+      submitLabel: "Create layout"
     });
     const trimmedName = name?.trim();
     if (!trimmedName) return;
@@ -330,7 +352,7 @@ function Dashboard() {
       const response = await presetApi.create(trimmedName, type);
       navigate(`/dash/presets/${response.preset.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create preset");
+      setError(err instanceof Error ? err.message : "Could not create layout");
     }
   }
 
@@ -338,7 +360,7 @@ function Dashboard() {
     <>
       <div className="page-title">
         <div>
-          <h1>Presets</h1>
+          <h1>Layouts</h1>
           <p className="muted">Tabs for games, services, productions, and one-off overlay packages.</p>
         </div>
         <div className="control-row">
@@ -347,7 +369,7 @@ function Dashboard() {
             <option value="church">Church</option>
             <option value="custom">Custom</option>
           </select>
-          <button className="button primary" onClick={() => void createPreset()}><Plus size={17} /> New preset</button>
+          <button className="button primary" onClick={() => void createPreset()}><Plus size={17} /> New layout</button>
         </div>
       </div>
       {error ? <div className="error">{error}</div> : null}
@@ -355,7 +377,7 @@ function Dashboard() {
         {presets.map((preset) => (
           <article className="preset-card" key={preset.id}>
             <h2>{preset.name}</h2>
-            <p>{preset.type} preset</p>
+            <p>{preset.type} layout</p>
             <p className="muted">Overlay clients: {preset.overlayClientCount || 0}</p>
             <div className="control-row">
               <Link className="button primary" to={`/dash/presets/${preset.id}`}>Edit</Link>
@@ -368,10 +390,151 @@ function Dashboard() {
   );
 }
 
+function TeamsLibrary() {
+  const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
+  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<TeamLibraryEntry | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const prompt = usePromptDialog();
+
+  const load = useCallback(async () => {
+    const [teamsResponse, mediaResponse] = await Promise.all([teamApi.list(), mediaApi.list()]);
+    setTeams(teamsResponse.teams);
+    setMedia(mediaResponse.media);
+    setSelectedId((current) => current ?? teamsResponse.teams[0]?.id ?? null);
+  }, []);
+
+  useEffect(() => {
+    void load().catch((err) => setError(err.message));
+  }, [load]);
+
+  useEffect(() => {
+    const selected = teams.find((team) => team.id === selectedId) || null;
+    setDraft(selected ? structuredClone(selected) : null);
+  }, [selectedId, teams]);
+
+  const debouncedSaveTeam = useDebouncedCallback((team: TeamLibraryEntry) => {
+    setSaveStatus("saving");
+    void teamApi.patch(team.id, team).then((response) => {
+      setTeams((current) => current.map((item) => (item.id === response.team.id ? response.team : item)));
+      setSaveStatus("saved");
+    }).catch((err) => {
+      setSaveStatus("error");
+      setError(err instanceof Error ? err.message : "Could not autosave team");
+    });
+  }, 500);
+
+  async function createTeam() {
+    const name = await prompt({
+      title: "New team",
+      label: "Team name",
+      defaultValue: "New Team",
+      submitLabel: "Create team"
+    });
+    const trimmedName = name?.trim();
+    if (!trimmedName) return;
+    const displayName = titleCaseFirst(trimmedName);
+    setError(null);
+    try {
+      const response = await teamApi.create({
+        fullName: displayName,
+        shortName: makeAbbreviation(displayName),
+        abbreviation: makeAbbreviation(displayName)
+      });
+      setTeams((current) => [response.team, ...current]);
+      setSelectedId(response.team.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create team");
+    }
+  }
+
+  function updateDraft(patch: Partial<SoccerState["home"]>) {
+    setError(null);
+    setDraft((current) => {
+      if (!current) return current;
+      const next = mergeTeamPatch(current, patch);
+      setSaveStatus("saving");
+      debouncedSaveTeam(next);
+      return next;
+    });
+  }
+
+  async function deleteTeam(id: string) {
+    setError(null);
+    try {
+      await teamApi.remove(id);
+      const remaining = teams.filter((team) => team.id !== id);
+      setTeams(remaining);
+      setSelectedId(remaining[0]?.id ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete team");
+    }
+  }
+
+  return (
+    <>
+      <div className="page-title">
+        <div>
+          <h1>Teams</h1>
+          <p className="muted">Reusable team profiles for names, logos, colors, records, and rosters.</p>
+        </div>
+        <button className="button primary" onClick={() => void createTeam()}><Plus size={17} /> New team</button>
+      </div>
+      {error ? <div className="error">{error}</div> : null}
+      <div className={`team-library-layout ${draft ? "" : "empty"}`}>
+        <section className="team-list">
+          {teams.length === 0 ? (
+            <div className="panel">
+              <p className="muted">No teams yet.</p>
+            </div>
+          ) : null}
+          {teams.map((team) => (
+            <button
+              key={team.id}
+              className={`team-list-item ${team.id === selectedId ? "active" : ""}`}
+              style={{
+                "--team-primary": team.primaryColor,
+                "--team-secondary": team.secondaryColor
+              } as React.CSSProperties}
+              onClick={() => {
+                setSaveStatus("idle");
+                setSelectedId(team.id);
+              }}
+            >
+              <TeamLogo team={team} />
+              <span>
+                <strong>{titleCaseFirst(team.fullName)}</strong>
+                <small>{team.abbreviation} · {formatRecord(team.record)}</small>
+              </span>
+            </button>
+          ))}
+        </section>
+        {draft ? (
+          <section className="panel team-editor-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>{titleCaseFirst(draft.fullName)}</h2>
+              </div>
+              <div className="control-row">
+                <button className="button danger" onClick={() => void deleteTeam(draft.id)}><Trash2 size={17} /> Delete</button>
+              </div>
+            </div>
+            <TeamFields team={draft} media={media} onChange={updateDraft} />
+            <p className="muted autosave-status">{saveStatusLabel(saveStatus, draft.updatedAt)}</p>
+          </section>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
 function PresetEditor() {
   const { presetId } = useParams();
   const [preset, setPreset] = useState<PresetSummary | null>(null);
   const [media, setMedia] = useState<MediaItem[]>([]);
+  const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
   const [tab, setTab] = useState("control");
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -392,11 +555,12 @@ function PresetEditor() {
 
   const load = useCallback(async () => {
     if (!presetId) return;
-    const [presetResponse, mediaResponse] = await Promise.all([presetApi.get(presetId), mediaApi.list()]);
+    const [presetResponse, mediaResponse, teamsResponse] = await Promise.all([presetApi.get(presetId), mediaApi.list(), teamApi.list()]);
     setPreset(presetResponse.preset);
     setHistory([presetResponse.preset.state]);
     setHistoryIndex(0);
     setMedia(mediaResponse.media);
+    setTeams(teamsResponse.teams);
   }, [presetId]);
 
   useEffect(() => {
@@ -472,7 +636,7 @@ function PresetEditor() {
   async function sharePreset() {
     if (!preset) return;
     const email = await prompt({
-      title: "Share preset",
+      title: "Share layout",
       label: "Recipient email",
       inputType: "email",
       submitLabel: "Share"
@@ -482,10 +646,10 @@ function PresetEditor() {
     try {
       await presetApi.share(preset.id, trimmedEmail);
       setError(null);
-      setNotice("Preset duplicated into recipient account.");
+      setNotice("Layout duplicated into recipient account.");
     } catch (err) {
       setNotice(null);
-      setError(err instanceof Error ? err.message : "Could not share preset");
+      setError(err instanceof Error ? err.message : "Could not share layout");
     }
   }
 
@@ -518,7 +682,7 @@ function PresetEditor() {
     window.addEventListener("pointerup", onUp);
   }
 
-  if (!preset) return <div>Loading preset...</div>;
+  if (!preset) return <div>Loading layout...</div>;
   const overlayUrl = `${window.location.origin}/overlay/${preset.publicId}`;
 
   return (
@@ -526,7 +690,7 @@ function PresetEditor() {
       <div className="page-title">
         <div>
           <h1>{preset.name}</h1>
-          <p className="muted">{preset.type} preset · OBS URL: {overlayUrl}</p>
+          <p className="muted">{preset.type} layout · OBS URL: {overlayUrl}</p>
         </div>
         <div className="status-row">
           <span className={`status-pill ${connection === "connected" ? "ok" : "warn"}`}>{connection}</span>
@@ -568,7 +732,7 @@ function PresetEditor() {
             ))}
           </div>
           {preset.type === "soccer" && isSoccerState(preset.state) ? (
-            <SoccerControls state={preset.state} media={media} tab={tab} commitState={commitState} runAction={runAction} />
+            <SoccerControls state={preset.state} media={media} teams={teams} tab={tab} commitState={commitState} runAction={runAction} />
           ) : null}
           {preset.type === "church" && isChurchState(preset.state) ? (
             <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} />
@@ -583,12 +747,14 @@ function PresetEditor() {
 function SoccerControls({
   state,
   media,
+  teams,
   tab,
   commitState,
   runAction
 }: {
   state: SoccerState;
   media: MediaItem[];
+  teams: TeamLibraryEntry[];
   tab: string;
   commitState: (state: PresetState) => void;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
@@ -604,12 +770,38 @@ function SoccerControls({
   }
 
   function updateTeam(side: "home" | "away", patch: Partial<SoccerState["home"]>) {
-    update({ [side]: { ...state[side], ...patch } } as Partial<SoccerState>);
+    update({ [side]: mergeTeamPatch(state[side], patch) } as Partial<SoccerState>);
+  }
+
+  function applySavedTeam(side: "home" | "away", teamId: string) {
+    const team = teams.find((candidate) => candidate.id === teamId);
+    if (!team) return;
+    update({ [side]: teamLibraryToSoccerTeam(team) } as Partial<SoccerState>);
   }
 
   if (tab === "teams") {
     return (
       <>
+        <div className="panel">
+          <h2>Saved teams</h2>
+          <div className="two-col">
+            <label className="field">
+              <span>Home team</span>
+              <select value="" onChange={(event) => applySavedTeam("home", event.target.value)}>
+                <option value="">Select saved team</option>
+                {teams.map((team) => <option key={team.id} value={team.id}>{team.fullName}</option>)}
+              </select>
+            </label>
+            <label className="field">
+              <span>Away team</span>
+              <select value="" onChange={(event) => applySavedTeam("away", event.target.value)}>
+                <option value="">Select saved team</option>
+                {teams.map((team) => <option key={team.id} value={team.id}>{team.fullName}</option>)}
+              </select>
+            </label>
+          </div>
+          <p className="muted" style={{ marginTop: 10 }}>Selecting a saved team copies its profile into this game.</p>
+        </div>
         <TeamPanel title="Home team" side="home" team={state.home} media={media} onChange={(patch) => updateTeam("home", patch)} />
         <TeamPanel title="Away team" side="away" team={state.away} media={media} onChange={(patch) => updateTeam("away", patch)} />
       </>
@@ -699,6 +891,103 @@ function ScoreControls({ label, plus, minus }: { label: string; plus: () => void
   );
 }
 
+function TeamLogo({ team }: { team: SoccerState["home"] }) {
+  return team.logoUrl ? (
+    <img className="team-library-logo" src={mediaApi.mediaUrl(team.logoUrl)} alt="" />
+  ) : (
+    <span className="team-library-logo fallback">{(team.abbreviation || team.shortName || "?").slice(0, 2)}</span>
+  );
+}
+
+function TeamFields({
+  team,
+  media,
+  onChange
+}: {
+  team: SoccerState["home"];
+  media: MediaItem[];
+  onChange: (patch: Partial<SoccerState["home"]>) => void;
+}) {
+  const record = team.record || { wins: 0, losses: 0, draws: 0 };
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+
+  async function uploadLogo(files: FileList | File[]) {
+    const file = Array.from(files)[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    setLogoError(null);
+    try {
+      const response = await mediaApi.upload(file);
+      onChange({ logoMediaId: response.media.id, logoUrl: response.media.url });
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Logo upload failed");
+    } finally {
+      setUploadingLogo(false);
+    }
+  }
+
+  return (
+    <div className="form-grid">
+      <div className="two-col">
+        <label className="field"><span>Team</span><input value={titleCaseFirst(team.fullName)} onChange={(e) => onChange({ fullName: titleCaseFirst(e.target.value) })} /></label>
+        <label className="field"><span>Abbreviation</span><input value={team.abbreviation} onChange={(e) => onChange({ abbreviation: e.target.value.toUpperCase().slice(0, 5), shortName: e.target.value.toUpperCase().slice(0, 5) })} /></label>
+      </div>
+      <div className="record-color-row">
+        <label className="field">
+          <span>Record (W-L-T)</span>
+          <input
+            value={`${record.wins}-${record.losses}-${record.draws}`}
+            onChange={(e) => onChange({ record: parseRecordValue(e.target.value, record) })}
+            placeholder="0-0-0"
+          />
+        </label>
+        <div className="color-swatch-group" aria-label="Team colors">
+          <label className="field color-swatch-field"><span>Primary</span><input type="color" value={team.primaryColor} onChange={(e) => onChange({ primaryColor: e.target.value })} /></label>
+          <label className="field color-swatch-field"><span>Secondary</span><input type="color" value={team.secondaryColor} onChange={(e) => onChange({ secondaryColor: e.target.value })} /></label>
+        </div>
+      </div>
+      <div className="field">
+        <span>Logo</span>
+        <label
+          className="logo-upload-target"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            void uploadLogo(event.dataTransfer.files);
+          }}
+        >
+          {team.logoUrl ? <img src={mediaApi.mediaUrl(team.logoUrl)} alt="" /> : <Upload size={20} />}
+          <strong>{uploadingLogo ? "Uploading..." : "Upload logo"}</strong>
+          <small>{team.logoUrl ? "Drop or click to replace" : "Drop image here or click"}</small>
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+            hidden
+            onChange={(event) => event.target.files && void uploadLogo(event.target.files)}
+          />
+        </label>
+        {logoError ? <p className="field-error">{logoError}</p> : null}
+        <select
+          value={team.logoMediaId || ""}
+          onChange={(event) => {
+            const selected = media.find((item) => item.id === event.target.value);
+            onChange({ logoMediaId: selected?.id, logoUrl: selected?.url });
+          }}
+        >
+          <option value="">No logo</option>
+          {media.map((item) => <option key={item.id} value={item.id}>{item.originalFilename}</option>)}
+        </select>
+      </div>
+      <label className="field">
+        <span>Roster</span>
+        <textarea className="roster-textarea" value={team.rosterText} onChange={(e) => onChange({ rosterText: e.target.value })} placeholder="10 Max Grenham" />
+      </label>
+      <label className="field"><span>Coach</span><input value={team.coach} onChange={(e) => onChange({ coach: e.target.value })} /></label>
+    </div>
+  );
+}
+
 function TeamPanel({
   title,
   side,
@@ -715,38 +1004,7 @@ function TeamPanel({
   return (
     <div className="panel">
       <h2>{title}</h2>
-      <div className="form-grid">
-        <div className="two-col">
-          <label className="field"><span>Full name</span><input value={team.fullName} onChange={(e) => onChange({ fullName: e.target.value })} /></label>
-          <label className="field"><span>Short name</span><input value={team.shortName} onChange={(e) => onChange({ shortName: e.target.value })} /></label>
-        </div>
-        <div className="two-col">
-          <label className="field"><span>Abbreviation</span><input value={team.abbreviation} onChange={(e) => onChange({ abbreviation: e.target.value.toUpperCase().slice(0, 5) })} /></label>
-          <label className="field"><span>Coach</span><input value={team.coach} onChange={(e) => onChange({ coach: e.target.value })} /></label>
-        </div>
-        <div className="two-col">
-          <label className="field"><span>Primary</span><input type="color" value={team.primaryColor} onChange={(e) => onChange({ primaryColor: e.target.value })} /></label>
-          <label className="field"><span>Secondary</span><input type="color" value={team.secondaryColor} onChange={(e) => onChange({ secondaryColor: e.target.value })} /></label>
-        </div>
-        <label className="field">
-          <span>Logo</span>
-          <select
-            value={team.logoMediaId || ""}
-            onChange={(event) => {
-              const selected = media.find((item) => item.id === event.target.value);
-              onChange({ logoMediaId: selected?.id, logoUrl: selected?.url });
-            }}
-          >
-            <option value="">No logo</option>
-            {media.map((item) => <option key={item.id} value={item.id}>{item.originalFilename}</option>)}
-          </select>
-        </label>
-        <label className="field"><span>School</span><input value={team.schoolName} onChange={(e) => onChange({ schoolName: e.target.value })} /></label>
-        <label className="field">
-          <span>Roster</span>
-          <textarea value={team.rosterText} onChange={(e) => onChange({ rosterText: e.target.value })} placeholder="10 Max Grenham" />
-        </label>
-      </div>
+      <TeamFields team={team} media={media} onChange={onChange} />
       <p className="muted" style={{ marginTop: 10 }}>{side === "home" ? "Home" : "Away"} roster lines are parsed into lineup entries automatically.</p>
     </div>
   );
@@ -928,6 +1186,51 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
       <input type="number" value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
+}
+
+function mergeTeamPatch<T extends SoccerState["home"]>(team: T, patch: Partial<SoccerState["home"]>): T {
+  return {
+    ...team,
+    ...patch,
+    record: patch.record ? { ...(team.record || { wins: 0, losses: 0, draws: 0 }), ...patch.record } : team.record
+  };
+}
+
+function makeAbbreviation(name: string): string {
+  return name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3) || "TEAM";
+}
+
+function titleCaseFirst(value: string): string {
+  const trimmed = value.trim();
+  return trimmed ? `${trimmed[0].toUpperCase()}${trimmed.slice(1)}` : trimmed;
+}
+
+function saveStatusLabel(status: "idle" | "saving" | "saved" | "error", updatedAt: string): string {
+  if (status === "saving") return "Autosaving...";
+  if (status === "saved") return "Saved";
+  if (status === "error") return "Autosave failed";
+  return `Updated ${new Date(updatedAt).toLocaleDateString()}`;
+}
+
+function formatRecord(record?: SoccerState["home"]["record"]): string {
+  const value = record || { wins: 0, losses: 0, draws: 0 };
+  return `${value.wins}-${value.losses}-${value.draws}`;
+}
+
+function parseRecordValue(value: string, fallback: SoccerState["home"]["record"]): SoccerState["home"]["record"] {
+  const [wins, losses, draws] = value
+    .split(/[/-]/)
+    .map((part) => Number.parseInt(part.trim(), 10));
+  return {
+    wins: Number.isFinite(wins) ? Math.max(0, wins) : fallback.wins,
+    losses: Number.isFinite(losses) ? Math.max(0, losses) : fallback.losses,
+    draws: Number.isFinite(draws) ? Math.max(0, draws) : fallback.draws
+  };
+}
+
+function teamLibraryToSoccerTeam(team: TeamLibraryEntry): SoccerState["home"] {
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...soccerTeam } = team;
+  return soccerTeam;
 }
 
 function MediaLibrary() {

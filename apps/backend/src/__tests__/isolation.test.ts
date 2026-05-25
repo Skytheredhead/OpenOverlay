@@ -50,6 +50,36 @@ describe("user isolation", () => {
     expect(recipientList.body.presets[0].id).not.toBe(created.body.preset.id);
   });
 
+  it("keeps saved teams scoped to the owning user", async () => {
+    await signup(server.agent, "owner@example.com");
+    const other = request.agent(server.app);
+    await signup(other, "other@example.com");
+
+    const created = await server.agent
+      .post("/api/teams")
+      .send({
+        fullName: "Codex Rovers",
+        shortName: "Rovers",
+        abbreviation: "ROV",
+        rosterText: "10 Mira Stone\n11 Avery Vale",
+        record: { wins: 8, losses: 2, draws: 1 }
+      })
+      .expect(201);
+
+    const teamId = created.body.team.id;
+    expect(created.body.team.roster).toHaveLength(2);
+    expect(created.body.team.record).toEqual({ wins: 8, losses: 2, draws: 1 });
+
+    await other.patch(`/api/teams/${teamId}`).send({ fullName: "Stolen" }).expect(404);
+    await other.delete(`/api/teams/${teamId}`).expect(404);
+
+    const ownerList = await server.agent.get("/api/teams").expect(200);
+    const otherList = await other.get("/api/teams").expect(200);
+    expect(ownerList.body.teams).toHaveLength(1);
+    expect(ownerList.body.teams[0].fullName).toBe("Codex Rovers");
+    expect(otherList.body.teams).toHaveLength(0);
+  });
+
   it("rejects unsupported or unsafe media uploads as client errors", async () => {
     await signup(server.agent, "owner@example.com");
 

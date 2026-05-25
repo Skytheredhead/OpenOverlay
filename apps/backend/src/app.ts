@@ -7,15 +7,19 @@ import multer from "multer";
 import { imageSize } from "image-size";
 import {
   createDefaultPresetState,
+  defaultTeam,
+  parseRoster,
   parseClockTime,
   setClockSeconds,
   type PresetState,
   type PresetType,
-  type SoccerState
+  type SoccerState,
+  type TeamLibraryEntry,
+  type TeamRecord
 } from "@openoverlay/shared";
 import { assertLoginAllowed, clearSessionCookie, generateActionKey, hashActionKey, hashPassword, recordFailedLogin, recordSuccessfulLogin, requireAuth, serializeUser, setSessionCookie, validateEmail, validatePassword, verifyActionKey, verifyPassword, verifySessionToken, sessionCookieName } from "./auth.js";
 import { loadConfig, type AppConfig } from "./config.js";
-import { Database, parsePresetState, type MediaRow, type PresetRow } from "./db.js";
+import { Database, parsePresetState, parseTeam, type MediaRow, type PresetRow, type TeamRow } from "./db.js";
 import { createLogger } from "./logger.js";
 import { applyAction, cloneStateForShare, ensurePresetState, isSoccerState, materializeState, mergePresetState, type PresetAction } from "./state.js";
 import type { AppContext } from "./types.js";
@@ -131,6 +135,41 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
 
   app.get("/api/auth/me", requireAuth, (req, res) => {
     res.json({ user: serializeUser(req.user!) });
+  });
+
+  app.get("/api/teams", requireAuth, (req, res) => {
+    res.json({ teams: db.listTeamsForUser(req.user!.id).map((row) => serializeTeam(row)) });
+  });
+
+  app.post("/api/teams", requireAuth, (req, res) => {
+    const team = sanitizeTeamInput(req.body || {});
+    const row = db.createTeam({ ownerUserId: req.user!.id, team });
+    res.status(201).json({ team: serializeTeam(row) });
+  });
+
+  app.patch("/api/teams/:id", requireAuth, (req, res) => {
+    const existing = db.getTeamForUser(routeParam(req, "id"), req.user!.id);
+    if (!existing) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    const current = serializeTeam(existing);
+    const team = { ...sanitizeTeamInput(req.body || {}, current), id: current.id, createdAt: current.createdAt, updatedAt: current.updatedAt };
+    const updated = db.updateTeam({ id: current.id, ownerUserId: req.user!.id, team });
+    if (!updated) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    res.json({ team: serializeTeam(updated) });
+  });
+
+  app.delete("/api/teams/:id", requireAuth, (req, res) => {
+    const deleted = db.deleteTeam(routeParam(req, "id"), req.user!.id);
+    if (!deleted) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    res.json({ ok: true });
   });
 
   app.get("/api/presets", requireAuth, (req, res) => {
@@ -454,6 +493,62 @@ function serializeMedia(row: MediaRow) {
     createdAt: row.created_at,
     url: `/api/media/file/${row.public_id}`
   };
+}
+
+function serializeTeam(row: TeamRow): TeamLibraryEntry {
+  return parseTeam(row);
+}
+
+function sanitizeTeamInput(body: Record<string, unknown>, fallback = defaultTeam("home")): Omit<TeamLibraryEntry, "id" | "createdAt" | "updatedAt"> {
+  const fullName = stringField(body.fullName ?? body.name, fallback.fullName || "New Team").slice(0, 120);
+  const shortName = stringField(body.shortName, fallback.shortName || fullName).slice(0, 48);
+  const rosterText = stringField(body.rosterText, fallback.rosterText).slice(0, 10_000);
+  return {
+    fullName,
+    shortName,
+    abbreviation: stringField(body.abbreviation, fallback.abbreviation || shortName.slice(0, 3)).toUpperCase().slice(0, 5),
+    logoMediaId: Object.hasOwn(body, "logoMediaId") ? optionalStringField(body.logoMediaId) : fallback.logoMediaId,
+    logoUrl: Object.hasOwn(body, "logoUrl") ? optionalStringField(body.logoUrl) : fallback.logoUrl,
+    primaryColor: colorField(body.primaryColor, fallback.primaryColor),
+    secondaryColor: colorField(body.secondaryColor, fallback.secondaryColor),
+    rosterText,
+    roster: parseRoster(rosterText),
+    coach: stringField(body.coach, fallback.coach).slice(0, 120),
+    schoolName: stringField(body.schoolName, fallback.schoolName).slice(0, 120),
+    record: sanitizeRecord(body.record, fallback.record)
+  };
+}
+
+function sanitizeRecord(input: unknown, fallback?: TeamRecord): TeamRecord {
+  const record = isRecord(input) ? input : {};
+  return {
+    wins: numberField(record.wins, fallback?.wins ?? 0),
+    losses: numberField(record.losses, fallback?.losses ?? 0),
+    draws: numberField(record.draws, fallback?.draws ?? 0)
+  };
+}
+
+function stringField(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed || fallback;
+}
+
+function optionalStringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function colorField(value: unknown, fallback: string): string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+function numberField(value: unknown, fallback: number): number {
+  const number = typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value, 10) : Number.NaN;
+  return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function saveMediaUpload(ctx: AppContext, ownerUserId: string, file: Express.Multer.File): Promise<MediaRow> {
