@@ -11,7 +11,6 @@ if ! vercel whoami >/dev/null 2>&1; then
   exit 1
 fi
 
-cd apps/frontend
 vercel link --yes
 vercel env add VITE_API_BASE_URL production <<< "https://api.openoverlay.skylarenns.com" || true
 vercel env add VITE_WS_URL production <<< "wss://api.openoverlay.skylarenns.com" || true

@@ -49,4 +49,23 @@ describe("user isolation", () => {
     expect(recipientList.body.presets[0].name).toBe("Share Me");
     expect(recipientList.body.presets[0].id).not.toBe(created.body.preset.id);
   });
+
+  it("rejects unsupported or unsafe media uploads as client errors", async () => {
+    await signup(server.agent, "owner@example.com");
+
+    const textResponse = await server.agent
+      .post("/api/media")
+      .attach("file", Buffer.from("not an image"), { filename: "notes.txt", contentType: "text/plain" })
+      .expect(400);
+    expect(textResponse.body.error).toBe("Unsupported image type");
+
+    const svgResponse = await server.agent
+      .post("/api/media")
+      .attach("file", Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'), {
+        filename: "unsafe.svg",
+        contentType: "image/svg+xml"
+      })
+      .expect(400);
+    expect(svgResponse.body.error).toBe("SVG contains unsafe content");
+  });
 });

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "prebuild": "npm run build --workspace @openoverlay/shared",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",

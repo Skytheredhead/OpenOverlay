@@ -42,6 +42,8 @@ const extensionByMime: Record<string, string> = {
   "image/webp": ".webp"
 };
 
+class UploadValidationError extends Error {}
+
 export function createBackendApp(configOverrides: Partial<AppConfig> = {}): BackendApp {
   const config = loadConfig(configOverrides);
   const logger = createLogger(config.logFile);
@@ -390,6 +392,10 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
       res.status(400).json({ error: error.message });
       return;
     }
+    if (error instanceof UploadValidationError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: "Internal server error" });
   });
 
@@ -452,7 +458,7 @@ function serializeMedia(row: MediaRow) {
 
 async function saveMediaUpload(ctx: AppContext, ownerUserId: string, file: Express.Multer.File): Promise<MediaRow> {
   if (!allowedMimes.has(file.mimetype)) {
-    throw new Error("Unsupported image type");
+    throw new UploadValidationError("Unsupported image type");
   }
 
   const extension = extensionByMime[file.mimetype];
@@ -462,7 +468,12 @@ async function saveMediaUpload(ctx: AppContext, ownerUserId: string, file: Expre
   if (file.mimetype === "image/svg+xml") {
     validateSvg(file.buffer);
   } else {
-    const dimensions = imageSize(file.buffer);
+    let dimensions: ReturnType<typeof imageSize>;
+    try {
+      dimensions = imageSize(file.buffer);
+    } catch {
+      throw new UploadValidationError("Invalid image file");
+    }
     width = dimensions.width ?? null;
     height = dimensions.height ?? null;
   }
@@ -491,10 +502,10 @@ async function saveMediaUpload(ctx: AppContext, ownerUserId: string, file: Expre
 function validateSvg(buffer: Buffer): void {
   const svg = buffer.toString("utf8");
   if (!svg.trim().startsWith("<svg") && !svg.includes("<svg")) {
-    throw new Error("Invalid SVG");
+    throw new UploadValidationError("Invalid SVG");
   }
   if (/(<script|javascript:|on\w+\s*=|<foreignObject)/i.test(svg)) {
-    throw new Error("SVG contains unsafe content");
+    throw new UploadValidationError("SVG contains unsafe content");
   }
 }
 
