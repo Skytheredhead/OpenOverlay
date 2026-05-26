@@ -135,6 +135,18 @@ body {
   border-color: var(--sw-ink);
 }
 
+.button.dark {
+  background: var(--sw-ink);
+  color: var(--sw-bg);
+  border-color: var(--sw-ink);
+}
+
+.button.dark:hover {
+  background: var(--sw-red);
+  border-color: var(--sw-red);
+  color: #fff;
+}
+
 .button.danger {
   background: var(--sw-bg);
   color: var(--sw-red);
@@ -575,6 +587,40 @@ body {
   color: var(--sw-ink);
 }
 
+.sidebar-preset-menu {
+  background: var(--sw-bg);
+  border: 1px solid var(--sw-ink);
+  box-shadow: 6px 6px 0 var(--sw-ink);
+}
+
+.sidebar-preset-menu button {
+  background: transparent;
+  color: var(--sw-ink);
+  border: 0;
+  border-bottom: 1px solid var(--sw-rule-faint);
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sidebar-preset-menu button:last-child {
+  border-bottom: 0;
+}
+
+.sidebar-preset-menu button:hover {
+  background: var(--sw-ink);
+  color: var(--sw-bg);
+}
+
+.sidebar-preset-menu button.danger {
+  color: var(--sw-red);
+}
+
+.sidebar-preset-menu button.danger:hover {
+  background: var(--sw-red);
+  color: #fff;
+}
+
 .sidebar-account {
   margin-top: auto;
   display: flex;
@@ -904,6 +950,13 @@ body {
 .preview-frame {
   border: 1px solid var(--sw-ink);
   border-radius: 0;
+}
+
+.preview-update-prompt {
+  padding: 8px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sw-ink);
 }
 
 .media-thumb {

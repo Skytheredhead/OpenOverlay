@@ -502,7 +502,10 @@ h1 {
 .overlay-lineup.overlay-entering .lineup-list li:nth-child(6) { animation-delay: 255ms; }
 
 [data-bind-event-title].text-updated,
+[data-bind-production].text-updated,
 [data-bind-team].text-updated,
+[data-bind-team-logo].text-updated,
+[data-bind-lineup-title].text-updated,
 [data-bind-clock].text-updated,
 [data-bind-half].text-updated,
 [data-bind-result-state].text-updated,

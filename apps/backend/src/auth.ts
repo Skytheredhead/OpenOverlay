@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import type { AppContext, AuthUser } from "./types.js";
 
 const SESSION_COOKIE = "openoverlay_session";
-const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const SESSION_TTL_SECONDS = 90 * 24 * 60 * 60;
 
 interface SessionPayload {
   sub: string;

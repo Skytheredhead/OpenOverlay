@@ -33,6 +33,48 @@ describe("OverlayRenderer", () => {
     await expect(frameText(container)).resolves.toContain("SKY");
   });
 
+  it("applies soccer package color bank variables to the stage", async () => {
+    const state = createDefaultSoccerState("Test Match");
+    state.soccerPackage.overlayPackage = "rounded";
+    state.soccerPackage.colorBanks.rounded.maroon = "#123456";
+    state.soccerPackage.colorBanks.rounded.gold = "#fedcba";
+    const { container } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+
+    await waitFor(() => expect(frameBody(container)?.querySelector("#stage")).toBeTruthy());
+    const stage = frameBody(container)?.querySelector<HTMLElement>("#stage");
+    expect(stage?.style.getPropertyValue("--maroon")).toBe("#123456");
+    expect(stage?.style.getPropertyValue("--gold")).toBe("#fedcba");
+  });
+
+  it("only marks requested soccer text fields as updated", async () => {
+    const state = createDefaultSoccerState("Test Match");
+    const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+    await waitFor(() => expect(frameBody(container)?.querySelector("[data-bind-event-title]")).toBeTruthy());
+    expect(frameBody(container)?.querySelector("[data-bind-event-title]")?.classList.contains("text-updated")).toBe(false);
+
+    const nextState = structuredClone(state);
+    nextState.gameTitle = "Updated Match";
+    nextState.soccerPackage.textAnimation = { id: 1, fields: ["event-title"] };
+    rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={nextState} /></div>);
+
+    await waitFor(() => expect(frameBody(container)?.querySelector("[data-bind-event-title]")?.classList.contains("text-updated")).toBe(true));
+    expect(frameBody(container)?.querySelector("[data-bind-production]")?.classList.contains("text-updated")).toBe(false);
+  });
+
+  it("marks only requested soccer team logos as updated", async () => {
+    const state = createDefaultSoccerState("Test Match");
+    const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+    await waitFor(() => expect(frameBody(container)?.querySelector(".full-team.home [data-bind-team-logo]")).toBeTruthy());
+
+    const nextState = structuredClone(state);
+    nextState.home.logoUrl = "/media/home-updated.png";
+    nextState.soccerPackage.textAnimation = { id: 2, fields: ["home-logo"] };
+    rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={nextState} /></div>);
+
+    await waitFor(() => expect(frameBody(container)?.querySelector(".full-team.home [data-bind-team-logo]")?.classList.contains("text-updated")).toBe(true));
+    expect(frameBody(container)?.querySelector(".full-team.away [data-bind-team-logo]")?.classList.contains("text-updated")).toBe(false);
+  });
+
   it("keeps a soccer overlay mounted with the exit class after hiding it", async () => {
     const state = createDefaultSoccerState("Test Match");
     state.soccerPackage.activeOverlay = "full-matchup";
@@ -45,6 +87,22 @@ describe("OverlayRenderer", () => {
 
     expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy();
     await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy());
+  });
+
+  it("keeps incoming and outgoing soccer overlays in separate layers", async () => {
+    const state = createDefaultSoccerState("Test Match");
+    state.soccerPackage.activeOverlay = "full-matchup";
+    const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-entering")).toBeTruthy());
+
+    const nextState = structuredClone(state);
+    nextState.soccerPackage.activeOverlay = "scorebug";
+    nextState.soccerPackage.selectedOverlay = "scorebug";
+    rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={nextState} /></div>);
+
+    const body = frameBody(container);
+    expect(body?.querySelector(".overlay-layer-exiting .overlay-full-matchup.overlay-exiting")).toBeTruthy();
+    expect(body?.querySelector(".overlay-layer-active .overlay-scorebug.overlay-entering")).toBeTruthy();
   });
 
   it("renders a church slide", () => {

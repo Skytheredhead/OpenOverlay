@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 import {
+  Check,
   Copy,
   Image,
   LayoutDashboard,
@@ -36,7 +37,9 @@ import {
   type PresetSummary,
   type PresetType,
   type SoccerLabOverlay,
+  type SoccerOverlayPackage,
   type SoccerState,
+  type SoccerTextAnimationField,
   type StyleVariant,
   type TeamLibraryEntry
 } from "@openoverlay/shared";
@@ -61,6 +64,7 @@ interface PromptDialogOptions {
 }
 
 type Theme = "light" | "dark";
+type SoccerEditorTab = "match" | "live" | "setup";
 
 interface ThemeContextValue {
   theme: Theme;
@@ -70,6 +74,8 @@ interface ThemeContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const PromptDialogContext = createContext<((options: PromptDialogOptions) => Promise<string | null>) | null>(null);
 const ThemeContext = createContext<ThemeContextValue | null>(null);
+const defaultSoccerEditorTabs: SoccerEditorTab[] = ["match", "live", "setup"];
+const soccerTabLabels: Record<SoccerEditorTab, string> = { match: "Match", live: "Live", setup: "Setup" };
 
 const THEME_STORAGE_KEY = "openoverlay:theme";
 const SIDEBAR_WIDTH_STORAGE_KEY = "openoverlay:sidebar-width";
@@ -377,10 +383,48 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { width: sidebarWidth, resizing, startDrag } = useResizableSidebar();
   const [games, setGames] = useState<PresetSummary[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [presetMenu, setPresetMenu] = useState<{ game: PresetSummary; x: number; y: number } | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     void presetApi.list().then((response) => setGames(response.presets)).catch(() => setGames([]));
   }, []);
+
+  useEffect(() => {
+    if (!presetMenu) return;
+    function closeMenu() {
+      setPresetMenu(null);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu();
+    }
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [presetMenu]);
+
+  function openPresetMenu(game: PresetSummary, x: number, y: number) {
+    setPresetMenu({ game, x, y });
+  }
+
+  async function duplicateSidebarPreset(game: PresetSummary) {
+    const response = await presetApi.duplicate(game.id);
+    setGames((current) => [response.preset, ...current]);
+    setPresetMenu(null);
+    navigate(`/dash/presets/${response.preset.id}`);
+  }
+
+  async function deleteSidebarPreset(game: PresetSummary) {
+    if (!window.confirm(`Delete ${game.name}?`)) return;
+    await presetApi.remove(game.id);
+    setGames((current) => current.filter((item) => item.id !== game.id));
+    setPresetMenu(null);
+    if (location.pathname.includes(`/dash/presets/${game.id}`)) navigate("/dash");
+  }
 
   const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties;
   const shellClass = [
@@ -412,7 +456,20 @@ function AppShell({ children }: { children: React.ReactNode }) {
           {games.length > 0 ? (
             <div className="sidebar-subnav" aria-label="Active games">
               {games.map((game) => (
-                <NavLink key={game.id} to={`/dash/presets/${game.id}`}>
+                <NavLink
+                  key={game.id}
+                  to={`/dash/presets/${game.id}`}
+                  onMouseDown={(event) => {
+                    if (event.button !== 2) return;
+                    event.preventDefault();
+                    openPresetMenu(game, event.clientX, event.clientY);
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openPresetMenu(game, event.clientX, event.clientY);
+                  }}
+                >
                   <span className="nav-label">{game.name}</span>
                 </NavLink>
               ))}
@@ -444,6 +501,17 @@ function AppShell({ children }: { children: React.ReactNode }) {
           />
         ) : null}
       </aside>
+      {presetMenu ? (
+        <div
+          className="sidebar-preset-menu"
+          style={{ left: presetMenu.x, top: presetMenu.y } as React.CSSProperties}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button type="button" onClick={() => void duplicateSidebarPreset(presetMenu.game)}><Copy size={15} /> Duplicate</button>
+          <button type="button" className="danger" onClick={() => void deleteSidebarPreset(presetMenu.game)}><Trash2 size={15} /> Delete</button>
+        </div>
+      ) : null}
       <main className="main">{children}</main>
     </div>
   );
@@ -663,10 +731,15 @@ function PresetEditor() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
   const [tab, setTab] = useState("live");
+  const [soccerTabOrder, setSoccerTabOrder] = useState<SoccerEditorTab[]>(defaultSoccerEditorTabs);
+  const [draggedSoccerTab, setDraggedSoccerTab] = useState<SoccerEditorTab | null>(null);
+  const [soccerPreviewSurface, setSoccerPreviewSurface] = useState<SoccerState["soccerPackage"]["surface"]>("checker");
+  const draggedSoccerTabRef = useRef<SoccerEditorTab | null>(null);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<PresetState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [pendingSoccerTextUpdate, setPendingSoccerTextUpdate] = useState<{ state: SoccerState; fields: SoccerTextAnimationField[] } | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   const selectedElement = useMemo(() => {
@@ -692,9 +765,15 @@ function PresetEditor() {
 
   useEffect(() => {
     if (!preset) return;
-    if (preset.type === "soccer" && !["match", "live"].includes(tab)) setTab("live");
+    if (preset.type === "soccer" && !defaultSoccerEditorTabs.includes(tab as SoccerEditorTab)) setTab("live");
     if (preset.type !== "soccer" && !["slides", "style"].includes(tab)) setTab("slides");
   }, [preset, tab]);
+
+  useEffect(() => {
+    if (preset?.state && isSoccerState(preset.state)) {
+      setSoccerPreviewSurface(preset.state.soccerPackage.surface);
+    }
+  }, [preset?.id]);
 
   useEffect(() => {
     if (!presetId) return;
@@ -769,13 +848,78 @@ function PresetEditor() {
   if (!preset) return <div>Loading game...</div>;
   const overlayUrl = `${window.location.origin}/overlay/${preset.publicId}`;
   const soccerState = preset.type === "soccer" && isSoccerState(preset.state) ? preset.state : null;
-  const tabs = soccerState ? ["match", "live"] : ["slides", "style"];
+  const tabs = soccerState ? soccerTabOrder : ["slides", "style"];
   const isSoccerEditor = Boolean(soccerState);
-  const tabLabels: Record<string, string> = { match: "Match", live: "Live", slides: "slides", style: "style" };
+  const tabLabels: Record<string, string> = { ...soccerTabLabels, slides: "slides", style: "style" };
+  function startSoccerTabDrag(sourceTab: SoccerEditorTab) {
+    draggedSoccerTabRef.current = sourceTab;
+    setDraggedSoccerTab(sourceTab);
+  }
+  function clearSoccerTabDrag() {
+    draggedSoccerTabRef.current = null;
+    setDraggedSoccerTab(null);
+  }
+  function reorderSoccerTab(targetTab: SoccerEditorTab) {
+    const sourceTab = draggedSoccerTabRef.current;
+    if (!sourceTab || sourceTab === targetTab) return;
+    setSoccerTabOrder((current) => {
+      const next = current.filter((item) => item !== sourceTab);
+      const targetIndex = next.indexOf(targetTab);
+      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, sourceTab);
+      return next;
+    });
+    clearSoccerTabDrag();
+  }
   const tabButtons = (
     <div className="tabs">
       {tabs.map((item) => (
-        <button key={item} className={`tab ${tab === item ? "active" : ""}`} type="button" onClick={() => setTab(item)}>{tabLabels[item]}</button>
+        <button
+          key={item}
+          className={`tab ${tab === item ? "active" : ""} ${draggedSoccerTab === item ? "dragging" : ""}`}
+          data-soccer-tab={soccerState ? item : undefined}
+          type="button"
+          draggable={Boolean(soccerState)}
+          onClick={() => setTab(item)}
+          onPointerDown={(event) => {
+            if (!soccerState || event.button !== 0) return;
+            startSoccerTabDrag(item as SoccerEditorTab);
+          }}
+          onPointerEnter={() => {
+            if (!soccerState) return;
+            reorderSoccerTab(item as SoccerEditorTab);
+          }}
+          onPointerMove={() => {
+            if (!soccerState) return;
+            reorderSoccerTab(item as SoccerEditorTab);
+          }}
+          onPointerUp={clearSoccerTabDrag}
+          onMouseDown={(event) => {
+            if (!soccerState || event.button !== 0) return;
+            startSoccerTabDrag(item as SoccerEditorTab);
+          }}
+          onMouseEnter={() => {
+            if (!soccerState) return;
+            reorderSoccerTab(item as SoccerEditorTab);
+          }}
+          onMouseMove={() => {
+            if (!soccerState) return;
+            reorderSoccerTab(item as SoccerEditorTab);
+          }}
+          onMouseUp={clearSoccerTabDrag}
+          onDragStart={() => soccerState ? startSoccerTabDrag(item as SoccerEditorTab) : undefined}
+          onDragOver={(event) => {
+            if (!soccerState) return;
+            event.preventDefault();
+          }}
+          onDrop={(event) => {
+            if (!soccerState) return;
+            event.preventDefault();
+            reorderSoccerTab(item as SoccerEditorTab);
+          }}
+          onDragEnd={clearSoccerTabDrag}
+        >
+          {tabLabels[item]}
+        </button>
       ))}
     </div>
   );
@@ -788,6 +932,40 @@ function PresetEditor() {
   function updateSoccerPackage(patch: Partial<SoccerState["soccerPackage"]>) {
     if (!soccerState) return;
     commitState({ ...soccerState, soccerPackage: { ...soccerState.soccerPackage, ...patch } });
+  }
+
+  function commitSoccerMatchState(nextState: SoccerState, changedFields: SoccerTextAnimationField[]) {
+    const visibleFields = uniqueSoccerTextFields(changedFields.filter((field) => soccerTextFieldIsVisible(field, soccerState?.soccerPackage.activeOverlay ?? null, soccerState)));
+    if (visibleFields.length > 0 || pendingSoccerTextUpdate) {
+      commitState(nextState, false);
+      setPendingSoccerTextUpdate((current) => ({
+        state: nextState,
+        fields: uniqueSoccerTextFields([...(current?.fields ?? []), ...visibleFields])
+      }));
+      return;
+    }
+    commitState(nextState);
+  }
+
+  function updateSoccerMatchPackage(patch: Partial<SoccerState["soccerPackage"]>, changedFields: SoccerTextAnimationField[] = []) {
+    if (!soccerState) return;
+    commitSoccerMatchState({ ...soccerState, soccerPackage: { ...soccerState.soccerPackage, ...patch } }, changedFields);
+  }
+
+  function applyPendingSoccerTextUpdate() {
+    if (!pendingSoccerTextUpdate) return;
+    const nextState: SoccerState = {
+      ...pendingSoccerTextUpdate.state,
+      soccerPackage: {
+        ...pendingSoccerTextUpdate.state.soccerPackage,
+        textAnimation: {
+          id: Date.now(),
+          fields: pendingSoccerTextUpdate.fields
+        }
+      }
+    };
+    setPendingSoccerTextUpdate(null);
+    commitState(nextState);
   }
 
   async function copyOverlayUrl() {
@@ -823,7 +1001,8 @@ function PresetEditor() {
           <>
             <SoccerLabOverlayControls state={soccerState} updatePackage={updateSoccerPackage} runAction={runAction} />
             <section className="preview-column live-preview-pane">
-              <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} />
+              <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} surface={soccerPreviewSurface} />
+              {pendingSoccerTextUpdate ? <SoccerPreviewUpdatePrompt onApply={applyPendingSoccerTextUpdate} /> : null}
             </section>
             <SoccerBottomControlPanel
               state={soccerState}
@@ -832,7 +1011,11 @@ function PresetEditor() {
               tabButtons={tabButtons}
               updateClock={updateSoccerClock}
               updatePackage={updateSoccerPackage}
+              updateMatchPackage={updateSoccerMatchPackage}
+              previewSurface={soccerPreviewSurface}
+              setPreviewSurface={setSoccerPreviewSurface}
               commitState={commitState}
+              commitMatchState={commitSoccerMatchState}
               runAction={runAction}
             />
           </>
@@ -840,7 +1023,7 @@ function PresetEditor() {
           <>
           <section className="preview-column">
             <div className="preview-workspace">
-              <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} />
+              <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} surface={soccerPreviewSurface} />
             </div>
           </section>
           <aside className="inspector">
@@ -860,15 +1043,26 @@ function PresetEditor() {
   );
 }
 
-function OutputPreviewFrame({ src, title }: { src: string; title: string }) {
+function OutputPreviewFrame({ src, title, surface }: { src: string; title: string; surface: SoccerState["soccerPackage"]["surface"] }) {
   return (
-    <div className="preview-frame">
+    <div className={`preview-frame preview-surface-${surface}`}>
       <iframe
         className="output-preview-iframe"
         src={src}
         title={title}
         loading="eager"
       />
+    </div>
+  );
+}
+
+function SoccerPreviewUpdatePrompt({ onApply }: { onApply: () => void }) {
+  return (
+    <div className="preview-update-prompt" role="status">
+      <span>Changes were made. Update?</span>
+      <button className="button icon-only dark" type="button" aria-label="Update displayed overlay" title="Update displayed overlay" onClick={onApply}>
+        <Check size={16} strokeWidth={2.6} />
+      </button>
     </div>
   );
 }
@@ -1001,7 +1195,11 @@ function SoccerBottomControlPanel({
   tabButtons,
   updateClock,
   updatePackage,
+  updateMatchPackage,
+  previewSurface,
+  setPreviewSurface,
   commitState,
+  commitMatchState,
   runAction
 }: {
   state: SoccerState;
@@ -1010,7 +1208,11 @@ function SoccerBottomControlPanel({
   tabButtons: React.ReactNode;
   updateClock: (patch: Partial<SoccerState["clock"]>) => void;
   updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
+  updateMatchPackage: (patch: Partial<SoccerState["soccerPackage"]>, changedFields?: SoccerTextAnimationField[]) => void;
+  previewSurface: SoccerState["soccerPackage"]["surface"];
+  setPreviewSurface: (surface: SoccerState["soccerPackage"]["surface"]) => void;
   commitState: (state: PresetState) => void;
+  commitMatchState: (state: SoccerState, changedFields: SoccerTextAnimationField[]) => void;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
   return (
@@ -1018,17 +1220,21 @@ function SoccerBottomControlPanel({
       <div className="bottom-control-tabs">{tabButtons}</div>
       {activeTab === "match" ? (
         <div className="match-control-stack">
-          <SoccerLiveSetupPanel state={state} teams={teams} updatePackage={updatePackage} commitState={commitState} />
-          <SoccerMatchupTextPanel state={state} commitState={commitState} />
-          <SoccerTextBugPanel state={state} updatePackage={updatePackage} />
+          <SoccerLiveSetupPanel state={state} teams={teams} commitMatchState={commitMatchState} />
+          <SoccerMatchupTextPanel state={state} commitMatchState={commitMatchState} />
+          <SoccerTextBugPanel state={state} updatePackage={updateMatchPackage} />
           <SoccerCountdownPanel state={state} updatePackage={updatePackage} runAction={runAction} />
         </div>
-      ) : (
+      ) : null}
+      {activeTab === "setup" ? (
+        <SoccerPackageSetupPanel state={state} updatePackage={updatePackage} previewSurface={previewSurface} setPreviewSurface={setPreviewSurface} />
+      ) : null}
+      {activeTab === "live" ? (
         <div className="live-control-stack">
           <SoccerScoreClockPanel state={state} updateClock={updateClock} runAction={runAction} />
           <SoccerCountdownPanel state={state} updatePackage={updatePackage} runAction={runAction} />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1036,29 +1242,23 @@ function SoccerBottomControlPanel({
 function SoccerLiveSetupPanel({
   state,
   teams,
-  updatePackage,
-  commitState
+  commitMatchState
 }: {
   state: SoccerState;
   teams: TeamLibraryEntry[];
-  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
-  commitState: (state: PresetState) => void;
+  commitMatchState: (state: SoccerState, changedFields: SoccerTextAnimationField[]) => void;
 }) {
   const homeMatch = findSavedTeamMatch(state.home, teams);
   const awayMatch = findSavedTeamMatch(state.away, teams);
 
-  function update(patch: Partial<SoccerState>) {
-    commitState({ ...state, ...patch });
-  }
-
   function applySavedTeam(side: "home" | "away", teamId: string) {
     const team = teams.find((candidate) => candidate.id === teamId);
     if (!team) return;
-    update({ [side]: teamLibraryToSoccerTeam(team) } as Partial<SoccerState>);
+    commitMatchState({ ...state, [side]: teamLibraryToSoccerTeam(team) } as SoccerState, soccerTeamTextFields(side, state));
   }
 
   function swapTeams() {
-    update({ home: state.away, away: state.home });
+    commitMatchState({ ...state, home: state.away, away: state.home }, soccerTeamTextFields("home", state).concat(soccerTeamTextFields("away", state)));
   }
 
   return (
@@ -1083,20 +1283,111 @@ function SoccerLiveSetupPanel({
           </select>
         </label>
       </div>
-      <label className="field">
-        <span>Design</span>
-        <select value={state.soccerPackage.overlayPackage} onChange={(event) => updatePackage({ overlayPackage: event.target.value as SoccerState["soccerPackage"]["overlayPackage"] })}>
-          <option value="classic">Classic</option>
-          <option value="rounded">Rounded</option>
-        </select>
-      </label>
     </section>
   );
 }
 
-function SoccerMatchupTextPanel({ state, commitState }: { state: SoccerState; commitState: (state: PresetState) => void }) {
-  function update(patch: Partial<Pick<SoccerState, "gameTitle" | "productionName">>) {
-    commitState({ ...state, ...patch });
+const soccerPackageColorFields: Record<SoccerOverlayPackage, Array<{ key: string; label: string }>> = {
+  classic: [
+    { key: "bg", label: "Background" },
+    { key: "soft", label: "Soft fill" },
+    { key: "ink", label: "Ink" },
+    { key: "muted", label: "Muted text" },
+    { key: "faint", label: "Faint rule" },
+    { key: "red", label: "Accent red" },
+    { key: "rule", label: "Rule" },
+    { key: "panelGray", label: "Panel gray" }
+  ],
+  rounded: [
+    { key: "ink", label: "Ink" },
+    { key: "muted", label: "Muted text" },
+    { key: "line", label: "Line" },
+    { key: "gold", label: "Gold" },
+    { key: "maroon", label: "Maroon" },
+    { key: "wine", label: "Wine" },
+    { key: "ivory", label: "Ivory" },
+    { key: "sky", label: "Sky" },
+    { key: "blue", label: "Blue" },
+    { key: "red", label: "Red" }
+  ]
+};
+
+function SoccerPackageSetupPanel({
+  state,
+  updatePackage,
+  previewSurface,
+  setPreviewSurface
+}: {
+  state: SoccerState;
+  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
+  previewSurface: SoccerState["soccerPackage"]["surface"];
+  setPreviewSurface: (surface: SoccerState["soccerPackage"]["surface"]) => void;
+}) {
+  const packageName = state.soccerPackage.overlayPackage;
+  const activeColors = state.soccerPackage.colorBanks[packageName];
+
+  function updateColor(key: string, value: string) {
+    updatePackage({
+      colorBanks: {
+        ...state.soccerPackage.colorBanks,
+        [packageName]: {
+          ...activeColors,
+          [key]: value
+        }
+      }
+    });
+  }
+
+  return (
+    <div className="setup-control-stack">
+      <section className="control-section">
+        <h2>Design</h2>
+        <div className="form-grid">
+          <label className="field">
+            <span>Package</span>
+            <select value={packageName} onChange={(event) => updatePackage({ overlayPackage: event.target.value as SoccerOverlayPackage })}>
+              <option value="classic">Classic</option>
+              <option value="rounded">Rounded</option>
+            </select>
+          </label>
+          <div className="two-col">
+            <label className="field">
+              <span>Preview background</span>
+              <select value={previewSurface} onChange={(event) => setPreviewSurface(event.target.value as SoccerState["soccerPackage"]["surface"])}>
+                <option value="pitch">Pitch</option>
+                <option value="checker">Checker</option>
+                <option value="studio">Studio</option>
+              </select>
+            </label>
+            <label className="control-row">
+              <input type="checkbox" checked={state.soccerPackage.packageBackground} onChange={(event) => updatePackage({ packageBackground: event.target.checked })} />
+              Package background
+            </label>
+          </div>
+          <label className="field">
+            <span>Background opacity</span>
+            <input type="range" min="0" max="100" value={Math.round(state.soccerPackage.packageBackgroundOpacity * 100)} onChange={(event) => updatePackage({ packageBackgroundOpacity: Number(event.target.value) / 100 })} />
+          </label>
+        </div>
+      </section>
+      <section className="control-section">
+        <h2>Colors</h2>
+        <div className="package-color-grid">
+          {soccerPackageColorFields[packageName].map((field) => (
+            <label key={field.key} className="field color-swatch-field package-color-field">
+              <span>{field.label}</span>
+              <input type="color" value={activeColors[field.key]} onInput={(event) => updateColor(field.key, event.currentTarget.value)} onChange={(event) => updateColor(field.key, event.target.value)} />
+            </label>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SoccerMatchupTextPanel({ state, commitMatchState }: { state: SoccerState; commitMatchState: (state: SoccerState, changedFields: SoccerTextAnimationField[]) => void }) {
+  function update(patch: Partial<Pick<SoccerState, "gameTitle" | "productionName">>, changedFields: SoccerTextAnimationField[]) {
+    commitMatchState({ ...state, ...patch }, changedFields);
   }
 
   return (
@@ -1105,26 +1396,26 @@ function SoccerMatchupTextPanel({ state, commitState }: { state: SoccerState; co
       <div className="form-grid">
         <label className="field">
           <span>Title</span>
-          <input value={state.gameTitle} onChange={(event) => update({ gameTitle: event.target.value })} />
+          <input value={state.gameTitle} onChange={(event) => update({ gameTitle: event.target.value }, ["event-title"])} />
         </label>
         <label className="field">
           <span>Subtitle</span>
-          <input value={state.productionName} onChange={(event) => update({ productionName: event.target.value })} />
+          <input value={state.productionName} onChange={(event) => update({ productionName: event.target.value }, ["production-name"])} />
         </label>
       </div>
     </section>
   );
 }
 
-function SoccerTextBugPanel({ state, updatePackage }: { state: SoccerState; updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void }) {
+function SoccerTextBugPanel({ state, updatePackage }: { state: SoccerState; updatePackage: (patch: Partial<SoccerState["soccerPackage"]>, changedFields?: SoccerTextAnimationField[]) => void }) {
   return (
     <section className="control-section">
       <h2>Text bugs</h2>
       <div className="form-grid">
-        <label className="field"><span>1-line text</span><input value={state.soccerPackage.oneLineText} onChange={(event) => updatePackage({ oneLineText: event.target.value })} /></label>
+        <label className="field"><span>1-line text</span><input value={state.soccerPackage.oneLineText} onChange={(event) => updatePackage({ oneLineText: event.target.value }, ["one-line"])} /></label>
         <PositionSelect value={state.soccerPackage.oneLinePosition} onChange={(value) => updatePackage({ oneLinePosition: value })} />
-        <label className="field"><span>2-line top</span><input value={state.soccerPackage.twoLineTextA} onChange={(event) => updatePackage({ twoLineTextA: event.target.value })} /></label>
-        <label className="field"><span>2-line bottom</span><input value={state.soccerPackage.twoLineTextB} onChange={(event) => updatePackage({ twoLineTextB: event.target.value })} /></label>
+        <label className="field"><span>2-line top</span><input value={state.soccerPackage.twoLineTextA} onChange={(event) => updatePackage({ twoLineTextA: event.target.value }, ["two-line-a"])} /></label>
+        <label className="field"><span>2-line bottom</span><input value={state.soccerPackage.twoLineTextB} onChange={(event) => updatePackage({ twoLineTextB: event.target.value }, ["two-line-b"])} /></label>
         <PositionSelect value={state.soccerPackage.twoLinePosition} onChange={(value) => updatePackage({ twoLinePosition: value })} />
       </div>
     </section>
@@ -1314,20 +1605,10 @@ function SoccerPackageStylePanel({ state, updatePackage }: { state: SoccerState;
             <option value="rounded">Rounded</option>
           </select>
         </label>
-        <div className="two-col">
-          <label className="field">
-            <span>Surface</span>
-            <select value={state.soccerPackage.surface} onChange={(event) => updatePackage({ surface: event.target.value as SoccerState["soccerPackage"]["surface"] })}>
-              <option value="pitch">Pitch</option>
-              <option value="checker">Checker</option>
-              <option value="studio">Studio</option>
-            </select>
-          </label>
-          <label className="control-row">
-            <input type="checkbox" checked={state.soccerPackage.packageBackground} onChange={(event) => updatePackage({ packageBackground: event.target.checked })} />
-            Package background
-          </label>
-        </div>
+        <label className="control-row">
+          <input type="checkbox" checked={state.soccerPackage.packageBackground} onChange={(event) => updatePackage({ packageBackground: event.target.checked })} />
+          Package background
+        </label>
         <label className="field">
           <span>Background opacity</span>
           <input type="range" min="0" max="100" value={Math.round(state.soccerPackage.packageBackgroundOpacity * 100)} onChange={(event) => updatePackage({ packageBackgroundOpacity: Number(event.target.value) / 100 })} />
@@ -1796,6 +2077,40 @@ function formatRecord(record?: SoccerState["home"]["record"]): string {
   return `${value.wins}-${value.losses}-${value.draws}`;
 }
 
+function soccerTeamTextFields(side: "home" | "away", state: SoccerState): SoccerTextAnimationField[] {
+  const fields: SoccerTextAnimationField[] = side === "home"
+    ? ["home-name", "home-abbrev", "home-record", "home-logo"]
+    : ["away-name", "away-abbrev", "away-record", "away-logo"];
+  if (state.soccerPackage.lineupTeam === side) fields.push("lineup-title", "lineup-logo", "lineup-rows");
+  return fields;
+}
+
+function soccerTextFieldIsVisible(field: SoccerTextAnimationField, overlay: SoccerLabOverlay | null, state: SoccerState | null): boolean {
+  if (!overlay || !state) return false;
+  switch (overlay) {
+    case "full-matchup":
+      return ["event-title", "production-name", "home-name", "away-name", "home-record", "away-record", "home-logo", "away-logo"].includes(field);
+    case "lower-matchup":
+      return ["event-title", "home-name", "away-name", "home-record", "away-record", "home-logo", "away-logo"].includes(field);
+    case "lower-result":
+      return ["event-title", "home-abbrev", "away-abbrev", "home-logo", "away-logo"].includes(field);
+    case "lineup-panel":
+      return ["lineup-title", "lineup-logo", "lineup-rows"].includes(field);
+    case "scorebug":
+      return ["home-abbrev", "away-abbrev"].includes(field);
+    case "one-line-text":
+      return field === "one-line";
+    case "two-line-text":
+      return field === "two-line-a" || field === "two-line-b";
+    case "countdown-timer":
+      return false;
+  }
+}
+
+function uniqueSoccerTextFields(fields: SoccerTextAnimationField[]): SoccerTextAnimationField[] {
+  return Array.from(new Set(fields));
+}
+
 function parseRecordValue(value: string, fallback: SoccerState["home"]["record"]): SoccerState["home"]["record"] {
   const [wins, losses, draws] = value
     .split(/[/-]/)
@@ -1883,6 +2198,11 @@ function OverlayPage({ test }: { test: boolean }) {
   const [overlay, setOverlay] = useState<PresetSummary | null>(null);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    document.body.classList.add("overlay-route-body");
+    return () => document.body.classList.remove("overlay-route-body");
+  }, []);
 
   useEffect(() => {
     if (!overlayId) return;

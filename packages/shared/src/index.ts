@@ -24,6 +24,34 @@ export type SoccerLabOverlay =
 export type SoccerPackageSurface = "pitch" | "checker" | "studio";
 export type SoccerBugLayout = "horizontal" | "vertical";
 export type SoccerTimerMode = "full" | "small";
+export type SoccerTextAnimationField =
+  | "event-title"
+  | "production-name"
+  | "home-name"
+  | "away-name"
+  | "home-abbrev"
+  | "away-abbrev"
+  | "home-record"
+  | "away-record"
+  | "home-logo"
+  | "away-logo"
+  | "lineup-title"
+  | "lineup-logo"
+  | "lineup-rows"
+  | "one-line"
+  | "two-line-a"
+  | "two-line-b";
+
+export interface SoccerTextAnimationState {
+  id: number;
+  fields: SoccerTextAnimationField[];
+}
+
+export interface SoccerPackageColorBank {
+  [key: string]: string;
+}
+
+export type SoccerPackageColorBanks = Record<SoccerOverlayPackage, SoccerPackageColorBank>;
 
 export interface GlobalStyle {
   font: string;
@@ -131,6 +159,8 @@ export interface SoccerCountdownPackageState {
 
 export interface SoccerOverlayPackageState {
   overlayPackage: SoccerOverlayPackage;
+  colorBanks: SoccerPackageColorBanks;
+  textAnimation?: SoccerTextAnimationState;
   activeOverlay: SoccerLabOverlay | null;
   selectedOverlay: SoccerLabOverlay;
   surface: SoccerPackageSurface;
@@ -343,6 +373,7 @@ export function defaultTeamImageCrop(): TeamImageCrop {
 export function defaultSoccerPackageState(): SoccerOverlayPackageState {
   return {
     overlayPackage: "classic",
+    colorBanks: defaultSoccerPackageColorBanks(),
     activeOverlay: "full-matchup",
     selectedOverlay: "full-matchup",
     surface: "pitch",
@@ -366,6 +397,33 @@ export function defaultSoccerPackageState(): SoccerOverlayPackageState {
     twoLinePosition: "bottom-right",
     lineupTeam: "home",
     lineupPage: 0
+  };
+}
+
+export function defaultSoccerPackageColorBanks(): SoccerPackageColorBanks {
+  return {
+    classic: {
+      bg: "#ffffff",
+      soft: "#f7f7f7",
+      ink: "#111111",
+      muted: "#555555",
+      faint: "#e5e5e5",
+      red: "#e30613",
+      rule: "#111111",
+      panelGray: "#3f3f3f"
+    },
+    rounded: {
+      ink: "#f8fafc",
+      muted: "#a8b3c7",
+      line: "#252a34",
+      gold: "#f5bd2f",
+      maroon: "#7a1235",
+      wine: "#3b0820",
+      ivory: "#fff6e4",
+      sky: "#75c8ff",
+      blue: "#143b94",
+      red: "#df1f34"
+    }
   };
 }
 
@@ -434,10 +492,12 @@ export function normalizeImageCrop(crop: Partial<TeamImageCrop> | undefined): Te
 export function normalizeSoccerPackageState(packageState: Partial<SoccerOverlayPackageState> | undefined): SoccerOverlayPackageState {
   const fallback = defaultSoccerPackageState();
   const countdown = packageState?.countdown || fallback.countdown;
+  const colorBanks = normalizeSoccerPackageColorBanks(packageState?.colorBanks, fallback.colorBanks);
   return {
     ...fallback,
     ...packageState,
     overlayPackage: packageState?.overlayPackage === "rounded" ? "rounded" : "classic",
+    colorBanks,
     activeOverlay: isSoccerLabOverlay(packageState?.activeOverlay) ? packageState.activeOverlay : packageState?.activeOverlay === null ? null : fallback.activeOverlay,
     selectedOverlay: isSoccerLabOverlay(packageState?.selectedOverlay) ? packageState.selectedOverlay : fallback.selectedOverlay,
     surface: packageState?.surface === "checker" || packageState?.surface === "studio" ? packageState.surface : "pitch",
@@ -460,6 +520,26 @@ export function normalizeSoccerPackageState(packageState: Partial<SoccerOverlayP
     lineupTeam: packageState?.lineupTeam === "away" ? "away" : "home",
     lineupPage: Math.max(0, Math.floor(finiteNumber(packageState?.lineupPage, 0)))
   };
+}
+
+function normalizeSoccerPackageColorBanks(colorBanks: Partial<SoccerPackageColorBanks> | undefined, fallback: SoccerPackageColorBanks): SoccerPackageColorBanks {
+  return {
+    classic: normalizeColorBank(colorBanks?.classic, fallback.classic),
+    rounded: normalizeColorBank(colorBanks?.rounded, fallback.rounded)
+  };
+}
+
+function normalizeColorBank(colorBank: SoccerPackageColorBank | undefined, fallback: SoccerPackageColorBank): SoccerPackageColorBank {
+  return Object.fromEntries(
+    Object.entries(fallback).map(([key, fallbackColor]) => {
+      const nextColor = colorBank?.[key];
+      return [key, isHexColor(nextColor) ? nextColor : fallbackColor];
+    })
+  );
+}
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
 export function normalizeSoccerState(state: SoccerState): SoccerState {

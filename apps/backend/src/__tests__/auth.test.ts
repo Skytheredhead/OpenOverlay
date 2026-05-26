@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createSessionToken, SESSION_TTL_SECONDS, verifySessionToken } from "../auth.js";
 import { makeTestServer, signup } from "./helpers.js";
 
 let server: ReturnType<typeof makeTestServer>;
@@ -12,6 +13,19 @@ afterEach(() => {
 });
 
 describe("auth", () => {
+  it("keeps session tokens and cookies valid for three months", async () => {
+    expect(SESSION_TTL_SECONDS).toBe(90 * 24 * 60 * 60);
+
+    const now = 1_700_000_000;
+    const token = createSessionToken("user-1", "test-secret", now);
+    expect(verifySessionToken(token, "test-secret", now + SESSION_TTL_SECONDS - 1)?.sub).toBe("user-1");
+    expect(verifySessionToken(token, "test-secret", now + SESSION_TTL_SECONDS + 1)).toBeNull();
+
+    const response = await server.request.post("/api/auth/signup").send({ email: "cookie@example.com", password: "password123" }).expect(201);
+    const setCookie = response.headers["set-cookie"];
+    expect(Array.isArray(setCookie) ? setCookie.join(";") : setCookie).toContain(`Max-Age=${SESSION_TTL_SECONDS}`);
+  });
+
   it("signs up, returns the current user, logs out, and logs back in", async () => {
     const user = await signup(server.agent, "user@example.com");
     expect(user.email).toBe("user@example.com");
