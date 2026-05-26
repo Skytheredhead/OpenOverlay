@@ -634,7 +634,6 @@ body {
 
 .assignment-card,
 .score-control,
-.stat-control,
 .on-air-item {
   border: 1px solid var(--sw-ink);
   background: var(--sw-bg);
@@ -668,21 +667,6 @@ body {
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 900;
   letter-spacing: -0.06em;
-}
-
-.stat-control-row {
-  border-top: 1px solid var(--sw-rule-faint);
-  padding-top: 8px;
-}
-
-.stat-control-row span {
-  font-weight: 700;
-}
-
-.stat-control-row strong {
-  font-family: "Inter Tight", Helvetica, sans-serif;
-  font-size: 24px;
-  font-weight: 900;
 }
 
 /* --- tabs (text-only with underline) --- */

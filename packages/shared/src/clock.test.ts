@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeClockSeconds, defaultClock, pauseClock, resetClock, setClockSeconds, startClock } from "./index.js";
+import { computeClockSeconds, createDefaultSoccerState, defaultClock, normalizeSoccerState, pauseClock, resetClock, setClockSeconds, startClock } from "./index.js";
 
 describe("soccer clock", () => {
   it("counts up and respects stop-at when enabled", () => {
@@ -39,5 +39,15 @@ describe("soccer clock", () => {
     const clock = setClockSeconds(defaultClock(), 123);
     expect(clock.baseSeconds).toBe(123);
     expect(resetClock({ ...clock, baseSeconds: 200, running: true, startedAtMs: 1_000 }).baseSeconds).toBe(123);
+  });
+
+  it("normalizes soccer package and team image crop defaults", () => {
+    const state = createDefaultSoccerState("Match");
+    delete (state.home as Partial<typeof state.home>).imageCrop;
+    delete (state as Partial<typeof state>).soccerPackage;
+    const normalized = normalizeSoccerState(state);
+    expect(normalized.home.imageCrop).toEqual({ x: 0, y: 0, zoom: 1 });
+    expect(normalized.soccerPackage.overlayPackage).toBe("classic");
+    expect(normalized.soccerPackage.activeOverlay).toBe("full-matchup");
   });
 });

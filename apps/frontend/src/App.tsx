@@ -3,7 +3,6 @@ import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "
 import { io, type Socket } from "socket.io-client";
 import {
   Copy,
-  Film,
   Image,
   LayoutDashboard,
   LogOut,
@@ -38,6 +37,7 @@ import {
   type PresetState,
   type PresetSummary,
   type PresetType,
+  type SoccerLabOverlay,
   type SoccerState,
   type StyleVariant,
   type TeamLibraryEntry
@@ -550,7 +550,7 @@ function PresetEditor() {
 
   const selectedElement = useMemo(() => {
     if (!preset) return undefined;
-    if (isSoccerState(preset.state)) return tab === "design" ? preset.state.elements.scorebug : undefined;
+    if (isSoccerState(preset.state)) return tab === "design" ? preset.state.elements.fullscreen : undefined;
     if (isChurchState(preset.state)) return preset.state.elements.lowerThird;
     return undefined;
   }, [preset, tab]);
@@ -780,7 +780,6 @@ function SoccerControls({
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
   const clockValue = formatClock(computeClockSeconds(state.clock));
-  const activeGraphics = state.activeGraphics.filter((graphic) => graphic.expiresAtMs === null || graphic.expiresAtMs > Date.now());
 
   function update(patch: Partial<SoccerState>) {
     commitState({ ...state, ...patch });
@@ -826,25 +825,12 @@ function SoccerControls({
     update({ home: state.away, away: state.home });
   }
 
-  function updateStat(key: keyof SoccerState["stats"], side: "home" | "away", delta: number) {
-    const current = state.stats[key][side];
-    update({
-      stats: {
-        ...state.stats,
-        [key]: {
-          ...state.stats[key],
-          [side]: Math.max(0, current + delta)
-        }
-      }
-    });
-  }
-
   function updateGameInfo(patch: Partial<Pick<SoccerState, "gameTitle" | "productionName" | "scheduledAt">>) {
     update(patch);
   }
 
-  function clearGraphic(id: string) {
-    update({ activeGraphics: state.activeGraphics.filter((graphic) => graphic.id !== id) });
+  function updatePackage(patch: Partial<SoccerState["soccerPackage"]>) {
+    update({ soccerPackage: { ...state.soccerPackage, ...patch } });
   }
 
   if (tab === "setup") {
@@ -895,9 +881,10 @@ function SoccerControls({
     return (
       <>
         <StylePanel state={state} commitState={commitState} />
+        <SoccerPackageStylePanel state={state} updatePackage={updatePackage} />
         <div className="panel">
           <h2>Elements</h2>
-          <p className="muted">Drag the scorebug in the preview or adjust the selected element below.</p>
+          <p className="muted">Drag the soccer package in the preview or adjust the selected element below.</p>
         </div>
       </>
     );
@@ -959,28 +946,22 @@ function SoccerControls({
         </div>
       </div>
       <div className="panel">
-        <h2>Stats</h2>
-        <div className="stats-control-grid">
-          {(["shots", "fouls", "cards"] as const).map((key) => (
-            <StatControls key={key} label={titleCaseFirst(key)} homeLabel={state.home.abbreviation} awayLabel={state.away.abbreviation} home={state.stats[key].home} away={state.stats[key].away} onHome={(delta) => updateStat(key, "home", delta)} onAway={(delta) => updateStat(key, "away", delta)} />
-          ))}
-        </div>
+        <h2>Scorebug clock</h2>
+        <p className="muted">The lab scorebug uses the game clock and period above.</p>
       </div>
-      <GraphicTriggerForm state={state} runAction={runAction} />
+      <SoccerLabOverlayControls state={state} updatePackage={updatePackage} runAction={runAction} />
       <div className="panel">
         <h2>On air now</h2>
-        {activeGraphics.length === 0 ? <p className="muted">No temporary graphics are live.</p> : null}
-        <div className="on-air-list">
-          {activeGraphics.map((graphic) => (
-            <div className="on-air-item" key={graphic.id}>
-              <span>
-                <strong>{graphic.title}</strong>
-                <small>{graphic.kind.replace("-", " ")}</small>
-              </span>
-              <button className="button" type="button" onClick={() => clearGraphic(graphic.id)}><X size={16} /> Clear</button>
-            </div>
-          ))}
-        </div>
+        {!state.soccerPackage.activeOverlay ? <p className="muted">No soccer overlay is live.</p> : null}
+        {state.soccerPackage.activeOverlay ? (
+          <div className="on-air-item">
+            <span>
+              <strong>{labOverlayLabels[state.soccerPackage.activeOverlay]}</strong>
+              <small>{state.soccerPackage.overlayPackage}</small>
+            </span>
+            <button className="button" type="button" onClick={() => void runAction("hide-overlay", { overlay: state.soccerPackage.activeOverlay })}><X size={16} /> Clear</button>
+          </div>
+        ) : null}
       </div>
     </>
   );
@@ -996,6 +977,232 @@ function ScoreControls({ label, score, plus, minus }: { label: string; score: nu
         <button className="button" onClick={minus}>-1</button>
       </div>
     </div>
+  );
+}
+
+const labOverlayOrder: SoccerLabOverlay[] = [
+  "full-matchup",
+  "lower-matchup",
+  "lower-result",
+  "lineup-panel",
+  "scorebug",
+  "countdown-timer",
+  "one-line-text",
+  "two-line-text"
+];
+
+const labOverlayLabels: Record<SoccerLabOverlay, string> = {
+  "full-matchup": "Full page matchup",
+  "lower-matchup": "Lower matchup",
+  "lower-result": "Lower score matchup",
+  "lineup-panel": "Lineup panel",
+  scorebug: "Scorebug",
+  "countdown-timer": "Countdown timer",
+  "one-line-text": "1-line text bug",
+  "two-line-text": "2-line text bug"
+};
+
+function SoccerPackageStylePanel({ state, updatePackage }: { state: SoccerState; updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void }) {
+  return (
+    <div className="panel">
+      <h2>Soccer package</h2>
+      <div className="form-grid">
+        <label className="field">
+          <span>Overlay package</span>
+          <select value={state.soccerPackage.overlayPackage} onChange={(event) => updatePackage({ overlayPackage: event.target.value as SoccerState["soccerPackage"]["overlayPackage"] })}>
+            <option value="classic">Classic</option>
+            <option value="rounded">Rounded</option>
+          </select>
+        </label>
+        <div className="two-col">
+          <label className="field">
+            <span>Surface</span>
+            <select value={state.soccerPackage.surface} onChange={(event) => updatePackage({ surface: event.target.value as SoccerState["soccerPackage"]["surface"] })}>
+              <option value="pitch">Pitch</option>
+              <option value="checker">Checker</option>
+              <option value="studio">Studio</option>
+            </select>
+          </label>
+          <label className="control-row">
+            <input type="checkbox" checked={state.soccerPackage.packageBackground} onChange={(event) => updatePackage({ packageBackground: event.target.checked })} />
+            Package background
+          </label>
+        </div>
+        <label className="field">
+          <span>Background opacity</span>
+          <input type="range" min="0" max="100" value={Math.round(state.soccerPackage.packageBackgroundOpacity * 100)} onChange={(event) => updatePackage({ packageBackgroundOpacity: Number(event.target.value) / 100 })} />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function SoccerLabOverlayControls({
+  state,
+  updatePackage,
+  runAction
+}: {
+  state: SoccerState;
+  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
+  runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
+}) {
+  const selected = state.soccerPackage.selectedOverlay;
+
+  function updateCountdown(patch: Partial<SoccerState["soccerPackage"]["countdown"]>) {
+    updatePackage({ countdown: { ...state.soccerPackage.countdown, ...patch } });
+  }
+
+  function takeOverlay(overlay: SoccerLabOverlay) {
+    if (state.soccerPackage.activeOverlay === overlay) {
+      void runAction("hide-overlay", { overlay });
+      return;
+    }
+    void runAction("show-overlay", { overlay });
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Lab overlays</h2>
+          <p className="muted">Rounded and Classic share the same game/team data.</p>
+        </div>
+      </div>
+      <div className="overlay-card-grid">
+        {labOverlayOrder.map((overlay) => (
+          <div
+            key={overlay}
+            role="button"
+            tabIndex={0}
+            className={`overlay-control-card ${selected === overlay ? "selected" : ""} ${state.soccerPackage.activeOverlay === overlay ? "active" : ""}`}
+            onClick={() => updatePackage({ selectedOverlay: overlay })}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                updatePackage({ selectedOverlay: overlay });
+              }
+            }}
+          >
+            <strong>{labOverlayLabels[overlay]}</strong>
+            <span>{state.soccerPackage.activeOverlay === overlay ? "On air" : "Ready"}</span>
+            <button
+              className="overlay-card-action"
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                takeOverlay(overlay);
+              }}
+            >
+              {state.soccerPackage.activeOverlay === overlay ? "Stop" : "Play"}
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="overlay-detail-panel">
+        {selected === "full-matchup" || selected === "lower-matchup" ? (
+          <p className="muted">Uses game title, production, team images, names, records, and countdown data from setup.</p>
+        ) : null}
+        {selected === "lower-result" ? (
+          <div className="form-grid">
+            <label className="field">
+              <span>State</span>
+              <select value={state.soccerPackage.lowerResultState} onChange={(event) => updatePackage({ lowerResultState: event.target.value as SoccerState["soccerPackage"]["lowerResultState"] })}>
+                <option value="HALF">Halftime</option>
+                <option value="FINAL">Final</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
+        {selected === "lineup-panel" ? (
+          <div className="form-grid">
+            <label className="field">
+              <span>Team</span>
+              <select value={state.soccerPackage.lineupTeam} onChange={(event) => updatePackage({ lineupTeam: event.target.value as "home" | "away", lineupPage: 0 })}>
+                <option value="home">{state.home.fullName}</option>
+                <option value="away">{state.away.fullName}</option>
+              </select>
+            </label>
+            <div className="control-row">
+              <button className="button" type="button" onClick={() => void runAction("lineup-prev")}>Previous</button>
+              <button className="button" type="button" onClick={() => void runAction("lineup-next")}>Next</button>
+            </div>
+          </div>
+        ) : null}
+        {selected === "scorebug" ? (
+          <div className="form-grid">
+            <label className="field">
+              <span>Layout</span>
+              <select value={state.soccerPackage.scorebugLayout} onChange={(event) => updatePackage({ scorebugLayout: event.target.value as SoccerState["soccerPackage"]["scorebugLayout"] })}>
+                <option value="horizontal">Horizontal</option>
+                <option value="vertical">Vertical</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Length</span>
+              <input type="range" min="44" max="82" value={state.soccerPackage.scorebugWidth} onChange={(event) => updatePackage({ scorebugWidth: Number(event.target.value) })} />
+            </label>
+          </div>
+        ) : null}
+        {selected === "countdown-timer" ? (
+          <div className="form-grid">
+            <div className="control-row">
+              <button className="button primary" type="button" onClick={() => void runAction("countdown-toggle")}>{state.soccerPackage.countdown.running ? "Stop timer" : "Start timer"}</button>
+              <button className="button" type="button" onClick={() => updateCountdown({ seconds: 300, resetSeconds: 300, running: false, startedAtMs: null })}>5:00</button>
+              <button className="button" type="button" onClick={() => updateCountdown({ seconds: 600, resetSeconds: 600, running: false, startedAtMs: null })}>10:00</button>
+              <button className="button" type="button" onClick={() => void runAction("countdown-reset")}>Reset</button>
+            </div>
+            <div className="two-col">
+              <label className="field">
+                <span>Custom length</span>
+                <input defaultValue={formatClock(state.soccerPackage.countdown.resetSeconds)} onBlur={(event) => {
+                  const seconds = parseClockTime(event.target.value);
+                  updateCountdown({ seconds, resetSeconds: seconds, running: false, startedAtMs: null });
+                }} />
+              </label>
+              <label className="field">
+                <span>Mode</span>
+                <select value={state.soccerPackage.countdown.mode} onChange={(event) => updateCountdown({ mode: event.target.value as SoccerState["soccerPackage"]["countdown"]["mode"] })}>
+                  <option value="full">Full page</option>
+                  <option value="small">Small</option>
+                </select>
+              </label>
+            </div>
+            <label className="field">
+              <span>Position</span>
+              <select value={state.soccerPackage.countdown.position} disabled={state.soccerPackage.countdown.mode !== "small"} onChange={(event) => updateCountdown({ position: event.target.value as PositionPreset })}>
+                {positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+          </div>
+        ) : null}
+        {selected === "one-line-text" ? (
+          <div className="form-grid">
+            <label className="field"><span>Text</span><input value={state.soccerPackage.oneLineText} onChange={(event) => updatePackage({ oneLineText: event.target.value })} /></label>
+            <PositionSelect value={state.soccerPackage.oneLinePosition} onChange={(value) => updatePackage({ oneLinePosition: value })} />
+          </div>
+        ) : null}
+        {selected === "two-line-text" ? (
+          <div className="form-grid">
+            <label className="field"><span>Line 1</span><input value={state.soccerPackage.twoLineTextA} onChange={(event) => updatePackage({ twoLineTextA: event.target.value })} /></label>
+            <label className="field"><span>Line 2</span><input value={state.soccerPackage.twoLineTextB} onChange={(event) => updatePackage({ twoLineTextB: event.target.value })} /></label>
+            <PositionSelect value={state.soccerPackage.twoLinePosition} onChange={(value) => updatePackage({ twoLinePosition: value })} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const positionOptions: PositionPreset[] = ["top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right"];
+
+function PositionSelect({ value, onChange }: { value: PositionPreset; onChange: (value: PositionPreset) => void }) {
+  return (
+    <label className="field">
+      <span>Position</span>
+      <select value={value} onChange={(event) => onChange(event.target.value as PositionPreset)}>
+        {positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -1129,6 +1336,33 @@ function TeamFields({
           {media.map((item) => <option key={item.id} value={item.id}>{item.originalFilename}</option>)}
         </select>
       </div>
+      <div className="image-crop-controls">
+        <div className="panel-heading compact">
+          <h3>Image crop</h3>
+          <p className="muted">Applied anywhere this team image replaces a flag.</p>
+        </div>
+        <div className="crop-preview" style={{ "--team-primary": team.primaryColor, "--team-secondary": team.secondaryColor } as React.CSSProperties}>
+          {team.logoUrl ? (
+            <img
+              src={mediaApi.mediaUrl(team.logoUrl)}
+              alt=""
+              style={{
+                transform: `translate(${team.imageCrop.x}px, ${team.imageCrop.y}px) scale(${team.imageCrop.zoom})`
+              }}
+            />
+          ) : (
+            <span>{(team.abbreviation || team.shortName || "?").slice(0, 2)}</span>
+          )}
+        </div>
+        <div className="three-col">
+          <NumberField label="X" value={team.imageCrop.x} onChange={(value) => onChange({ imageCrop: { ...team.imageCrop, x: value } })} />
+          <NumberField label="Y" value={team.imageCrop.y} onChange={(value) => onChange({ imageCrop: { ...team.imageCrop, y: value } })} />
+          <label className="field">
+            <span>Zoom</span>
+            <input type="number" min="0.25" step="0.05" value={team.imageCrop.zoom} onChange={(event) => onChange({ imageCrop: { ...team.imageCrop, zoom: Math.max(0.25, Number(event.target.value)) } })} />
+          </label>
+        </div>
+      </div>
       <label className="field">
         <span>Roster</span>
         <textarea className="roster-textarea" value={team.rosterText} onChange={(e) => onChange({ rosterText: e.target.value })} placeholder="10 Max Grenham" />
@@ -1156,124 +1390,6 @@ function TeamPanel({
       <h2>{title}</h2>
       <TeamFields team={team} media={media} onChange={onChange} />
       <p className="muted" style={{ marginTop: 10 }}>{side === "home" ? "Home" : "Away"} roster lines are parsed into lineup entries automatically.</p>
-    </div>
-  );
-}
-
-function StatControls({
-  label,
-  homeLabel,
-  awayLabel,
-  home,
-  away,
-  onHome,
-  onAway
-}: {
-  label: string;
-  homeLabel: string;
-  awayLabel: string;
-  home: number;
-  away: number;
-  onHome: (delta: number) => void;
-  onAway: (delta: number) => void;
-}) {
-  return (
-    <section className="stat-control">
-      <h3>{label}</h3>
-      <div className="stat-control-row">
-        <span>{homeLabel}</span>
-        <strong>{home}</strong>
-        <button className="button" type="button" onClick={() => onHome(-1)}>-1</button>
-        <button className="button primary" type="button" onClick={() => onHome(1)}>+1</button>
-      </div>
-      <div className="stat-control-row">
-        <span>{awayLabel}</span>
-        <strong>{away}</strong>
-        <button className="button" type="button" onClick={() => onAway(-1)}>-1</button>
-        <button className="button primary" type="button" onClick={() => onAway(1)}>+1</button>
-      </div>
-    </section>
-  );
-}
-
-function GraphicTriggerForm({ state, runAction }: { state: SoccerState; runAction: (action: string, payload?: Record<string, unknown>) => Promise<void> }) {
-  const [kind, setKind] = useState("trigger-goal");
-  const [team, setTeam] = useState<"home" | "away">("home");
-  const [playerId, setPlayerId] = useState("");
-  const [title, setTitle] = useState("Goal");
-  const [subtitle, setSubtitle] = useState("");
-  const [durationSeconds, setDurationSeconds] = useState(5);
-  const roster = state[team].roster;
-
-  useEffect(() => {
-    setTitle(defaultGraphicTitle(kind));
-    setSubtitle("");
-    setPlayerId("");
-  }, [kind]);
-
-  async function trigger() {
-    const selectedPlayer = roster.find((player) => player.id === playerId);
-    const playerText = selectedPlayer ? selectedPlayer.number ? `#${selectedPlayer.number} ${selectedPlayer.name}` : selectedPlayer.name : "";
-    await runAction(kind, {
-      team,
-      title: title.trim() || defaultGraphicTitle(kind),
-      subtitle: subtitle.trim() || playerText || (kind === "trigger-goal" ? state[team].shortName : ""),
-      label: graphicLabel(kind),
-      durationSeconds
-    });
-  }
-
-  return (
-    <div className="panel">
-      <h2>Game graphics</h2>
-      <div className="form-grid">
-        <div className="two-col">
-          <label className="field">
-            <span>Graphic</span>
-            <select value={kind} onChange={(event) => setKind(event.target.value)}>
-              <option value="trigger-goal">Goal</option>
-              <option value="trigger-yellow-card">Yellow card</option>
-              <option value="trigger-red-card">Red card</option>
-              <option value="trigger-substitution">Substitution</option>
-              <option value="trigger-halftime">Halftime</option>
-              <option value="trigger-full-time">Full time</option>
-              <option value="trigger-lineups">Lineups</option>
-              <option value="trigger-sponsor">Sponsor</option>
-              <option value="trigger-lower-third">Lower third</option>
-              <option value="trigger-countdown">Countdown</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Team</span>
-            <select value={team} onChange={(event) => setTeam(event.target.value as "home" | "away")}>
-              <option value="home">{state.home.abbreviation}</option>
-              <option value="away">{state.away.abbreviation}</option>
-            </select>
-          </label>
-        </div>
-        <label className="field">
-          <span>Player</span>
-          <select value={playerId} onChange={(event) => setPlayerId(event.target.value)}>
-            <option value="">No player</option>
-            {roster.map((player) => <option key={player.id} value={player.id}>{player.number ? `#${player.number} ${player.name}` : player.name}</option>)}
-          </select>
-        </label>
-        <div className="two-col">
-          <label className="field">
-            <span>Title</span>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} />
-          </label>
-          <label className="field">
-            <span>Duration seconds</span>
-            <input type="number" min="0" value={durationSeconds} onChange={(event) => setDurationSeconds(Math.max(0, Number(event.target.value)))} />
-          </label>
-        </div>
-        <label className="field">
-          <span>Subtitle</span>
-          <input value={subtitle} onChange={(event) => setSubtitle(event.target.value)} placeholder="Optional. Player is used when blank." />
-        </label>
-        <button className="button primary" type="button" onClick={() => void trigger()}><Film size={17} /> Take graphic</button>
-      </div>
     </div>
   );
 }
@@ -1456,26 +1572,6 @@ function dateTimeLocalValue(value: string): string {
   if (Number.isNaN(date.getTime())) return "";
   const offsetMs = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function defaultGraphicTitle(action: string): string {
-  const titles: Record<string, string> = {
-    "trigger-goal": "Goal",
-    "trigger-yellow-card": "Yellow Card",
-    "trigger-red-card": "Red Card",
-    "trigger-substitution": "Substitution",
-    "trigger-halftime": "Halftime",
-    "trigger-full-time": "Full Time",
-    "trigger-lineups": "Starting XI",
-    "trigger-sponsor": "Sponsor",
-    "trigger-lower-third": "Lower Third",
-    "trigger-countdown": "Countdown"
-  };
-  return titles[action] || "Graphic";
-}
-
-function graphicLabel(action: string): string {
-  return defaultGraphicTitle(action).toUpperCase();
 }
 
 function titleCaseFirst(value: string): string {

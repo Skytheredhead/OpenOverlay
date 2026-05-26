@@ -11,6 +11,19 @@ export type PositionPreset =
 
 export type StyleVariant = "clean" | "glass" | "stripe" | "broadcast" | "neon";
 export type AnimationIntensity = "subtle" | "standard" | "flashy";
+export type SoccerOverlayPackage = "rounded" | "classic";
+export type SoccerLabOverlay =
+  | "full-matchup"
+  | "lower-matchup"
+  | "lower-result"
+  | "lineup-panel"
+  | "scorebug"
+  | "countdown-timer"
+  | "one-line-text"
+  | "two-line-text";
+export type SoccerPackageSurface = "pitch" | "checker" | "studio";
+export type SoccerBugLayout = "horizontal" | "vertical";
+export type SoccerTimerMode = "full" | "small";
 
 export interface GlobalStyle {
   font: string;
@@ -60,12 +73,19 @@ export interface TeamRecord {
   draws: number;
 }
 
+export interface TeamImageCrop {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
 export interface SoccerTeam {
   fullName: string;
   shortName: string;
   abbreviation: string;
   logoMediaId?: string;
   logoUrl?: string;
+  imageCrop: TeamImageCrop;
   primaryColor: string;
   secondaryColor: string;
   rosterText: string;
@@ -98,6 +118,35 @@ export interface SoccerStats {
   shots: { home: number; away: number };
   fouls: { home: number; away: number };
   cards: { home: number; away: number };
+}
+
+export interface SoccerCountdownPackageState {
+  seconds: number;
+  resetSeconds: number;
+  running: boolean;
+  startedAtMs: number | null;
+  mode: SoccerTimerMode;
+  position: PositionPreset;
+}
+
+export interface SoccerOverlayPackageState {
+  overlayPackage: SoccerOverlayPackage;
+  activeOverlay: SoccerLabOverlay | null;
+  selectedOverlay: SoccerLabOverlay;
+  surface: SoccerPackageSurface;
+  packageBackground: boolean;
+  packageBackgroundOpacity: number;
+  scorebugLayout: SoccerBugLayout;
+  scorebugWidth: number;
+  lowerResultState: "HALF" | "FINAL";
+  countdown: SoccerCountdownPackageState;
+  oneLineText: string;
+  oneLinePosition: PositionPreset;
+  twoLineTextA: string;
+  twoLineTextB: string;
+  twoLinePosition: PositionPreset;
+  lineupTeam: "home" | "away";
+  lineupPage: number;
 }
 
 export type GraphicKind =
@@ -145,6 +194,7 @@ export interface SoccerState {
   stats: SoccerStats;
   clock: SoccerClockState;
   style: GlobalStyle;
+  soccerPackage: SoccerOverlayPackageState;
   elements: {
     scorebug: OverlayElementConfig;
     statBug: OverlayElementConfig;
@@ -275,6 +325,7 @@ export function defaultTeam(side: "home" | "away"): SoccerTeam {
     fullName: side === "home" ? "OpenOverlay United" : "Skyline FC",
     shortName: side === "home" ? "United" : "Skyline",
     abbreviation: side === "home" ? "OOU" : "SKY",
+    imageCrop: defaultTeamImageCrop(),
     primaryColor: side === "home" ? "#0f766e" : "#334155",
     secondaryColor: side === "home" ? "#99f6e4" : "#facc15",
     rosterText,
@@ -282,6 +333,39 @@ export function defaultTeam(side: "home" | "away"): SoccerTeam {
     coach: side === "home" ? "Coach Harper" : "Coach Lane",
     schoolName: side === "home" ? "OpenOverlay High" : "Skyline Prep",
     record: { wins: 0, losses: 0, draws: 0 }
+  };
+}
+
+export function defaultTeamImageCrop(): TeamImageCrop {
+  return { x: 0, y: 0, zoom: 1 };
+}
+
+export function defaultSoccerPackageState(): SoccerOverlayPackageState {
+  return {
+    overlayPackage: "classic",
+    activeOverlay: "full-matchup",
+    selectedOverlay: "full-matchup",
+    surface: "pitch",
+    packageBackground: true,
+    packageBackgroundOpacity: 0.78,
+    scorebugLayout: "horizontal",
+    scorebugWidth: 66,
+    lowerResultState: "HALF",
+    countdown: {
+      seconds: 5 * 60,
+      resetSeconds: 5 * 60,
+      running: false,
+      startedAtMs: null,
+      mode: "full",
+      position: "bottom-right"
+    },
+    oneLineText: "Tonight on OpenOverlay",
+    oneLinePosition: "bottom-left",
+    twoLineTextA: "FIFA World Cup 2026",
+    twoLineTextB: "Argentina vs France",
+    twoLinePosition: "bottom-right",
+    lineupTeam: "home",
+    lineupPage: 0
   };
 }
 
@@ -315,15 +399,75 @@ export function createDefaultSoccerState(name = "Soccer"): SoccerState {
     },
     clock: defaultClock(),
     style: defaultGlobalStyle(),
+    soccerPackage: defaultSoccerPackageState(),
     elements: {
       scorebug: defaultElement("scorebug", "top-center", 720, 82, "broadcast"),
       statBug: defaultElement("statBug", "top-left", 330, 132, "glass"),
       sponsorBug: defaultElement("sponsorBug", "bottom-right", 260, 86, "clean"),
       lowerThird: defaultElement("lowerThird", "bottom-left", 760, 126, "stripe"),
       countdown: defaultElement("countdown", "bottom-center", 520, 126, "neon"),
-      fullscreen: defaultElement("fullscreen", "custom", 1920, 1080, "broadcast")
+      fullscreen: { ...defaultElement("fullscreen", "custom", 1920, 1080, "broadcast"), placement: { x: 0, y: 0, width: 1920, height: 1080, scale: 1, preset: "custom" } }
     },
     activeGraphics: []
+  };
+}
+
+export function normalizeTeam(team: SoccerTeam, side: "home" | "away" = "home"): SoccerTeam {
+  const fallback = defaultTeam(side);
+  return {
+    ...fallback,
+    ...team,
+    imageCrop: normalizeImageCrop(team.imageCrop),
+    record: { ...fallback.record, ...(team.record || {}) },
+    roster: parseRoster(team.rosterText ?? fallback.rosterText)
+  };
+}
+
+export function normalizeImageCrop(crop: Partial<TeamImageCrop> | undefined): TeamImageCrop {
+  return {
+    x: finiteNumber(crop?.x, 0),
+    y: finiteNumber(crop?.y, 0),
+    zoom: Math.max(0.25, finiteNumber(crop?.zoom, 1))
+  };
+}
+
+export function normalizeSoccerPackageState(packageState: Partial<SoccerOverlayPackageState> | undefined): SoccerOverlayPackageState {
+  const fallback = defaultSoccerPackageState();
+  const countdown = packageState?.countdown || fallback.countdown;
+  return {
+    ...fallback,
+    ...packageState,
+    overlayPackage: packageState?.overlayPackage === "rounded" ? "rounded" : "classic",
+    activeOverlay: isSoccerLabOverlay(packageState?.activeOverlay) ? packageState.activeOverlay : packageState?.activeOverlay === null ? null : fallback.activeOverlay,
+    selectedOverlay: isSoccerLabOverlay(packageState?.selectedOverlay) ? packageState.selectedOverlay : fallback.selectedOverlay,
+    surface: packageState?.surface === "checker" || packageState?.surface === "studio" ? packageState.surface : "pitch",
+    packageBackgroundOpacity: clamp(finiteNumber(packageState?.packageBackgroundOpacity, fallback.packageBackgroundOpacity), 0, 1),
+    scorebugLayout: packageState?.scorebugLayout === "vertical" ? "vertical" : "horizontal",
+    scorebugWidth: clamp(finiteNumber(packageState?.scorebugWidth, fallback.scorebugWidth), 44, 82),
+    lowerResultState: packageState?.lowerResultState === "FINAL" ? "FINAL" : "HALF",
+    countdown: {
+      ...fallback.countdown,
+      ...countdown,
+      seconds: clamp(Math.floor(finiteNumber(countdown.seconds, fallback.countdown.seconds)), 0, 35_999),
+      resetSeconds: clamp(Math.floor(finiteNumber(countdown.resetSeconds, countdown.seconds ?? fallback.countdown.resetSeconds)), 0, 35_999),
+      running: Boolean(countdown.running),
+      startedAtMs: typeof countdown.startedAtMs === "number" ? countdown.startedAtMs : null,
+      mode: countdown.mode === "small" ? "small" : "full",
+      position: isPositionPreset(countdown.position) ? countdown.position : "bottom-right"
+    },
+    oneLinePosition: isPositionPreset(packageState?.oneLinePosition) ? packageState.oneLinePosition : fallback.oneLinePosition,
+    twoLinePosition: isPositionPreset(packageState?.twoLinePosition) ? packageState.twoLinePosition : fallback.twoLinePosition,
+    lineupTeam: packageState?.lineupTeam === "away" ? "away" : "home",
+    lineupPage: Math.max(0, Math.floor(finiteNumber(packageState?.lineupPage, 0)))
+  };
+}
+
+export function normalizeSoccerState(state: SoccerState): SoccerState {
+  return {
+    ...state,
+    home: normalizeTeam(state.home, "home"),
+    away: normalizeTeam(state.away, "away"),
+    soccerPackage: normalizeSoccerPackageState(state.soccerPackage)
   };
 }
 
@@ -370,6 +514,31 @@ export function createDefaultPresetState(type: PresetType, name: string): Preset
   if (type === "soccer") return createDefaultSoccerState(name);
   if (type === "church") return createDefaultChurchState(name);
   return createDefaultCustomState(name);
+}
+
+function isSoccerLabOverlay(value: unknown): value is SoccerLabOverlay {
+  return typeof value === "string" && [
+    "full-matchup",
+    "lower-matchup",
+    "lower-result",
+    "lineup-panel",
+    "scorebug",
+    "countdown-timer",
+    "one-line-text",
+    "two-line-text"
+  ].includes(value);
+}
+
+function isPositionPreset(value: unknown): value is PositionPreset {
+  return typeof value === "string" && ["top-center", "top-left", "top-right", "bottom-center", "bottom-left", "bottom-right", "custom"].includes(value);
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 export function computeClockSeconds(clock: SoccerClockState, nowMs = Date.now()): number {

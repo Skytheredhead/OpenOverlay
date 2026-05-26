@@ -8,6 +8,8 @@ import { imageSize } from "image-size";
 import {
   createDefaultPresetState,
   defaultTeam,
+  normalizeImageCrop,
+  normalizeTeam,
   parseRoster,
   parseClockTime,
   setClockSeconds,
@@ -496,7 +498,7 @@ function serializeMedia(row: MediaRow) {
 }
 
 function serializeTeam(row: TeamRow): TeamLibraryEntry {
-  return parseTeam(row);
+  return normalizeTeam(parseTeam(row)) as TeamLibraryEntry;
 }
 
 function sanitizeTeamInput(body: Record<string, unknown>, fallback = defaultTeam("home")): Omit<TeamLibraryEntry, "id" | "createdAt" | "updatedAt"> {
@@ -509,6 +511,7 @@ function sanitizeTeamInput(body: Record<string, unknown>, fallback = defaultTeam
     abbreviation: stringField(body.abbreviation, fallback.abbreviation || shortName.slice(0, 3)).toUpperCase().slice(0, 5),
     logoMediaId: Object.hasOwn(body, "logoMediaId") ? optionalStringField(body.logoMediaId) : fallback.logoMediaId,
     logoUrl: Object.hasOwn(body, "logoUrl") ? optionalStringField(body.logoUrl) : fallback.logoUrl,
+    imageCrop: normalizeImageCrop(isRecord(body.imageCrop) ? body.imageCrop : fallback.imageCrop),
     primaryColor: colorField(body.primaryColor, fallback.primaryColor),
     secondaryColor: colorField(body.secondaryColor, fallback.secondaryColor),
     rosterText,

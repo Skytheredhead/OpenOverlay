@@ -9,6 +9,7 @@ import {
   createDefaultPresetState,
   defaultElement,
   makeId,
+  normalizeSoccerState,
   parseRoster,
   pauseClock,
   resetClock,
@@ -33,6 +34,15 @@ export type PresetAction =
   | "trigger-sponsor"
   | "trigger-lower-third"
   | "trigger-countdown"
+  | "show-overlay"
+  | "hide-overlay"
+  | "select-overlay"
+  | "countdown-toggle"
+  | "countdown-start"
+  | "countdown-stop"
+  | "countdown-reset"
+  | "lineup-next"
+  | "lineup-prev"
   | "clear";
 
 export function isSoccerState(state: PresetState): state is SoccerState {
@@ -44,12 +54,33 @@ export function isChurchState(state: PresetState): state is ChurchState {
 }
 
 export function materializeState(state: PresetState, nowMs = Date.now()): PresetState {
-  const pruned = withoutExpiredGraphics(state as PresetState & { activeGraphics: ActiveGraphic[] }, nowMs);
-  if (isSoccerState(pruned) && pruned.clock.running && clockIsAtStop(pruned.clock, nowMs)) {
-    return {
-      ...pruned,
-      clock: pauseClock(pruned.clock, nowMs)
-    };
+  let pruned = withoutExpiredGraphics(state as PresetState & { activeGraphics: ActiveGraphic[] }, nowMs);
+  if (isSoccerState(pruned)) {
+    pruned = normalizeSoccerState(pruned);
+    if (pruned.clock.running && clockIsAtStop(pruned.clock, nowMs)) {
+      pruned = {
+        ...pruned,
+        clock: pauseClock(pruned.clock, nowMs)
+      };
+    }
+    const countdown = pruned.soccerPackage.countdown;
+    if (countdown.running && countdown.startedAtMs !== null) {
+      const elapsed = Math.max(0, Math.floor((nowMs - countdown.startedAtMs) / 1000));
+      if (countdown.seconds - elapsed <= 0) {
+        pruned = {
+          ...pruned,
+          soccerPackage: {
+            ...pruned.soccerPackage,
+            countdown: {
+              ...countdown,
+              seconds: 0,
+              running: false,
+              startedAtMs: null
+            }
+          }
+        };
+      }
+    }
   }
   return pruned;
 }
@@ -59,6 +90,7 @@ export function mergePresetState(existing: PresetState, patch: Partial<PresetSta
   if (isSoccerState(next)) {
     next.home.roster = parseRoster(next.home.rosterText);
     next.away.roster = parseRoster(next.away.rosterText);
+    return normalizeSoccerState(next);
   }
   return next;
 }
@@ -86,11 +118,13 @@ export function cloneStateForShare(state: PresetState): PresetState {
 }
 
 export function ensurePresetState(type: "soccer" | "church" | "custom", name: string, state?: PresetState): PresetState {
-  return state || createDefaultPresetState(type, name);
+  const ensured = state || createDefaultPresetState(type, name);
+  return isSoccerState(ensured) ? normalizeSoccerState(ensured) : ensured;
 }
 
 function applySoccerAction(state: SoccerState, action: PresetAction, payload: Record<string, unknown>, nowMs: number): SoccerState {
-  const next: SoccerState = { ...state, score: { ...state.score }, clock: { ...state.clock } };
+  const current = normalizeSoccerState(state);
+  const next: SoccerState = { ...current, score: { ...current.score }, clock: { ...current.clock }, soccerPackage: structuredClone(current.soccerPackage) };
 
   if (action === "home-score-plus") next.score.home += 1;
   if (action === "home-score-minus") next.score.home = Math.max(0, next.score.home - 1);
@@ -105,61 +139,92 @@ function applySoccerAction(state: SoccerState, action: PresetAction, payload: Re
     next.clock = resetClock(next.clock);
   }
 
-  const lowerPlacement = next.elements.lowerThird.placement;
-  const fullscreenPlacement = next.elements.fullscreen.placement;
-
-  if (action === "trigger-goal") {
-    const team = typeof payload.team === "string" ? payload.team : "home";
-    const teamName = team === "away" ? next.away.shortName : next.home.shortName;
-    const title = textPayload(payload.title, "GOAL");
-    const subtitle = textPayload(payload.subtitle, teamName);
-    return withToggledGraphic(next, makeGraphic("goal", title, subtitle, fullscreenPlacement, { ...payload, team }, nowMs));
+  if (action === "show-overlay" || action === "select-overlay") {
+    const overlay = typeof payload.overlay === "string" ? payload.overlay : undefined;
+    if (isLabOverlay(overlay)) {
+      next.soccerPackage = { ...next.soccerPackage, activeOverlay: overlay, selectedOverlay: overlay };
+    }
   }
 
-  if (action === "trigger-yellow-card") {
-    return withToggledGraphic(next, makeGraphic("yellow-card", textPayload(payload.title, "Yellow Card"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
+  if (action === "hide-overlay") {
+    const overlay = typeof payload.overlay === "string" ? payload.overlay : undefined;
+    next.soccerPackage = {
+      ...next.soccerPackage,
+      activeOverlay: overlay && next.soccerPackage.activeOverlay !== overlay ? next.soccerPackage.activeOverlay : null,
+      selectedOverlay: isLabOverlay(overlay) ? overlay : next.soccerPackage.selectedOverlay
+    };
   }
 
-  if (action === "trigger-red-card") {
-    return withToggledGraphic(next, makeGraphic("red-card", textPayload(payload.title, "Red Card"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
+  if (action === "countdown-toggle" || action === "countdown-start") {
+    next.soccerPackage = { ...next.soccerPackage, activeOverlay: "countdown-timer", selectedOverlay: "countdown-timer" };
+    next.soccerPackage.countdown = startPackageCountdown(next.soccerPackage.countdown, nowMs);
   }
 
-  if (action === "trigger-substitution") {
-    return withToggledGraphic(next, makeGraphic("substitution", textPayload(payload.title, "Substitution"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
+  if (action === "countdown-toggle" && state.soccerPackage?.countdown?.running) {
+    next.soccerPackage.countdown = stopPackageCountdown(next.soccerPackage.countdown, nowMs);
   }
 
-  if (action === "trigger-halftime") {
-    return withToggledGraphic(next, makeGraphic("halftime", textPayload(payload.title, "Halftime"), `${next.home.shortName} ${next.score.home} - ${next.score.away} ${next.away.shortName}`, fullscreenPlacement, payload, nowMs));
+  if (action === "countdown-stop") {
+    next.soccerPackage.countdown = stopPackageCountdown(next.soccerPackage.countdown, nowMs);
   }
 
-  if (action === "trigger-full-time") {
-    return withToggledGraphic(next, makeGraphic("fullscreen", textPayload(payload.title, "Full Time"), `${next.home.shortName} ${next.score.home} - ${next.score.away} ${next.away.shortName}`, fullscreenPlacement, payload, nowMs));
+  if (action === "countdown-reset") {
+    next.soccerPackage.countdown = {
+      ...next.soccerPackage.countdown,
+      seconds: next.soccerPackage.countdown.resetSeconds,
+      running: false,
+      startedAtMs: null
+    };
   }
 
-  if (action === "trigger-lineups") {
-    const team = payload.team === "away" ? next.away : next.home;
-    return withToggledGraphic(next, makeGraphic("lineups", textPayload(payload.title, `${team.shortName} Lineup`), textPayload(payload.subtitle, team.roster.slice(0, 11).map((player) => player.number ? `#${player.number} ${player.name}` : player.name).join("  ·  ")), fullscreenPlacement, payload, nowMs));
-  }
-
-  if (action === "trigger-sponsor") {
-    return withToggledGraphic(next, makeGraphic("sponsor", textPayload(payload.title, "Sponsor"), textPayload(payload.subtitle, ""), next.elements.sponsorBug.placement, payload, nowMs));
-  }
-
-  if (action === "trigger-lower-third") {
-    return withToggledGraphic(next, makeGraphic("lower-third", textPayload(payload.title, "Lower Third"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
+  if (action === "lineup-next" || action === "lineup-prev") {
+    const team = next.soccerPackage.lineupTeam === "away" ? next.away : next.home;
+    const totalPages = Math.max(1, Math.ceil(team.roster.length / 6));
+    const step = action === "lineup-next" ? 1 : -1;
+    next.soccerPackage.lineupPage = (next.soccerPackage.lineupPage + step + totalPages) % totalPages;
+    next.soccerPackage.activeOverlay = "lineup-panel";
+    next.soccerPackage.selectedOverlay = "lineup-panel";
   }
 
   if (action === "trigger-countdown") {
-    return withToggledGraphic(next, makeGraphic("countdown", textPayload(payload.title, "Countdown"), textPayload(payload.subtitle, "Next segment"), next.elements.countdown.placement, payload, nowMs));
+    next.soccerPackage = { ...next.soccerPackage, activeOverlay: "countdown-timer", selectedOverlay: "countdown-timer" };
+    next.soccerPackage.countdown = startPackageCountdown(next.soccerPackage.countdown, nowMs);
   }
 
   return next;
 }
 
-function withToggledGraphic(state: SoccerState, graphic: ActiveGraphic): SoccerState {
+function isLabOverlay(value: unknown): value is SoccerState["soccerPackage"]["selectedOverlay"] {
+  return typeof value === "string" && [
+    "full-matchup",
+    "lower-matchup",
+    "lower-result",
+    "lineup-panel",
+    "scorebug",
+    "countdown-timer",
+    "one-line-text",
+    "two-line-text"
+  ].includes(value);
+}
+
+function startPackageCountdown(countdown: SoccerState["soccerPackage"]["countdown"], nowMs: number): SoccerState["soccerPackage"]["countdown"] {
+  if (countdown.running) return countdown;
   return {
-    ...state,
-    activeGraphics: toggleGraphic(state.activeGraphics, graphic)
+    ...countdown,
+    seconds: countdown.seconds <= 0 ? countdown.resetSeconds : countdown.seconds,
+    running: true,
+    startedAtMs: nowMs
+  };
+}
+
+function stopPackageCountdown(countdown: SoccerState["soccerPackage"]["countdown"], nowMs: number): SoccerState["soccerPackage"]["countdown"] {
+  if (!countdown.running || countdown.startedAtMs === null) return { ...countdown, running: false, startedAtMs: null };
+  const elapsed = Math.max(0, Math.floor((nowMs - countdown.startedAtMs) / 1000));
+  return {
+    ...countdown,
+    seconds: Math.max(0, countdown.seconds - elapsed),
+    running: false,
+    startedAtMs: null
   };
 }
 
@@ -172,6 +237,17 @@ function toggleGraphic(activeGraphics: ActiveGraphic[], graphic: ActiveGraphic):
 }
 
 function clearTemporaryGraphics<T extends PresetState>(state: T): T {
+  if (isSoccerState(state)) {
+    return {
+      ...state,
+      soccerPackage: {
+        ...normalizeSoccerState(state).soccerPackage,
+        activeOverlay: null,
+        countdown: { ...normalizeSoccerState(state).soccerPackage.countdown, running: false, startedAtMs: null }
+      },
+      activeGraphics: []
+    };
+  }
   return {
     ...state,
     activeGraphics: []
@@ -202,10 +278,6 @@ function makeGraphic(
     expiresAtMs: payload.durationSeconds === 0 ? null : nowMs + durationMs,
     payload
   };
-}
-
-function textPayload(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
 function deepMerge(target: unknown, source: unknown): unknown {
