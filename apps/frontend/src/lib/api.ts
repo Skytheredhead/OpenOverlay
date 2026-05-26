@@ -1,6 +1,8 @@
 import type { PresetState, PresetSummary, PresetType, TeamLibraryEntry } from "@openoverlay/shared";
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8734";
+const DEFAULT_API_HOST = window.location.hostname === "127.0.0.1" ? "http://127.0.0.1:8734" : "http://localhost:8734";
+
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_HOST;
 export const WS_URL = import.meta.env.VITE_WS_URL || API_BASE.replace(/^http/, "ws");
 
 export interface User {

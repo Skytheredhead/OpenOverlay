@@ -25,7 +25,9 @@ import {
   computeClockSeconds,
   createDefaultChurchState,
   createDefaultSoccerState,
+  defaultTeam,
   formatClock,
+  parseRoster,
   parseClockTime,
   placementForPreset,
   setClockSeconds,
@@ -42,7 +44,7 @@ import {
 } from "@openoverlay/shared";
 import { getElementById, OverlayRenderer, updateElementPlacement } from "./components/OverlayRenderer";
 import { API_BASE, WS_URL, authApi, mediaApi, overlayApi, presetApi, teamApi, type MediaItem, type User } from "./lib/api";
-import { useDebouncedCallback, useLocalStorage } from "./lib/hooks";
+import { useDebouncedCallback } from "./lib/hooks";
 
 interface AuthContextValue {
   user: User | null;
@@ -285,10 +287,10 @@ function Login({ mode }: { mode: "login" | "signup" }) {
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const { logout, user } = useAuth();
-  const [layouts, setLayouts] = useState<PresetSummary[]>([]);
+  const [games, setGames] = useState<PresetSummary[]>([]);
 
   useEffect(() => {
-    void presetApi.list().then((response) => setLayouts(response.presets)).catch(() => setLayouts([]));
+    void presetApi.list().then((response) => setGames(response.presets)).catch(() => setGames([]));
   }, []);
 
   return (
@@ -299,12 +301,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <span>OpenOverlay</span>
         </Link>
         <nav>
-          <NavLink to="/dash" end><LayoutDashboard size={18} /> <span className="nav-label">Layouts</span></NavLink>
-          {layouts.length > 0 ? (
-            <div className="sidebar-subnav" aria-label="Layouts">
-              {layouts.map((layout) => (
-                <NavLink key={layout.id} to={`/dash/presets/${layout.id}`}>
-                  <span className="nav-label">{layout.name}</span>
+          <NavLink to="/dash" end><LayoutDashboard size={18} /> <span className="nav-label">Games</span></NavLink>
+          {games.length > 0 ? (
+            <div className="sidebar-subnav" aria-label="Active games">
+              {games.map((game) => (
+                <NavLink key={game.id} to={`/dash/presets/${game.id}`}>
+                  <span className="nav-label">{game.name}</span>
                 </NavLink>
               ))}
             </div>
@@ -340,10 +342,10 @@ function Dashboard() {
 
   async function createPreset() {
     const name = await prompt({
-      title: "New layout",
-      label: "Layout name",
-      defaultValue: type === "soccer" ? "Soccer" : type === "church" ? "Church Sunday" : "Custom",
-      submitLabel: "Create layout"
+      title: type === "soccer" ? "New game" : "New service",
+      label: type === "soccer" ? "Game name" : "Production name",
+      defaultValue: type === "soccer" ? "Soccer Game" : type === "church" ? "Church Sunday" : "Custom",
+      submitLabel: type === "soccer" ? "Create game" : "Create"
     });
     const trimmedName = name?.trim();
     if (!trimmedName) return;
@@ -352,7 +354,7 @@ function Dashboard() {
       const response = await presetApi.create(trimmedName, type);
       navigate(`/dash/presets/${response.preset.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create layout");
+      setError(err instanceof Error ? err.message : "Could not create game");
     }
   }
 
@@ -360,8 +362,8 @@ function Dashboard() {
     <>
       <div className="page-title">
         <div>
-          <h1>Layouts</h1>
-          <p className="muted">Tabs for games, services, productions, and one-off overlay packages.</p>
+          <h1>Games</h1>
+          <p className="muted">Game-day control rooms, service productions, and one-off overlay packages.</p>
         </div>
         <div className="control-row">
           <select className="number-input" value={type} onChange={(event) => setType(event.target.value as PresetType)}>
@@ -369,7 +371,7 @@ function Dashboard() {
             <option value="church">Church</option>
             <option value="custom">Custom</option>
           </select>
-          <button className="button primary" onClick={() => void createPreset()}><Plus size={17} /> New layout</button>
+          <button className="button primary" onClick={() => void createPreset()}><Plus size={17} /> {type === "soccer" ? "New game" : "New production"}</button>
         </div>
       </div>
       {error ? <div className="error">{error}</div> : null}
@@ -377,7 +379,7 @@ function Dashboard() {
         {presets.map((preset) => (
           <article className="preset-card" key={preset.id}>
             <h2>{preset.name}</h2>
-            <p>{preset.type} layout</p>
+            <p>{preset.type === "soccer" ? "soccer game" : `${preset.type} production`}</p>
             <p className="muted">Overlay clients: {preset.overlayClientCount || 0}</p>
             <div className="control-row">
               <Link className="button primary" to={`/dash/presets/${preset.id}`}>Edit</Link>
@@ -535,7 +537,7 @@ function PresetEditor() {
   const [preset, setPreset] = useState<PresetSummary | null>(null);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
-  const [tab, setTab] = useState("control");
+  const [tab, setTab] = useState("live");
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -548,10 +550,10 @@ function PresetEditor() {
 
   const selectedElement = useMemo(() => {
     if (!preset) return undefined;
-    if (isSoccerState(preset.state)) return preset.state.elements.scorebug;
+    if (isSoccerState(preset.state)) return tab === "design" ? preset.state.elements.scorebug : undefined;
     if (isChurchState(preset.state)) return preset.state.elements.lowerThird;
     return undefined;
-  }, [preset]);
+  }, [preset, tab]);
 
   const load = useCallback(async () => {
     if (!presetId) return;
@@ -566,6 +568,12 @@ function PresetEditor() {
   useEffect(() => {
     void load().catch((err) => setError(err.message));
   }, [load]);
+
+  useEffect(() => {
+    if (!preset) return;
+    if (preset.type === "soccer" && !["setup", "live", "design"].includes(tab)) setTab("live");
+    if (preset.type !== "soccer" && !["slides", "style"].includes(tab)) setTab("slides");
+  }, [preset, tab]);
 
   useEffect(() => {
     if (!presetId) return;
@@ -605,26 +613,36 @@ function PresetEditor() {
     if (persist) debouncedPersist(nextState);
   }, [debouncedPersist, historyIndex]);
 
+  const restoreHistory = useCallback((direction: "undo" | "redo") => {
+    if (!preset) return;
+    const nextIndex = direction === "redo" ? Math.min(history.length - 1, historyIndex + 1) : Math.max(0, historyIndex - 1);
+    const nextState = history[nextIndex];
+    if (!nextState || nextIndex === historyIndex) return;
+    setHistoryIndex(nextIndex);
+    setPreset({ ...preset, state: structuredClone(nextState) });
+    void presetApi.patch(preset.id, { state: nextState });
+  }, [history, historyIndex, preset]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key.toLowerCase() !== "z" || !preset) return;
       event.preventDefault();
-      const nextIndex = event.shiftKey ? Math.min(history.length - 1, historyIndex + 1) : Math.max(0, historyIndex - 1);
-      const nextState = history[nextIndex];
-      if (!nextState || nextIndex === historyIndex) return;
-      setHistoryIndex(nextIndex);
-      setPreset({ ...preset, state: structuredClone(nextState) });
-      void presetApi.patch(preset.id, { state: nextState });
+      restoreHistory(event.shiftKey ? "redo" : "undo");
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [history, historyIndex, preset]);
+  }, [preset, restoreHistory]);
 
   async function runAction(action: string, payload: Record<string, unknown> = {}) {
     if (!preset) return;
     const response = await presetApi.action(preset.id, action, payload);
     setPreset(response.preset);
+    setHistory((current) => {
+      const trimmed = current.slice(0, historyIndex + 1);
+      return [...trimmed, structuredClone(response.preset.state)].slice(-60);
+    });
+    setHistoryIndex((index) => Math.min(index + 1, 59));
   }
 
   async function duplicatePreset() {
@@ -636,7 +654,7 @@ function PresetEditor() {
   async function sharePreset() {
     if (!preset) return;
     const email = await prompt({
-      title: "Share layout",
+      title: "Share game",
       label: "Recipient email",
       inputType: "email",
       submitLabel: "Share"
@@ -646,10 +664,10 @@ function PresetEditor() {
     try {
       await presetApi.share(preset.id, trimmedEmail);
       setError(null);
-      setNotice("Layout duplicated into recipient account.");
+      setNotice("Game duplicated into recipient account.");
     } catch (err) {
       setNotice(null);
-      setError(err instanceof Error ? err.message : "Could not share layout");
+      setError(err instanceof Error ? err.message : "Could not share game");
     }
   }
 
@@ -682,15 +700,17 @@ function PresetEditor() {
     window.addEventListener("pointerup", onUp);
   }
 
-  if (!preset) return <div>Loading layout...</div>;
+  if (!preset) return <div>Loading game...</div>;
   const overlayUrl = `${window.location.origin}/overlay/${preset.publicId}`;
+  const soccerState = preset.type === "soccer" && isSoccerState(preset.state) ? preset.state : null;
+  const tabs = soccerState ? ["setup", "live", "design"] : ["slides", "style"];
 
   return (
     <>
       <div className="page-title">
         <div>
           <h1>{preset.name}</h1>
-          <p className="muted">{preset.type} layout · OBS URL: {overlayUrl}</p>
+          <p className="muted">{preset.type === "soccer" ? "soccer game" : `${preset.type} production`} · OBS URL: {overlayUrl}</p>
         </div>
         <div className="status-row">
           <span className={`status-pill ${connection === "connected" ? "ok" : "warn"}`}>{connection}</span>
@@ -713,7 +733,7 @@ function PresetEditor() {
           <div className="panel">
             <div className="control-row">
               <button className="button danger" onClick={() => void runAction("clear")}><ShieldAlert size={17} /> Panic clear</button>
-              <button className="button" onClick={() => setHistoryIndex(Math.max(0, historyIndex - 1))}><Undo2 size={17} /> Undo</button>
+              <button className="button" onClick={() => restoreHistory("undo")}><Undo2 size={17} /> Undo</button>
               <button className="button" onClick={() => void presetApi.patch(preset.id, { state: preset.state })}><Save size={17} /> Save</button>
               <button className="button" onClick={() => void rotateActionKey()}><Settings size={17} /> Action key</button>
             </div>
@@ -727,12 +747,12 @@ function PresetEditor() {
 
         <aside className="inspector">
           <div className="tabs">
-            {["control", "teams", "graphics", "style", "church"].map((item) => (
+            {tabs.map((item) => (
               <button key={item} className={`tab ${tab === item ? "active" : ""}`} onClick={() => setTab(item)}>{item}</button>
             ))}
           </div>
-          {preset.type === "soccer" && isSoccerState(preset.state) ? (
-            <SoccerControls state={preset.state} media={media} teams={teams} tab={tab} commitState={commitState} runAction={runAction} />
+          {soccerState ? (
+            <SoccerControls state={soccerState} media={media} teams={teams} tab={tab} commitState={commitState} runAction={runAction} />
           ) : null}
           {preset.type === "church" && isChurchState(preset.state) ? (
             <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} />
@@ -760,6 +780,7 @@ function SoccerControls({
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
   const clockValue = formatClock(computeClockSeconds(state.clock));
+  const activeGraphics = state.activeGraphics.filter((graphic) => graphic.expiresAtMs === null || graphic.expiresAtMs > Date.now());
 
   function update(patch: Partial<SoccerState>) {
     commitState({ ...state, ...patch });
@@ -779,28 +800,90 @@ function SoccerControls({
     update({ [side]: teamLibraryToSoccerTeam(team) } as Partial<SoccerState>);
   }
 
-  if (tab === "teams") {
+  function clearTeam(side: "home" | "away") {
+    const blank = defaultTeam(side);
+    update({
+      [side]: {
+        ...blank,
+        fullName: side === "home" ? "Home Team" : "Away Team",
+        shortName: side === "home" ? "HOME" : "AWAY",
+        abbreviation: side === "home" ? "HOME" : "AWAY",
+        rosterText: "",
+        roster: [],
+        coach: "",
+        schoolName: "",
+        record: { wins: 0, losses: 0, draws: 0 }
+      }
+    } as Partial<SoccerState>);
+  }
+
+  function refreshTeam(side: "home" | "away") {
+    const match = findSavedTeamMatch(state[side], teams);
+    if (match) applySavedTeam(side, match.id);
+  }
+
+  function swapTeams() {
+    update({ home: state.away, away: state.home });
+  }
+
+  function updateStat(key: keyof SoccerState["stats"], side: "home" | "away", delta: number) {
+    const current = state.stats[key][side];
+    update({
+      stats: {
+        ...state.stats,
+        [key]: {
+          ...state.stats[key],
+          [side]: Math.max(0, current + delta)
+        }
+      }
+    });
+  }
+
+  function updateGameInfo(patch: Partial<Pick<SoccerState, "gameTitle" | "productionName" | "scheduledAt">>) {
+    update(patch);
+  }
+
+  function clearGraphic(id: string) {
+    update({ activeGraphics: state.activeGraphics.filter((graphic) => graphic.id !== id) });
+  }
+
+  if (tab === "setup") {
     return (
       <>
-        <div className="panel">
-          <h2>Saved teams</h2>
-          <div className="two-col">
+        <div className="panel setup-panel">
+          <h2>Game setup</h2>
+          <div className="form-grid">
             <label className="field">
-              <span>Home team</span>
-              <select value="" onChange={(event) => applySavedTeam("home", event.target.value)}>
-                <option value="">Select saved team</option>
-                {teams.map((team) => <option key={team.id} value={team.id}>{team.fullName}</option>)}
-              </select>
+              <span>Game title</span>
+              <input value={state.gameTitle} onChange={(event) => updateGameInfo({ gameTitle: event.target.value })} />
             </label>
-            <label className="field">
-              <span>Away team</span>
-              <select value="" onChange={(event) => applySavedTeam("away", event.target.value)}>
-                <option value="">Select saved team</option>
-                {teams.map((team) => <option key={team.id} value={team.id}>{team.fullName}</option>)}
-              </select>
-            </label>
+            <div className="two-col">
+              <label className="field">
+                <span>Production</span>
+                <input value={state.productionName} onChange={(event) => updateGameInfo({ productionName: event.target.value })} />
+              </label>
+              <label className="field">
+                <span>Scheduled</span>
+                <input type="datetime-local" value={dateTimeLocalValue(state.scheduledAt)} onChange={(event) => {
+                  const nextDate = new Date(event.target.value);
+                  if (!Number.isNaN(nextDate.getTime())) updateGameInfo({ scheduledAt: nextDate.toISOString() });
+                }} />
+              </label>
+            </div>
           </div>
-          <p className="muted" style={{ marginTop: 10 }}>Selecting a saved team copies its profile into this game.</p>
+        </div>
+        <div className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Teams</h2>
+              <p className="muted">Saved teams are copied into this game, so game-day edits stay local to this game.</p>
+            </div>
+            <button className="button" type="button" onClick={swapTeams}>Swap teams</button>
+          </div>
+          <div className="two-col">
+            <TeamAssignmentCard side="home" team={state.home} teams={teams} onSelect={(id) => applySavedTeam("home", id)} onClear={() => clearTeam("home")} onRefresh={() => refreshTeam("home")} />
+            <TeamAssignmentCard side="away" team={state.away} teams={teams} onSelect={(id) => applySavedTeam("away", id)} onClear={() => clearTeam("away")} onRefresh={() => refreshTeam("away")} />
+          </div>
         </div>
         <TeamPanel title="Home team" side="home" team={state.home} media={media} onChange={(patch) => updateTeam("home", patch)} />
         <TeamPanel title="Away team" side="away" team={state.away} media={media} onChange={(patch) => updateTeam("away", patch)} />
@@ -808,81 +891,106 @@ function SoccerControls({
     );
   }
 
-  if (tab === "graphics") {
+  if (tab === "design") {
     return (
-      <div className="panel">
-        <h2>Temporary graphics</h2>
-        <div className="form-grid">
-          <GraphicButton label="Goal" action="trigger-goal" runAction={runAction} />
-          <GraphicButton label="Yellow card" action="trigger-yellow-card" runAction={runAction} />
-          <GraphicButton label="Red card" action="trigger-red-card" runAction={runAction} />
-          <GraphicButton label="Substitution" action="trigger-substitution" runAction={runAction} />
-          <GraphicButton label="Halftime" action="trigger-halftime" runAction={runAction} />
-          <GraphicButton label="Countdown" action="trigger-countdown" runAction={runAction} />
+      <>
+        <StylePanel state={state} commitState={commitState} />
+        <div className="panel">
+          <h2>Elements</h2>
+          <p className="muted">Drag the scorebug in the preview or adjust the selected element below.</p>
         </div>
-      </div>
+      </>
     );
-  }
-
-  if (tab === "style") {
-    return <StylePanel state={state} commitState={commitState} />;
   }
 
   return (
     <>
-      <div className="panel">
-        <h2>Score</h2>
-        <div className="two-col">
-          <ScoreControls label={state.home.abbreviation} plus={() => runAction("home-score-plus")} minus={() => runAction("home-score-minus")} />
-          <ScoreControls label={state.away.abbreviation} plus={() => runAction("away-score-plus")} minus={() => runAction("away-score-minus")} />
+      <div className="live-grid">
+        <div className="panel live-score-panel">
+          <h2>Score</h2>
+          <div className="two-col">
+            <ScoreControls label={state.home.abbreviation} score={state.score.home} plus={() => runAction("home-score-plus")} minus={() => runAction("home-score-minus")} />
+            <ScoreControls label={state.away.abbreviation} score={state.score.away} plus={() => runAction("away-score-plus")} minus={() => runAction("away-score-minus")} />
+          </div>
+        </div>
+        <div className="panel">
+          <h2>Clock</h2>
+          <div className="control-row">
+            <button className="button primary" onClick={() => runAction("clock-toggle")}>{state.clock.running ? <Pause size={17} /> : <Play size={17} />} {state.clock.running ? "Pause" : "Start"}</button>
+            <button className="button" onClick={() => runAction("clock-reset")}><RotateCcw size={17} /> Reset</button>
+          </div>
+          <div className="form-grid">
+            <label className="field">
+              <span>Manual time</span>
+              <input defaultValue={clockValue} onBlur={(event) => updateClock(setClockSeconds(state.clock, parseClockTime(event.target.value)))} />
+            </label>
+            <div className="two-col">
+              <label className="field">
+                <span>Mode</span>
+                <select value={state.clock.mode} onChange={(event) => updateClock({ mode: event.target.value as "up" | "down" })}>
+                  <option value="up">Count up</option>
+                  <option value="down">Count down</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Period</span>
+                <input value={state.clock.periodLabel} onChange={(event) => updateClock({ periodLabel: event.target.value })} />
+              </label>
+            </div>
+            <label className="field">
+              <span>Stop at</span>
+              <input defaultValue={formatClock(state.clock.stopAtSeconds)} onBlur={(event) => updateClock({ stopAtSeconds: parseClockTime(event.target.value) })} />
+            </label>
+            <div className="two-col">
+              <label className="field">
+                <span>Stoppage minutes</span>
+                <input type="number" min="0" value={state.clock.stoppageMinutes} onChange={(event) => updateClock({ stoppageMinutes: Math.max(0, Number(event.target.value)) })} />
+              </label>
+              <label className="control-row">
+                <input type="checkbox" checked={state.clock.stopAtEnabled} onChange={(event) => updateClock({ stopAtEnabled: event.target.checked })} />
+                Stop at enabled
+              </label>
+            </div>
+            <label className="control-row">
+              <input type="checkbox" checked={state.clock.showStoppage} onChange={(event) => updateClock({ showStoppage: event.target.checked })} />
+              Show stoppage time
+            </label>
+          </div>
         </div>
       </div>
       <div className="panel">
-        <h2>Clock</h2>
-        <div className="control-row">
-          <button className="button primary" onClick={() => runAction("clock-toggle")}>{state.clock.running ? <Pause size={17} /> : <Play size={17} />} {state.clock.running ? "Pause" : "Start"}</button>
-          <button className="button" onClick={() => runAction("clock-reset")}><RotateCcw size={17} /> Reset</button>
+        <h2>Stats</h2>
+        <div className="stats-control-grid">
+          {(["shots", "fouls", "cards"] as const).map((key) => (
+            <StatControls key={key} label={titleCaseFirst(key)} homeLabel={state.home.abbreviation} awayLabel={state.away.abbreviation} home={state.stats[key].home} away={state.stats[key].away} onHome={(delta) => updateStat(key, "home", delta)} onAway={(delta) => updateStat(key, "away", delta)} />
+          ))}
         </div>
-        <div className="form-grid">
-          <label className="field">
-            <span>Manual time</span>
-            <input defaultValue={clockValue} onBlur={(event) => updateClock(setClockSeconds(state.clock, parseClockTime(event.target.value)))} />
-          </label>
-          <div className="two-col">
-            <label className="field">
-              <span>Mode</span>
-              <select value={state.clock.mode} onChange={(event) => updateClock({ mode: event.target.value as "up" | "down" })}>
-                <option value="up">Count up</option>
-                <option value="down">Count down</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Period</span>
-              <input value={state.clock.periodLabel} onChange={(event) => updateClock({ periodLabel: event.target.value })} />
-            </label>
-          </div>
-          <label className="field">
-            <span>Stop at</span>
-            <input defaultValue={formatClock(state.clock.stopAtSeconds)} onBlur={(event) => updateClock({ stopAtSeconds: parseClockTime(event.target.value) })} />
-          </label>
-          <label className="control-row">
-            <input type="checkbox" checked={state.clock.stopAtEnabled} onChange={(event) => updateClock({ stopAtEnabled: event.target.checked })} />
-            Stop at enabled
-          </label>
-          <label className="control-row">
-            <input type="checkbox" checked={state.clock.showStoppage} onChange={(event) => updateClock({ showStoppage: event.target.checked })} />
-            Show stoppage time
-          </label>
+      </div>
+      <GraphicTriggerForm state={state} runAction={runAction} />
+      <div className="panel">
+        <h2>On air now</h2>
+        {activeGraphics.length === 0 ? <p className="muted">No temporary graphics are live.</p> : null}
+        <div className="on-air-list">
+          {activeGraphics.map((graphic) => (
+            <div className="on-air-item" key={graphic.id}>
+              <span>
+                <strong>{graphic.title}</strong>
+                <small>{graphic.kind.replace("-", " ")}</small>
+              </span>
+              <button className="button" type="button" onClick={() => clearGraphic(graphic.id)}><X size={16} /> Clear</button>
+            </div>
+          ))}
         </div>
       </div>
     </>
   );
 }
 
-function ScoreControls({ label, plus, minus }: { label: string; plus: () => void; minus: () => void }) {
+function ScoreControls({ label, score, plus, minus }: { label: string; score: number; plus: () => void; minus: () => void }) {
   return (
-    <div className="panel">
+    <div className="score-control">
       <h3>{label}</h3>
+      <strong>{score}</strong>
       <div className="control-row">
         <button className="button primary" onClick={plus}><Plus size={17} /> 1</button>
         <button className="button" onClick={minus}>-1</button>
@@ -896,6 +1004,48 @@ function TeamLogo({ team }: { team: SoccerState["home"] }) {
     <img className="team-library-logo" src={mediaApi.mediaUrl(team.logoUrl)} alt="" />
   ) : (
     <span className="team-library-logo fallback">{(team.abbreviation || team.shortName || "?").slice(0, 2)}</span>
+  );
+}
+
+function TeamAssignmentCard({
+  side,
+  team,
+  teams,
+  onSelect,
+  onClear,
+  onRefresh
+}: {
+  side: "home" | "away";
+  team: SoccerState["home"];
+  teams: TeamLibraryEntry[];
+  onSelect: (teamId: string) => void;
+  onClear: () => void;
+  onRefresh: () => void;
+}) {
+  const match = findSavedTeamMatch(team, teams);
+  return (
+    <section className="assignment-card" style={{ "--team-primary": team.primaryColor, "--team-secondary": team.secondaryColor } as React.CSSProperties}>
+      <div className="assignment-card-header">
+        <TeamLogo team={team} />
+        <span>
+          <small>{side}</small>
+          <strong>{team.fullName}</strong>
+          <em>{team.abbreviation} · {formatRecord(team.record)} · {team.roster.length} roster</em>
+        </span>
+      </div>
+      <label className="field">
+        <span>Assign saved team</span>
+        <select value="" onChange={(event) => onSelect(event.target.value)}>
+          <option value="">Select saved team</option>
+          {teams.map((item) => <option key={item.id} value={item.id}>{item.fullName}</option>)}
+        </select>
+      </label>
+      <div className="control-row">
+        <button className="button" type="button" onClick={onRefresh} disabled={!match}>Refresh from saved</button>
+        <button className="button" type="button" onClick={onClear}>Clear team</button>
+      </div>
+      <p className="muted">{match ? `Snapshot from ${match.fullName}.` : "No saved team match for refresh."}</p>
+    </section>
   );
 }
 
@@ -930,7 +1080,7 @@ function TeamFields({
   return (
     <div className="form-grid">
       <div className="two-col">
-        <label className="field"><span>Team</span><input value={titleCaseFirst(team.fullName)} onChange={(e) => onChange({ fullName: titleCaseFirst(e.target.value) })} /></label>
+        <label className="field"><span>Team name</span><input value={titleCaseFirst(team.fullName)} onChange={(e) => onChange({ fullName: titleCaseFirst(e.target.value) })} /></label>
         <label className="field"><span>Abbreviation</span><input value={team.abbreviation} onChange={(e) => onChange({ abbreviation: e.target.value.toUpperCase().slice(0, 5), shortName: e.target.value.toUpperCase().slice(0, 5) })} /></label>
       </div>
       <div className="record-color-row">
@@ -1010,26 +1160,121 @@ function TeamPanel({
   );
 }
 
-function GraphicButton({ label, action, runAction }: { label: string; action: string; runAction: (action: string, payload?: Record<string, unknown>) => Promise<void> }) {
-  const prompt = usePromptDialog();
+function StatControls({
+  label,
+  homeLabel,
+  awayLabel,
+  home,
+  away,
+  onHome,
+  onAway
+}: {
+  label: string;
+  homeLabel: string;
+  awayLabel: string;
+  home: number;
+  away: number;
+  onHome: (delta: number) => void;
+  onAway: (delta: number) => void;
+}) {
+  return (
+    <section className="stat-control">
+      <h3>{label}</h3>
+      <div className="stat-control-row">
+        <span>{homeLabel}</span>
+        <strong>{home}</strong>
+        <button className="button" type="button" onClick={() => onHome(-1)}>-1</button>
+        <button className="button primary" type="button" onClick={() => onHome(1)}>+1</button>
+      </div>
+      <div className="stat-control-row">
+        <span>{awayLabel}</span>
+        <strong>{away}</strong>
+        <button className="button" type="button" onClick={() => onAway(-1)}>-1</button>
+        <button className="button primary" type="button" onClick={() => onAway(1)}>+1</button>
+      </div>
+    </section>
+  );
+}
+
+function GraphicTriggerForm({ state, runAction }: { state: SoccerState; runAction: (action: string, payload?: Record<string, unknown>) => Promise<void> }) {
+  const [kind, setKind] = useState("trigger-goal");
+  const [team, setTeam] = useState<"home" | "away">("home");
+  const [playerId, setPlayerId] = useState("");
+  const [title, setTitle] = useState("Goal");
+  const [subtitle, setSubtitle] = useState("");
+  const [durationSeconds, setDurationSeconds] = useState(5);
+  const roster = state[team].roster;
+
+  useEffect(() => {
+    setTitle(defaultGraphicTitle(kind));
+    setSubtitle("");
+    setPlayerId("");
+  }, [kind]);
+
+  async function trigger() {
+    const selectedPlayer = roster.find((player) => player.id === playerId);
+    const playerText = selectedPlayer ? selectedPlayer.number ? `#${selectedPlayer.number} ${selectedPlayer.name}` : selectedPlayer.name : "";
+    await runAction(kind, {
+      team,
+      title: title.trim() || defaultGraphicTitle(kind),
+      subtitle: subtitle.trim() || playerText || (kind === "trigger-goal" ? state[team].shortName : ""),
+      label: graphicLabel(kind),
+      durationSeconds
+    });
+  }
 
   return (
-    <button
-      className="button"
-      onClick={() => {
-        void prompt({
-          title: `${label} graphic`,
-          label: "Display text",
-          defaultValue: label,
-          submitLabel: "Trigger"
-        }).then((title) => {
-          if (title === null) return;
-          void runAction(action, { title: title.trim() || label, durationSeconds: 5 });
-        });
-      }}
-    >
-      <Film size={17} /> {label}
-    </button>
+    <div className="panel">
+      <h2>Game graphics</h2>
+      <div className="form-grid">
+        <div className="two-col">
+          <label className="field">
+            <span>Graphic</span>
+            <select value={kind} onChange={(event) => setKind(event.target.value)}>
+              <option value="trigger-goal">Goal</option>
+              <option value="trigger-yellow-card">Yellow card</option>
+              <option value="trigger-red-card">Red card</option>
+              <option value="trigger-substitution">Substitution</option>
+              <option value="trigger-halftime">Halftime</option>
+              <option value="trigger-full-time">Full time</option>
+              <option value="trigger-lineups">Lineups</option>
+              <option value="trigger-sponsor">Sponsor</option>
+              <option value="trigger-lower-third">Lower third</option>
+              <option value="trigger-countdown">Countdown</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Team</span>
+            <select value={team} onChange={(event) => setTeam(event.target.value as "home" | "away")}>
+              <option value="home">{state.home.abbreviation}</option>
+              <option value="away">{state.away.abbreviation}</option>
+            </select>
+          </label>
+        </div>
+        <label className="field">
+          <span>Player</span>
+          <select value={playerId} onChange={(event) => setPlayerId(event.target.value)}>
+            <option value="">No player</option>
+            {roster.map((player) => <option key={player.id} value={player.id}>{player.number ? `#${player.number} ${player.name}` : player.name}</option>)}
+          </select>
+        </label>
+        <div className="two-col">
+          <label className="field">
+            <span>Title</span>
+            <input value={title} onChange={(event) => setTitle(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Duration seconds</span>
+            <input type="number" min="0" value={durationSeconds} onChange={(event) => setDurationSeconds(Math.max(0, Number(event.target.value)))} />
+          </label>
+        </div>
+        <label className="field">
+          <span>Subtitle</span>
+          <input value={subtitle} onChange={(event) => setSubtitle(event.target.value)} placeholder="Optional. Player is used when blank." />
+        </label>
+        <button className="button primary" type="button" onClick={() => void trigger()}><Film size={17} /> Take graphic</button>
+      </div>
+    </div>
   );
 }
 
@@ -1189,15 +1434,48 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
 }
 
 function mergeTeamPatch<T extends SoccerState["home"]>(team: T, patch: Partial<SoccerState["home"]>): T {
+  const rosterText = patch.rosterText ?? team.rosterText;
   return {
     ...team,
     ...patch,
+    roster: patch.rosterText !== undefined ? parseRoster(rosterText) : patch.roster ?? team.roster,
     record: patch.record ? { ...(team.record || { wins: 0, losses: 0, draws: 0 }), ...patch.record } : team.record
   };
 }
 
 function makeAbbreviation(name: string): string {
   return name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3) || "TEAM";
+}
+
+function findSavedTeamMatch(team: SoccerState["home"], teams: TeamLibraryEntry[]): TeamLibraryEntry | undefined {
+  return teams.find((candidate) => candidate.fullName === team.fullName || candidate.abbreviation === team.abbreviation);
+}
+
+function dateTimeLocalValue(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function defaultGraphicTitle(action: string): string {
+  const titles: Record<string, string> = {
+    "trigger-goal": "Goal",
+    "trigger-yellow-card": "Yellow Card",
+    "trigger-red-card": "Red Card",
+    "trigger-substitution": "Substitution",
+    "trigger-halftime": "Halftime",
+    "trigger-full-time": "Full Time",
+    "trigger-lineups": "Starting XI",
+    "trigger-sponsor": "Sponsor",
+    "trigger-lower-third": "Lower Third",
+    "trigger-countdown": "Countdown"
+  };
+  return titles[action] || "Graphic";
+}
+
+function graphicLabel(action: string): string {
+  return defaultGraphicTitle(action).toUpperCase();
 }
 
 function titleCaseFirst(value: string): string {

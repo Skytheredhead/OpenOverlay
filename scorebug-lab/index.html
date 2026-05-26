@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scorebug Lab</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="lab-shell">
+      <aside class="lab-panel" aria-label="Scorebug controls">
+        <div class="brand-row">
+          <div class="mark">OO</div>
+          <div>
+            <h1>Scorebug Lab</h1>
+            <p>World Cup ribbon layout tests</p>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Preview surface</span>
+          <select id="surfaceSelect">
+            <option value="pitch">Broadcast pitch</option>
+            <option value="checker">Transparent checker</option>
+            <option value="studio">Studio glass</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Bug scale</span>
+          <input id="scaleRange" type="range" min="78" max="118" value="100" />
+        </label>
+
+        <label class="field">
+          <span>Match clock</span>
+          <input id="clockInput" type="text" value="37:24" aria-label="Match clock" />
+        </label>
+
+        <label class="field">
+          <span>Half</span>
+          <select id="halfSelect">
+            <option value="1st">1st</option>
+            <option value="2nd">2nd</option>
+            <option value="ET">ET</option>
+            <option value="PK">PK</option>
+          </select>
+        </label>
+
+        <div class="score-controls" aria-label="Score controls">
+          <button data-score="home" data-step="-1" type="button">-</button>
+          <strong id="homeScore">2</strong>
+          <button data-score="home" data-step="1" type="button">+</button>
+          <span>ARG</span>
+          <button data-score="away" data-step="-1" type="button">-</button>
+          <strong id="awayScore">1</strong>
+          <button data-score="away" data-step="1" type="button">+</button>
+          <span>FRA</span>
+        </div>
+
+        <nav class="bug-tabs" aria-label="Scorebug views">
+          <button class="active" data-target="crown-ribbon" type="button">Crown ribbon</button>
+          <button data-target="flag-ribbon" type="button">Flag ribbon</button>
+          <button data-target="qatar-ribbon" type="button">World Cup ribbon</button>
+          <button data-target="glass-ribbon" type="button">Glass ribbon</button>
+          <button data-target="medal-ribbon" type="button">Medal ribbon</button>
+        </nav>
+      </aside>
+
+      <section class="preview-stage" aria-label="Scorebug previews">
+        <div id="stage" class="broadcast-frame surface-pitch">
+          <div class="field-lines" aria-hidden="true"></div>
+
+          <article class="scorebug active bug-crown-ribbon" data-bug="crown-ribbon" aria-label="Crown ribbon scorebug">
+            <div class="crown-team crown-home">
+              <span class="wc-crest crest-arg">ARG</span>
+              <strong>ARG</strong>
+            </div>
+            <div class="crown-score" data-bind-score="home">2</div>
+            <div class="crown-center">
+              <span data-bind-half>1st</span>
+              <strong data-bind-clock>37:24</strong>
+            </div>
+            <div class="crown-score" data-bind-score="away">1</div>
+            <div class="crown-team crown-away">
+              <strong>FRA</strong>
+              <span class="wc-crest crest-fra">FRA</span>
+            </div>
+          </article>
+
+          <article class="scorebug bug-flag-ribbon" data-bug="flag-ribbon" aria-label="Flag ribbon scorebug">
+            <div class="flag-team flag-home">
+              <span class="flag-swatch arg"></span>
+              <strong class="team-full">Argentina</strong>
+              <strong class="team-short">ARG</strong>
+            </div>
+            <div class="flag-score" data-bind-score="home">2</div>
+            <div class="flag-center">
+              <span data-bind-half>1st</span>
+              <strong data-bind-clock>37:24</strong>
+            </div>
+            <div class="flag-score" data-bind-score="away">1</div>
+            <div class="flag-team flag-away">
+              <strong class="team-full">France</strong>
+              <strong class="team-short">FRA</strong>
+              <span class="flag-swatch fra"></span>
+            </div>
+          </article>
+
+          <article class="scorebug bug-qatar-ribbon" data-bug="qatar-ribbon" aria-label="World Cup top ribbon scorebug">
+            <div class="ribbon-team">ARG</div>
+            <div class="ribbon-score" data-bind-score="home">2</div>
+            <div class="ribbon-center">
+              <span data-bind-half>1st</span>
+              <strong data-bind-clock>37:24</strong>
+            </div>
+            <div class="ribbon-score" data-bind-score="away">1</div>
+            <div class="ribbon-team">FRA</div>
+          </article>
+
+          <article class="scorebug bug-glass-ribbon" data-bug="glass-ribbon" aria-label="Glass ribbon scorebug">
+            <div class="glass-wing">
+              <span class="wc-crest crest-arg">ARG</span>
+              <strong class="team-full">Argentina</strong>
+              <strong class="team-short">ARG</strong>
+            </div>
+            <div class="glass-score" data-bind-score="home">2</div>
+            <div class="glass-center">
+              <span data-bind-half>1st</span>
+              <strong data-bind-clock>37:24</strong>
+            </div>
+            <div class="glass-score" data-bind-score="away">1</div>
+            <div class="glass-wing glass-away">
+              <strong class="team-full">France</strong>
+              <strong class="team-short">FRA</strong>
+              <span class="wc-crest crest-fra">FRA</span>
+            </div>
+          </article>
+
+          <article class="scorebug bug-medal-ribbon" data-bug="medal-ribbon" aria-label="Medal ribbon scorebug">
+            <div class="medal-team">
+              <span class="medal-dot arg"></span>
+              <strong>ARG</strong>
+            </div>
+            <div class="medal-score" data-bind-score="home">2</div>
+            <div class="medal-center">
+              <span data-bind-half>1st</span>
+              <strong data-bind-clock>37:24</strong>
+            </div>
+            <div class="medal-score" data-bind-score="away">1</div>
+            <div class="medal-team medal-away">
+              <strong>FRA</strong>
+              <span class="medal-dot fra"></span>
+            </div>
+          </article>
+        </div>
+
+        <div class="gallery-grid" aria-label="All scorebug options">
+          <button class="thumb active" data-target="crown-ribbon" type="button">
+            <span>01</span>
+            <strong>Crown ribbon</strong>
+            <em>Wide ceremonial bar with crest blocks</em>
+          </button>
+          <button class="thumb" data-target="flag-ribbon" type="button">
+            <span>02</span>
+            <strong>Flag ribbon</strong>
+            <em>Full-name teams with kit swatches</em>
+          </button>
+          <button class="thumb" data-target="qatar-ribbon" type="button">
+            <span>03</span>
+            <strong>World Cup ribbon</strong>
+            <em>Maroon, ivory, and gold tournament bar</em>
+          </button>
+          <button class="thumb" data-target="glass-ribbon" type="button">
+            <span>04</span>
+            <strong>Glass ribbon</strong>
+            <em>Transparent broadcast plate with logos</em>
+          </button>
+          <button class="thumb" data-target="medal-ribbon" type="button">
+            <span>05</span>
+            <strong>Medal ribbon</strong>
+            <em>Compact top bar with center clock medal</em>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

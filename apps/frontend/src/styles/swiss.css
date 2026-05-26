@@ -544,6 +544,10 @@ body {
   padding: 22px;
 }
 
+.setup-panel {
+  border-top: 6px solid var(--sw-ink);
+}
+
 .panel h2,
 .panel h3 {
   font-family: "Inter Tight", Helvetica, sans-serif;
@@ -628,6 +632,59 @@ body {
   color: var(--sw-red);
 }
 
+.assignment-card,
+.score-control,
+.stat-control,
+.on-air-item {
+  border: 1px solid var(--sw-ink);
+  background: var(--sw-bg);
+  padding: 14px;
+}
+
+.assignment-card {
+  border-left: 5px solid var(--team-primary, var(--sw-red));
+}
+
+.assignment-card-header small,
+.assignment-card-header em,
+.on-air-item small {
+  color: var(--sw-ink-soft);
+  font-family: "Inter Tight", Helvetica, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.assignment-card-header strong,
+.on-air-item strong {
+  color: var(--sw-ink);
+  font-family: "Inter Tight", Helvetica, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.score-control > strong {
+  color: var(--sw-ink);
+  font-family: "Inter Tight", Helvetica, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.06em;
+}
+
+.stat-control-row {
+  border-top: 1px solid var(--sw-rule-faint);
+  padding-top: 8px;
+}
+
+.stat-control-row span {
+  font-weight: 700;
+}
+
+.stat-control-row strong {
+  font-family: "Inter Tight", Helvetica, sans-serif;
+  font-size: 24px;
+  font-weight: 900;
+}
+
 /* --- tabs (text-only with underline) --- */
 .tabs {
   border-bottom: 1px solid var(--sw-ink);
@@ -708,7 +765,71 @@ a:not(.button):not(.brand):not(.sidebar a):hover {
   color: var(--sw-red);
 }
 
+@media (max-width: 980px) {
+  .app-shell,
+  .hero,
+  .team-library-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: relative;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--sw-ink);
+  }
+
+  .sidebar nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .editor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-frame {
+    position: relative;
+    top: auto;
+  }
+}
+
 @media (max-width: 640px) {
+  .main {
+    padding: 24px 18px;
+  }
+
+  .app-shell {
+    overflow-x: hidden;
+  }
+
+  .sidebar {
+    padding: 24px 18px;
+  }
+
+  .sidebar nav {
+    grid-template-columns: 1fr;
+  }
+
+  .page-title {
+    align-items: flex-start;
+    gap: 18px;
+  }
+
+  .page-title h1 {
+    font-size: clamp(42px, 16vw, 64px);
+    overflow-wrap: anywhere;
+  }
+
+  .status-row,
+  .control-row,
+  .tabs {
+    width: 100%;
+  }
+
+  .button {
+    min-width: 0;
+  }
+
   .topbar .brand {
     font-size: 28px;
   }

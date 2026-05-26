@@ -28,6 +28,10 @@ export type PresetAction =
   | "trigger-red-card"
   | "trigger-substitution"
   | "trigger-halftime"
+  | "trigger-full-time"
+  | "trigger-lineups"
+  | "trigger-sponsor"
+  | "trigger-lower-third"
   | "trigger-countdown"
   | "clear";
 
@@ -126,6 +130,23 @@ function applySoccerAction(state: SoccerState, action: PresetAction, payload: Re
 
   if (action === "trigger-halftime") {
     return withToggledGraphic(next, makeGraphic("halftime", textPayload(payload.title, "Halftime"), `${next.home.shortName} ${next.score.home} - ${next.score.away} ${next.away.shortName}`, fullscreenPlacement, payload, nowMs));
+  }
+
+  if (action === "trigger-full-time") {
+    return withToggledGraphic(next, makeGraphic("fullscreen", textPayload(payload.title, "Full Time"), `${next.home.shortName} ${next.score.home} - ${next.score.away} ${next.away.shortName}`, fullscreenPlacement, payload, nowMs));
+  }
+
+  if (action === "trigger-lineups") {
+    const team = payload.team === "away" ? next.away : next.home;
+    return withToggledGraphic(next, makeGraphic("lineups", textPayload(payload.title, `${team.shortName} Lineup`), textPayload(payload.subtitle, team.roster.slice(0, 11).map((player) => player.number ? `#${player.number} ${player.name}` : player.name).join("  ·  ")), fullscreenPlacement, payload, nowMs));
+  }
+
+  if (action === "trigger-sponsor") {
+    return withToggledGraphic(next, makeGraphic("sponsor", textPayload(payload.title, "Sponsor"), textPayload(payload.subtitle, ""), next.elements.sponsorBug.placement, payload, nowMs));
+  }
+
+  if (action === "trigger-lower-third") {
+    return withToggledGraphic(next, makeGraphic("lower-third", textPayload(payload.title, "Lower Third"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
   }
 
   if (action === "trigger-countdown") {
