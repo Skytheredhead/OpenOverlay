@@ -80,6 +80,61 @@ describe("user isolation", () => {
     expect(otherList.body.teams).toHaveLength(0);
   });
 
+  it("preserves intentionally cleared saved-team fields", async () => {
+    await signup(server.agent, "owner@example.com");
+
+    const created = await server.agent
+      .post("/api/teams")
+      .send({
+        fullName: "Codex Rovers",
+        shortName: "Rovers",
+        abbreviation: "ROV",
+        rosterText: "10 Mira Stone\n11 Avery Vale",
+        coach: "Coach Nova",
+        schoolName: "Codex High",
+        logoMediaId: "media-1",
+        logoUrl: "/api/media/file/logo"
+      })
+      .expect(201);
+
+    const updated = await server.agent
+      .patch(`/api/teams/${created.body.team.id}`)
+      .send({
+        shortName: "",
+        abbreviation: "",
+        rosterText: "",
+        coach: "",
+        schoolName: "",
+        logoMediaId: null,
+        logoUrl: null
+      })
+      .expect(200);
+
+    expect(updated.body.team.shortName).toBe("");
+    expect(updated.body.team.abbreviation).toBe("");
+    expect(updated.body.team.rosterText).toBe("");
+    expect(updated.body.team.roster).toHaveLength(0);
+    expect(updated.body.team.coach).toBe("");
+    expect(updated.body.team.schoolName).toBe("");
+    expect(updated.body.team.logoMediaId).toBeUndefined();
+    expect(updated.body.team.logoUrl).toBeUndefined();
+  });
+
+  it("keeps saved-team roster text newlines intact for editing", async () => {
+    await signup(server.agent, "owner@example.com");
+
+    const created = await server.agent
+      .post("/api/teams")
+      .send({
+        fullName: "Codex Rovers",
+        rosterText: "10 Mira Stone\n"
+      })
+      .expect(201);
+
+    expect(created.body.team.rosterText).toBe("10 Mira Stone\n");
+    expect(created.body.team.roster).toHaveLength(1);
+  });
+
   it("rejects unsupported or unsafe media uploads as client errors", async () => {
     await signup(server.agent, "owner@example.com");
 

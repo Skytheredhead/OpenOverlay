@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 import {
   Check,
   Copy,
   Image,
   LayoutDashboard,
+  Github,
   LogOut,
   Moon,
   PanelLeftClose,
@@ -23,6 +24,7 @@ import {
   computeClockSeconds,
   createDefaultChurchState,
   createDefaultSoccerState,
+  defaultTeamColors,
   defaultTeam,
   formatClock,
   parseRoster,
@@ -79,9 +81,18 @@ const soccerTabLabels: Record<SoccerEditorTab, string> = { match: "Match", live:
 
 const THEME_STORAGE_KEY = "openoverlay:theme";
 const SIDEBAR_WIDTH_STORAGE_KEY = "openoverlay:sidebar-width";
-const SIDEBAR_MIN_WIDTH = 168;
+const SIDEBAR_MIN_WIDTH = 232;
 const SIDEBAR_MAX_WIDTH = 360;
-const SIDEBAR_DEFAULT_WIDTH = 208;
+const SIDEBAR_DEFAULT_WIDTH = 232;
+const DEFAULT_TEAM_COLOR_PAIRS = [
+  defaultTeamColors.home,
+  defaultTeamColors.away
+];
+const PRESET_NAME_PLACEHOLDERS: Record<PresetType, string> = {
+  soccer: "Soccer Game",
+  church: "Church Sunday",
+  custom: "Custom"
+};
 
 export function App() {
   return (
@@ -312,7 +323,7 @@ function Home() {
       <main className="hero">
         <section>
           <h1>OpenOverlay</h1>
-          <p>Livestream graphics for soccer, church services, and production teams that need one OBS browser source, durable state, and fast show controls.</p>
+          <p>Free and open-source livestream graphics.</p>
           <div className="hero-actions">
             <Link className="button primary" to="/signup">Create account</Link>
             <Link className="button" to="/login">Login</Link>
@@ -322,6 +333,18 @@ function Home() {
           <OverlayRenderer type="soccer" state={demoSoccerState()} transparent={false} />
         </section>
       </main>
+      <footer className="home-footer">
+        <a
+          className="home-footer-link"
+          href="https://github.com/Skytheredhead/OpenOverlay"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="OpenOverlay GitHub repository"
+        >
+          <Github size={18} />
+          <span>OpenOverlay</span>
+        </a>
+      </footer>
     </div>
   );
 }
@@ -436,48 +459,50 @@ function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className={shellClass} style={shellStyle}>
       <aside className="sidebar">
-        <div className="sidebar-header">
-          <Link to="/dash" className="brand sidebar-brand" aria-label="OpenOverlay dashboard">
-            <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
-            <span className="sidebar-brand-text">OpenOverlay</span>
-          </Link>
-          <button
-            className="sidebar-collapse-toggle"
-            type="button"
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={() => setSidebarCollapsed((value) => !value)}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen size={19} strokeWidth={2.2} /> : <PanelLeftClose size={19} strokeWidth={2.2} />}
-          </button>
+        <div className="sidebar-nav-wrap" aria-hidden={sidebarCollapsed}>
+          <div className="sidebar-header">
+            <Link to="/dash" className="brand sidebar-brand" aria-label="OpenOverlay dashboard">
+              <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
+              <span className="sidebar-brand-text">OpenOverlay</span>
+            </Link>
+            <button
+              className="sidebar-collapse-toggle"
+              type="button"
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setSidebarCollapsed((value) => !value)}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={19} strokeWidth={2.2} /> : <PanelLeftClose size={19} strokeWidth={2.2} />}
+            </button>
+          </div>
+          <nav className="sidebar-nav">
+            <NavLink to="/dash" end><LayoutDashboard size={18} /> <span className="nav-label">Games</span></NavLink>
+            {games.length > 0 ? (
+              <div className="sidebar-subnav" aria-label="Active games">
+                {games.map((game) => (
+                  <NavLink
+                    key={game.id}
+                    to={`/dash/presets/${game.id}`}
+                    onMouseDown={(event) => {
+                      if (event.button !== 2) return;
+                      event.preventDefault();
+                      openPresetMenu(game, event.clientX, event.clientY);
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openPresetMenu(game, event.clientX, event.clientY);
+                    }}
+                  >
+                    <span className="nav-label">{game.name}</span>
+                  </NavLink>
+                ))}
+              </div>
+            ) : null}
+            <NavLink to="/dash/teams"><Users size={18} /> <span className="nav-label">Teams</span></NavLink>
+            <NavLink to="/dash/media"><Image size={18} /> <span className="nav-label">Media</span></NavLink>
+          </nav>
         </div>
-        <nav className="sidebar-nav" aria-hidden={sidebarCollapsed}>
-          <NavLink to="/dash" end><LayoutDashboard size={18} /> <span className="nav-label">Games</span></NavLink>
-          {games.length > 0 ? (
-            <div className="sidebar-subnav" aria-label="Active games">
-              {games.map((game) => (
-                <NavLink
-                  key={game.id}
-                  to={`/dash/presets/${game.id}`}
-                  onMouseDown={(event) => {
-                    if (event.button !== 2) return;
-                    event.preventDefault();
-                    openPresetMenu(game, event.clientX, event.clientY);
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    openPresetMenu(game, event.clientX, event.clientY);
-                  }}
-                >
-                  <span className="nav-label">{game.name}</span>
-                </NavLink>
-              ))}
-            </div>
-          ) : null}
-          <NavLink to="/dash/teams"><Users size={18} /> <span className="nav-label">Teams</span></NavLink>
-          <NavLink to="/dash/media"><Image size={18} /> <span className="nav-label">Media</span></NavLink>
-        </nav>
         <div className="sidebar-account" aria-hidden={sidebarCollapsed}>
           <p className="muted">{user?.email}</p>
           <button
@@ -517,12 +542,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function formatOverlayClientCount(count: number): string {
+  return `${count} ${count === 1 ? "client" : "clients"}`;
+}
+
 function Dashboard() {
   const [presets, setPresets] = useState<PresetSummary[]>([]);
-  const [type, setType] = useState<PresetType>("soccer");
   const [error, setError] = useState<string | null>(null);
+  const [isNewGameOpen, setIsNewGameOpen] = useState(false);
+  const [newGameType, setNewGameType] = useState<PresetType>("soccer");
+  const [newGameName, setNewGameName] = useState(PRESET_NAME_PLACEHOLDERS.soccer);
   const navigate = useNavigate();
-  const prompt = usePromptDialog();
+  const newGameNameRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
     const response = await presetApi.list();
@@ -533,54 +564,124 @@ function Dashboard() {
     void load().catch((err) => setError(err.message));
   }, [load]);
 
-  async function createPreset() {
-    const name = await prompt({
-      title: type === "soccer" ? "New game" : "New service",
-      label: type === "soccer" ? "Game name" : "Production name",
-      defaultValue: type === "soccer" ? "Soccer Game" : type === "church" ? "Church Sunday" : "Custom",
-      submitLabel: type === "soccer" ? "Create game" : "Create"
-    });
-    const trimmedName = name?.trim();
+  useEffect(() => {
+    if (!isNewGameOpen) return;
+    const id = window.setTimeout(() => newGameNameRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [isNewGameOpen]);
+
+  function openNewGameDialog() {
+    setNewGameType("soccer");
+    setNewGameName(PRESET_NAME_PLACEHOLDERS.soccer);
+    setIsNewGameOpen(true);
+  }
+
+  function closeNewGameDialog() {
+    setIsNewGameOpen(false);
+  }
+
+  async function createPreset(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmedName = newGameName.trim();
     if (!trimmedName) return;
     setError(null);
     try {
-      const response = await presetApi.create(trimmedName, type);
+      const response = await presetApi.create(trimmedName, newGameType);
+      setIsNewGameOpen(false);
       navigate(`/dash/presets/${response.preset.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create game");
     }
   }
 
+  async function copyGameOverlayLink(publicId: string) {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/overlay/${publicId}`);
+      setError(null);
+    } catch {
+      setError("Could not copy overlay URL.");
+    }
+  }
+
   return (
     <>
       <div className="page-title">
-        <div>
-          <h1>Games</h1>
-          <p className="muted">Game-day control rooms, service productions, and one-off overlay packages.</p>
-        </div>
-        <div className="control-row">
-          <select className="number-input" value={type} onChange={(event) => setType(event.target.value as PresetType)}>
-            <option value="soccer">Soccer</option>
-            <option value="church">Church</option>
-            <option value="custom">Custom</option>
-          </select>
-          <button className="button primary" onClick={() => void createPreset()}><Plus size={17} /> {type === "soccer" ? "New game" : "New production"}</button>
-        </div>
+        <h1>Games</h1>
       </div>
       {error ? <div className="error">{error}</div> : null}
-      <section className="preset-grid">
+      <section className="preset-grid game-card-grid">
+        <button className="preset-card preset-card-new" type="button" onClick={openNewGameDialog}>
+          <span className="new-game-card-icon" aria-hidden="true"><Plus size={22} /></span>
+          <span className="new-game-card-copy">
+            <h2>New Game</h2>
+            <p>Soccer / Church / Custom</p>
+          </span>
+        </button>
         {presets.map((preset) => (
-          <article className="preset-card" key={preset.id}>
-            <h2>{preset.name}</h2>
-            <p>{preset.type === "soccer" ? "soccer game" : `${preset.type} production`}</p>
-            <p className="muted">Overlay clients: {preset.overlayClientCount || 0}</p>
-            <div className="control-row">
-              <Link className="button primary" to={`/dash/presets/${preset.id}`}>Edit</Link>
-              <Link className="button" to={`/overlay-test/${preset.publicId}`} target="_blank">Test</Link>
+          <article className="preset-card game-card" key={preset.id}>
+            <div className="game-card-body">
+              <div className="game-card-meta">
+                <span>{preset.type === "soccer" ? "Soccer" : preset.type}</span>
+                <span>{formatOverlayClientCount(preset.overlayClientCount || 0)}</span>
+              </div>
+              <h2>{preset.name}</h2>
+              <div className="control-row game-card-actions">
+                <button className="button game-card-copy" type="button" onClick={() => void copyGameOverlayLink(preset.publicId)}><Copy size={14} /> Copy overlay</button>
+              </div>
             </div>
+            <Link className="button game-card-play" to={`/dash/presets/${preset.id}`} aria-label={`Open ${preset.name}`} title={`Open ${preset.name}`}>
+              <Play size={40} fill="currentColor" strokeWidth={0} />
+            </Link>
           </article>
         ))}
       </section>
+      {isNewGameOpen ? (
+        <div className="prompt-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeNewGameDialog();
+        }}>
+          <form
+            className="prompt-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-game-dialog-title"
+            onSubmit={createPreset}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeNewGameDialog();
+            }}
+          >
+            <h2 id="new-game-dialog-title">New game</h2>
+            <label className="field">
+              <span>Game type</span>
+              <select
+                className="number-input"
+                value={newGameType}
+                onChange={(event) => {
+                  const nextType = event.target.value as PresetType;
+                  setNewGameType(nextType);
+                  setNewGameName(PRESET_NAME_PLACEHOLDERS[nextType]);
+                }}
+              >
+                <option value="soccer">Soccer</option>
+                <option value="church">Church</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Game name</span>
+              <input
+                ref={newGameNameRef}
+                value={newGameName}
+                onChange={(event) => setNewGameName(event.target.value)}
+                placeholder={PRESET_NAME_PLACEHOLDERS[newGameType]}
+              />
+            </label>
+            <div className="control-row prompt-actions">
+              <button className="button" type="button" onClick={closeNewGameDialog}>Cancel</button>
+              <button className="button primary" type="submit">Create game</button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -592,6 +693,9 @@ function TeamsLibrary() {
   const [draft, setDraft] = useState<TeamLibraryEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const selectedTeamIdRef = useRef<string | null>(null);
+  const teamSaveRevisionRef = useRef(0);
+  const latestTeamSaveRevisionRef = useRef<Record<string, number>>({});
   const prompt = usePromptDialog();
 
   const load = useCallback(async () => {
@@ -606,16 +710,24 @@ function TeamsLibrary() {
   }, [load]);
 
   useEffect(() => {
-    const selected = teams.find((team) => team.id === selectedId) || null;
-    setDraft(selected ? structuredClone(selected) : null);
+    selectedTeamIdRef.current = selectedId;
+    setDraft((current) => {
+      if (!selectedId) return null;
+      if (current?.id === selectedId) return current;
+      const selected = teams.find((team) => team.id === selectedId) || null;
+      return selected ? structuredClone(selected) : null;
+    });
   }, [selectedId, teams]);
 
-  const debouncedSaveTeam = useDebouncedCallback((team: TeamLibraryEntry) => {
+  const debouncedSaveTeam = useDebouncedCallback((team: TeamLibraryEntry, revision: number) => {
     setSaveStatus("saving");
     void teamApi.patch(team.id, team).then((response) => {
+      if (latestTeamSaveRevisionRef.current[response.team.id] !== revision) return;
       setTeams((current) => current.map((item) => (item.id === response.team.id ? response.team : item)));
-      setSaveStatus("saved");
+      setDraft((current) => (current?.id === response.team.id ? { ...current, updatedAt: response.team.updatedAt } : current));
+      if (selectedTeamIdRef.current === response.team.id) setSaveStatus("saved");
     }).catch((err) => {
+      if (latestTeamSaveRevisionRef.current[team.id] !== revision) return;
       setSaveStatus("error");
       setError(err instanceof Error ? err.message : "Could not autosave team");
     });
@@ -650,8 +762,11 @@ function TeamsLibrary() {
     setDraft((current) => {
       if (!current) return current;
       const next = mergeTeamPatch(current, patch);
+      const revision = teamSaveRevisionRef.current + 1;
+      teamSaveRevisionRef.current = revision;
+      latestTeamSaveRevisionRef.current[next.id] = revision;
       setSaveStatus("saving");
-      debouncedSaveTeam(next);
+      debouncedSaveTeam(next, revision);
       return next;
     });
   }
@@ -669,22 +784,27 @@ function TeamsLibrary() {
   }
 
   return (
-    <>
+    <div className="teams-page">
       <div className="page-title">
-        <div>
-          <h1>Teams</h1>
-          <p className="muted">Reusable team profiles for names, logos, colors, records, and rosters.</p>
-        </div>
-        <button className="button primary" onClick={() => void createTeam()}><Plus size={17} /> New team</button>
+        <h1>Teams</h1>
       </div>
       {error ? <div className="error">{error}</div> : null}
       <div className={`team-library-layout ${draft ? "" : "empty"}`}>
         <section className="team-list">
-          {teams.length === 0 ? (
-            <div className="panel">
-              <p className="muted">No teams yet.</p>
-            </div>
-          ) : null}
+          <button
+            type="button"
+            className="team-list-item team-list-item-new"
+            style={{
+              "--team-primary": "var(--sw-red)",
+              "--team-secondary": "color-mix(in srgb, var(--sw-bg) 82%, white 18%)"
+            } as React.CSSProperties}
+            onClick={() => void createTeam()}
+          >
+            <span className="team-list-item-icon" aria-hidden="true">
+              <Plus size={20} />
+            </span>
+            <strong>New Team</strong>
+          </button>
           {teams.map((team) => (
             <button
               key={team.id}
@@ -721,7 +841,7 @@ function TeamsLibrary() {
           </section>
         ) : null}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -736,10 +856,13 @@ function PresetEditor() {
   const [soccerPreviewSurface, setSoccerPreviewSurface] = useState<SoccerState["soccerPackage"]["surface"]>("checker");
   const draggedSoccerTabRef = useRef<SoccerEditorTab | null>(null);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
+  const [showConnectionWarning, setShowConnectionWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<PresetState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [pendingSoccerTextUpdate, setPendingSoccerTextUpdate] = useState<{ state: SoccerState; fields: SoccerTextAnimationField[] } | null>(null);
+  const latestPresetSaveRevisionRef = useRef(0);
+  const hasPendingPresetSaveRef = useRef(false);
   const socketRef = useRef<Socket | null>(null);
 
   const selectedElement = useMemo(() => {
@@ -788,7 +911,12 @@ function PresetEditor() {
     socket.on("disconnect", () => setConnection("disconnected"));
     socket.on("connect_error", () => setConnection("disconnected"));
     socket.on("preset:update", (payload: PresetSummary) => {
-      setPreset(payload);
+      setPreset((current) => {
+        if (hasPendingPresetSaveRef.current && current?.id === payload.id) {
+          return { ...payload, state: current.state };
+        }
+        return payload;
+      });
     });
     socket.on("overlay:clients", (payload: { count: number }) => {
       setPreset((current) => (current ? { ...current, overlayClientCount: payload.count } : current));
@@ -798,9 +926,26 @@ function PresetEditor() {
     };
   }, [presetId]);
 
-  const debouncedPersist = useDebouncedCallback((nextState: PresetState) => {
+  useEffect(() => {
+    if (connection !== "disconnected") {
+      setShowConnectionWarning(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setShowConnectionWarning(true), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [connection]);
+
+  const debouncedPersist = useDebouncedCallback((nextState: PresetState, revision: number) => {
     if (!presetId) return;
-    void presetApi.patch(presetId, { state: nextState }).then((response) => setPreset(response.preset)).catch((err) => setError(err.message));
+    void presetApi.patch(presetId, { state: nextState }).then((response) => {
+      if (latestPresetSaveRevisionRef.current !== revision) return;
+      hasPendingPresetSaveRef.current = false;
+      setPreset((current) => (current?.id === response.preset.id ? { ...response.preset, state: current.state } : response.preset));
+    }).catch((err) => {
+      if (latestPresetSaveRevisionRef.current !== revision) return;
+      hasPendingPresetSaveRef.current = false;
+      setError(err.message);
+    });
   }, 180);
 
   const commitState = useCallback((nextState: PresetState, persist = true) => {
@@ -810,7 +955,12 @@ function PresetEditor() {
       return [...trimmed, structuredClone(nextState)].slice(-60);
     });
     setHistoryIndex((index) => Math.min(index + 1, 59));
-    if (persist) debouncedPersist(nextState);
+    if (persist) {
+      const revision = latestPresetSaveRevisionRef.current + 1;
+      latestPresetSaveRevisionRef.current = revision;
+      hasPendingPresetSaveRef.current = true;
+      debouncedPersist(nextState, revision);
+    }
   }, [debouncedPersist, historyIndex]);
 
   const restoreHistory = useCallback((direction: "undo" | "redo") => {
@@ -845,7 +995,7 @@ function PresetEditor() {
     setHistoryIndex((index) => Math.min(index + 1, 59));
   }
 
-  if (!preset) return <div>Loading game...</div>;
+  if (!preset) return <div className="live-game-page">Loading game...</div>;
   const overlayUrl = `${window.location.origin}/overlay/${preset.publicId}`;
   const soccerState = preset.type === "soccer" && isSoccerState(preset.state) ? preset.state : null;
   const tabs = soccerState ? soccerTabOrder : ["slides", "style"];
@@ -978,7 +1128,7 @@ function PresetEditor() {
   }
 
   return (
-    <>
+    <div className="live-game-page">
       <div className="page-title compact">
         <div>
           <h1>{preset.name}</h1>
@@ -993,7 +1143,7 @@ function PresetEditor() {
         </div>
       </div>
 
-      {connection !== "connected" ? <div className="error">Backend or overlay WebSocket is disconnected. The overlay will keep showing its last known state.</div> : null}
+      {showConnectionWarning ? <div className="error">Backend or overlay WebSocket is disconnected. The overlay will keep showing its last known state.</div> : null}
       {error ? <div className="error">{error}</div> : null}
 
       <div className={`editor-layout ${isSoccerEditor ? "live-editor-layout" : ""}`}>
@@ -1039,7 +1189,7 @@ function PresetEditor() {
           </>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1048,12 +1198,18 @@ function OutputPreviewFrame({ src, title, surface }: { src: string; title: strin
     <div className={`preview-frame preview-surface-${surface}`}>
       <iframe
         className="output-preview-iframe"
-        src={src}
+        src={previewOverlaySrc(src)}
         title={title}
         loading="eager"
       />
     </div>
   );
+}
+
+function previewOverlaySrc(src: string): string {
+  const url = new URL(src, window.location.origin);
+  url.searchParams.set("client", "preview");
+  return url.toString();
 }
 
 function SoccerPreviewUpdatePrompt({ onApply }: { onApply: () => void }) {
@@ -1435,6 +1591,20 @@ function SoccerCountdownPanel({
     updatePackage({ countdown: { ...state.soccerPackage.countdown, ...patch } });
   }
 
+  function startPresetCountdown(seconds: number) {
+    updatePackage({
+      activeOverlay: "countdown-timer",
+      selectedOverlay: "countdown-timer",
+      countdown: {
+        ...state.soccerPackage.countdown,
+        seconds,
+        resetSeconds: seconds,
+        running: true,
+        startedAtMs: Date.now()
+      }
+    });
+  }
+
   return (
     <section className="control-section countdown-panel">
       <h2>Countdown</h2>
@@ -1449,8 +1619,8 @@ function SoccerCountdownPanel({
           >
             {state.soccerPackage.countdown.running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
           </button>
-          <button className="button" type="button" onClick={() => updateCountdown({ seconds: 300, resetSeconds: 300, running: false, startedAtMs: null })}>5:00</button>
-          <button className="button" type="button" onClick={() => updateCountdown({ seconds: 600, resetSeconds: 600, running: false, startedAtMs: null })}>10:00</button>
+          <button className="button" type="button" onClick={() => startPresetCountdown(300)}>5:00</button>
+          <button className="button" type="button" onClick={() => startPresetCountdown(600)}>10:00</button>
           <button className="button" type="button" onClick={() => void runAction("countdown-reset")}>Reset</button>
         </div>
         <div className="two-col">
@@ -1474,6 +1644,10 @@ function SoccerCountdownPanel({
           <select value={state.soccerPackage.countdown.position} disabled={state.soccerPackage.countdown.mode !== "small"} onChange={(event) => updateCountdown({ position: event.target.value as PositionPreset })}>
             {positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
+        </label>
+        <label className="field">
+          <span>Countdown label</span>
+          <input value={state.soccerPackage.countdown.label} onChange={(event) => updateCountdown({ label: event.target.value })} />
         </label>
       </div>
     </section>
@@ -1532,24 +1706,30 @@ function SoccerScoreClockPanel({
               <input value={state.clock.periodLabel} onChange={(event) => updateClock({ periodLabel: event.target.value })} />
             </label>
           </div>
-          <label className="field">
-            <span>Stop at</span>
-            <input defaultValue={formatClock(state.clock.stopAtSeconds)} onBlur={(event) => updateClock({ stopAtSeconds: parseClockTime(event.target.value) })} />
-          </label>
-          <div className="two-col">
-            <label className="field">
-              <span>Stoppage minutes</span>
-              <input type="number" min="0" value={state.clock.stoppageMinutes} onChange={(event) => updateClock({ stoppageMinutes: Math.max(0, Number(event.target.value)) })} />
-            </label>
-            <label className="control-row">
-              <input type="checkbox" checked={state.clock.stopAtEnabled} onChange={(event) => updateClock({ stopAtEnabled: event.target.checked })} />
-              Stop at enabled
-            </label>
+          <div className={`clock-toggle-option ${state.clock.stopAtEnabled ? "" : "is-disabled"}`}>
+            <div className="clock-toggle-inline">
+              <label className="custom-checkbox-control" aria-label="Enable stop at">
+                <input type="checkbox" checked={state.clock.stopAtEnabled} onChange={(event) => updateClock({ stopAtEnabled: event.target.checked })} />
+                <span className="custom-checkbox-glyph" aria-hidden="true"><Check size={10} /></span>
+              </label>
+              <label className="field">
+                <span>Stop at</span>
+                <input defaultValue={formatClock(state.clock.stopAtSeconds)} disabled={!state.clock.stopAtEnabled} onBlur={(event) => updateClock({ stopAtSeconds: parseClockTime(event.target.value) })} />
+              </label>
+            </div>
           </div>
-          <label className="control-row">
-            <input type="checkbox" checked={state.clock.showStoppage} onChange={(event) => updateClock({ showStoppage: event.target.checked })} />
-            Show stoppage time
-          </label>
+          <div className={`clock-toggle-option ${state.clock.showStoppage ? "" : "is-disabled"}`}>
+            <div className="clock-toggle-inline">
+              <label className="custom-checkbox-control" aria-label="Enable stoppage time">
+                <input type="checkbox" checked={state.clock.showStoppage} onChange={(event) => updateClock({ showStoppage: event.target.checked })} />
+                <span className="custom-checkbox-glyph" aria-hidden="true"><Check size={10} /></span>
+              </label>
+              <label className="field">
+                <span>Stoppage minutes</span>
+                <input type="number" min="0" value={state.clock.stoppageMinutes} disabled={!state.clock.showStoppage} onChange={(event) => updateClock({ stoppageMinutes: Math.max(0, Number(event.target.value)) })} />
+              </label>
+            </div>
+          </div>
         </div>
       </section>
     </div>
@@ -1754,6 +1934,17 @@ function TeamFields({
   const record = team.record || { wins: 0, losses: 0, draws: 0 };
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
+  const latestTeamRef = useRef(team);
+  const colorsEditedRef = useRef(false);
+  const teamIdentity = (team as Partial<TeamLibraryEntry>).id ?? null;
+
+  useEffect(() => {
+    latestTeamRef.current = team;
+  }, [team]);
+
+  useEffect(() => {
+    colorsEditedRef.current = false;
+  }, [teamIdentity]);
 
   async function uploadLogo(files: FileList | File[]) {
     const file = Array.from(files)[0];
@@ -1761,8 +1952,17 @@ function TeamFields({
     setUploadingLogo(true);
     setLogoError(null);
     try {
-      const response = await mediaApi.upload(file);
-      onChange({ logoMediaId: response.media.id, logoUrl: response.media.url });
+      const shouldExtractColors = !colorsEditedRef.current && shouldAutofillTeamColors(latestTeamRef.current);
+      const [response, extractedColors] = await Promise.all([
+        mediaApi.upload(file),
+        shouldExtractColors ? extractLogoColors(file).catch(() => null) : Promise.resolve(null)
+      ]);
+      const patch: Partial<SoccerState["home"]> = { logoMediaId: response.media.id, logoUrl: response.media.url };
+      if (extractedColors && !colorsEditedRef.current && shouldAutofillTeamColors(latestTeamRef.current)) {
+        patch.primaryColor = extractedColors.primaryColor;
+        patch.secondaryColor = extractedColors.secondaryColor;
+      }
+      onChange(patch);
     } catch (err) {
       setLogoError(err instanceof Error ? err.message : "Logo upload failed");
     } finally {
@@ -1786,8 +1986,8 @@ function TeamFields({
           />
         </label>
         <div className="color-swatch-group" aria-label="Team colors">
-          <label className="field color-swatch-field"><span>Primary</span><input type="color" value={team.primaryColor} onChange={(e) => onChange({ primaryColor: e.target.value })} /></label>
-          <label className="field color-swatch-field"><span>Secondary</span><input type="color" value={team.secondaryColor} onChange={(e) => onChange({ secondaryColor: e.target.value })} /></label>
+          <label className="field color-swatch-field"><span>Primary</span><input type="color" value={team.primaryColor} onChange={(e) => { colorsEditedRef.current = true; onChange({ primaryColor: e.target.value }); }} /></label>
+          <label className="field color-swatch-field"><span>Secondary</span><input type="color" value={team.secondaryColor} onChange={(e) => { colorsEditedRef.current = true; onChange({ secondaryColor: e.target.value }); }} /></label>
         </div>
       </div>
       <div className="field">
@@ -1815,7 +2015,7 @@ function TeamFields({
           value={team.logoMediaId || ""}
           onChange={(event) => {
             const selected = media.find((item) => item.id === event.target.value);
-            onChange({ logoMediaId: selected?.id, logoUrl: selected?.url });
+            onChange({ logoMediaId: selected?.id ?? "", logoUrl: selected?.url ?? "" });
           }}
         >
           <option value="">No logo</option>
@@ -1825,7 +2025,6 @@ function TeamFields({
       <div className="image-crop-controls">
         <div className="panel-heading compact">
           <h3>Image crop</h3>
-          <p className="muted">Applied anywhere this team image replaces a flag.</p>
         </div>
         <div className="crop-preview" style={{ "--team-primary": team.primaryColor, "--team-secondary": team.secondaryColor } as React.CSSProperties}>
           {team.logoUrl ? (
@@ -2035,6 +2234,178 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
   );
 }
 
+interface LogoColorSample {
+  r: number;
+  g: number;
+  b: number;
+  saturation: number;
+  lightness: number;
+}
+
+interface LogoColorCluster extends LogoColorSample {
+  count: number;
+  score: number;
+}
+
+function shouldAutofillTeamColors(team: Pick<SoccerState["home"], "primaryColor" | "secondaryColor">): boolean {
+  return DEFAULT_TEAM_COLOR_PAIRS.some((pair) => {
+    return sameHexColor(team.primaryColor, pair.primaryColor) && sameHexColor(team.secondaryColor, pair.secondaryColor);
+  });
+}
+
+async function extractLogoColors(file: File): Promise<{ primaryColor: string; secondaryColor: string } | null> {
+  if (!file.type.startsWith("image/")) return null;
+  const image = await loadImageFromFile(file);
+  const maxSize = 128;
+  const scale = Math.min(1, maxSize / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return null;
+  context.clearRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const samples: LogoColorSample[] = [];
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const alpha = pixels[index + 3];
+    if (alpha < 80) continue;
+    const r = pixels[index];
+    const g = pixels[index + 1];
+    const b = pixels[index + 2];
+    const { saturation, lightness } = rgbToHsl(r, g, b);
+    if (lightness > 0.98 && saturation < 0.08) continue;
+    samples.push({ r, g, b, saturation, lightness });
+  }
+
+  if (!samples.length) return null;
+  const chromaticSamples = samples.filter((sample) => sample.saturation >= 0.18 && sample.lightness > 0.1 && sample.lightness < 0.94);
+  const sourceSamples = chromaticSamples.length >= Math.max(12, samples.length * 0.01) ? chromaticSamples : samples;
+  const clusters = clusterLogoColors(sourceSamples);
+  const primary = clusters[0];
+  if (!primary) return null;
+  const secondary = clusters.find((cluster) => colorDistance(primary, cluster) >= 54) ?? clusters[1] ?? deriveSecondaryColor(primary);
+  return {
+    primaryColor: rgbToHex(primary),
+    secondaryColor: rgbToHex(secondary)
+  };
+}
+
+function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new window.Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read logo image"));
+    };
+    image.src = url;
+  });
+}
+
+function clusterLogoColors(samples: LogoColorSample[]): LogoColorCluster[] {
+  const buckets = new Map<string, { r: number; g: number; b: number; count: number; score: number; saturation: number; lightness: number }>();
+  for (const sample of samples) {
+    const key = [quantizeColor(sample.r), quantizeColor(sample.g), quantizeColor(sample.b)].join("-");
+    const bucket = buckets.get(key) ?? { r: 0, g: 0, b: 0, count: 0, score: 0, saturation: 0, lightness: 0 };
+    bucket.r += sample.r;
+    bucket.g += sample.g;
+    bucket.b += sample.b;
+    bucket.count += 1;
+    bucket.saturation += sample.saturation;
+    bucket.lightness += sample.lightness;
+    bucket.score += 0.7 + sample.saturation;
+    buckets.set(key, bucket);
+  }
+
+  return Array.from(buckets.values())
+    .map((bucket) => ({
+      r: Math.round(bucket.r / bucket.count),
+      g: Math.round(bucket.g / bucket.count),
+      b: Math.round(bucket.b / bucket.count),
+      count: bucket.count,
+      saturation: bucket.saturation / bucket.count,
+      lightness: bucket.lightness / bucket.count,
+      score: bucket.score
+    }))
+    .sort((a, b) => b.score - a.score);
+}
+
+function deriveSecondaryColor(color: LogoColorSample): LogoColorSample {
+  const { h, saturation, lightness } = rgbToHsl(color.r, color.g, color.b);
+  const derivedLightness = lightness > 0.54 ? Math.max(0.18, lightness - 0.34) : Math.min(0.88, lightness + 0.34);
+  return hslToRgb(h, Math.max(0.2, saturation * 0.75), derivedLightness);
+}
+
+function quantizeColor(value: number): number {
+  return Math.round(value / 24) * 24;
+}
+
+function sameHexColor(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
+function colorDistance(left: LogoColorSample, right: LogoColorSample): number {
+  const redMean = (left.r + right.r) / 2;
+  const red = left.r - right.r;
+  const green = left.g - right.g;
+  const blue = left.b - right.b;
+  return Math.sqrt((2 + redMean / 256) * red * red + 4 * green * green + (2 + (255 - redMean) / 256) * blue * blue);
+}
+
+function rgbToHex(color: Pick<LogoColorSample, "r" | "g" | "b">): string {
+  return `#${[color.r, color.g, color.b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function rgbToHsl(r: number, g: number, b: number): { h: number; saturation: number; lightness: number } {
+  const red = r / 255;
+  const green = g / 255;
+  const blue = b / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const lightness = (max + min) / 2;
+  if (max === min) return { h: 0, saturation: 0, lightness };
+  const delta = max - min;
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  let h = 0;
+  if (max === red) h = (green - blue) / delta + (green < blue ? 6 : 0);
+  if (max === green) h = (blue - red) / delta + 2;
+  if (max === blue) h = (red - green) / delta + 4;
+  return { h: h / 6, saturation, lightness };
+}
+
+function hslToRgb(h: number, saturation: number, lightness: number): LogoColorSample {
+  if (saturation === 0) {
+    const value = Math.round(lightness * 255);
+    return { r: value, g: value, b: value, saturation, lightness };
+  }
+  const hueToRgb = (p: number, q: number, t: number) => {
+    let hue = t;
+    if (hue < 0) hue += 1;
+    if (hue > 1) hue -= 1;
+    if (hue < 1 / 6) return p + (q - p) * 6 * hue;
+    if (hue < 1 / 2) return q;
+    if (hue < 2 / 3) return p + (q - p) * (2 / 3 - hue) * 6;
+    return p;
+  };
+  const q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
+  const p = 2 * lightness - q;
+  return {
+    r: Math.round(hueToRgb(p, q, h + 1 / 3) * 255),
+    g: Math.round(hueToRgb(p, q, h) * 255),
+    b: Math.round(hueToRgb(p, q, h - 1 / 3) * 255),
+    saturation,
+    lightness
+  };
+}
+
 function mergeTeamPatch<T extends SoccerState["home"]>(team: T, patch: Partial<SoccerState["home"]>): T {
   const rosterText = patch.rosterText ?? team.rosterText;
   return {
@@ -2160,7 +2531,6 @@ function MediaLibrary() {
       <div className="page-title">
         <div>
           <h1>Media</h1>
-          <p className="muted">Images and logos stored on the backend server.</p>
         </div>
       </div>
       {error ? <div className="error">{error}</div> : null}
@@ -2195,13 +2565,19 @@ function MediaLibrary() {
 
 function OverlayPage({ test }: { test: boolean }) {
   const { overlayId } = useParams();
+  const [searchParams] = useSearchParams();
   const [overlay, setOverlay] = useState<PresetSummary | null>(null);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [error, setError] = useState<string | null>(null);
+  const client = searchParams.get("client") === "preview" ? "preview" : "overlay";
 
   useLayoutEffect(() => {
+    document.documentElement.classList.add("overlay-route-root");
     document.body.classList.add("overlay-route-body");
-    return () => document.body.classList.remove("overlay-route-body");
+    return () => {
+      document.documentElement.classList.remove("overlay-route-root");
+      document.body.classList.remove("overlay-route-body");
+    };
   }, []);
 
   useEffect(() => {
@@ -2209,8 +2585,8 @@ function OverlayPage({ test }: { test: boolean }) {
     void overlayApi.get(overlayId).then((response) => setOverlay(response.overlay)).catch((err) => setError(err.message));
     const socket = io(WS_URL, {
       transports: ["websocket", "polling"],
-      auth: { role: "overlay", overlayId },
-      query: { role: "overlay", overlayId }
+      auth: { role: "overlay", overlayId, client },
+      query: { role: "overlay", overlayId, client }
     });
     socket.on("connect", () => setConnection("connected"));
     socket.on("disconnect", () => setConnection("disconnected"));
@@ -2219,7 +2595,7 @@ function OverlayPage({ test }: { test: boolean }) {
     return () => {
       socket.disconnect();
     };
-  }, [overlayId]);
+  }, [client, overlayId]);
 
   if (test) {
     return (

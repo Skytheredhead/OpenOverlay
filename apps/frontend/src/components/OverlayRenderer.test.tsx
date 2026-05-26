@@ -106,6 +106,38 @@ describe("OverlayRenderer", () => {
     expect(frameBody(container)?.querySelectorAll("[data-bind-score].score-increased")).toHaveLength(1);
   });
 
+  it("renders a custom countdown label and safely switches to the small layout", async () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    let rectCallCount = 0;
+    Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: () => {
+        rectCallCount += 1;
+        const rect = rectCallCount === 1
+          ? { x: 520, y: 210, top: 210, left: 520, right: 1120, bottom: 420, width: 600, height: 210 }
+          : { x: 1440, y: 760, top: 760, left: 1440, right: 1680, bottom: 850, width: 240, height: 90 };
+        return { ...rect, toJSON: () => rect };
+      }
+    });
+
+    try {
+      const state = createDefaultSoccerState("Test Match");
+      state.soccerPackage.activeOverlay = "countdown-timer";
+      state.soccerPackage.countdown.label = "Halftime Clock";
+      const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+      await expect(frameText(container)).resolves.toContain("Halftime Clock");
+
+      const nextState = structuredClone(state);
+      nextState.soccerPackage.countdown.mode = "small";
+      nextState.soccerPackage.countdown.position = "bottom-right";
+      rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={nextState} /></div>);
+
+      await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-countdown.countdown-small .timer-card")).toBeTruthy());
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", { configurable: true, value: originalRect });
+    }
+  });
+
   it("keeps a soccer overlay mounted with the exit class after hiding it", async () => {
     const state = createDefaultSoccerState("Test Match");
     state.soccerPackage.activeOverlay = "full-matchup";
@@ -116,11 +148,12 @@ describe("OverlayRenderer", () => {
     hiddenState.soccerPackage.activeOverlay = null;
     rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={hiddenState} /></div>);
 
-    expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy();
-    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy());
+    expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-entering")).toBeTruthy();
+    expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeFalsy();
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy(), { timeout: 1600 });
   });
 
-  it("keeps incoming and outgoing soccer overlays in separate layers", async () => {
+  it("delays the incoming soccer overlay when switching overlays", async () => {
     const state = createDefaultSoccerState("Test Match");
     state.soccerPackage.activeOverlay = "full-matchup";
     const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
@@ -132,8 +165,32 @@ describe("OverlayRenderer", () => {
     rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={nextState} /></div>);
 
     const body = frameBody(container);
-    expect(body?.querySelector(".overlay-layer-exiting .overlay-full-matchup.overlay-exiting")).toBeTruthy();
-    expect(body?.querySelector(".overlay-layer-active .overlay-scorebug.overlay-entering")).toBeTruthy();
+    expect(body?.querySelector(".overlay-full-matchup.overlay-entering")).toBeTruthy();
+    expect(body?.querySelector(".overlay-layer-exiting .overlay-full-matchup.overlay-exiting")).toBeFalsy();
+    expect(body?.querySelector(".overlay-layer-active .overlay-scorebug.overlay-entering")).toBeFalsy();
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-layer-exiting .overlay-full-matchup.overlay-exiting")).toBeTruthy(), { timeout: 1600 });
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-layer-active .overlay-scorebug.overlay-entering")).toBeTruthy(), { timeout: 2200 });
+  });
+
+  it("morphs a lower matchup into its countdown state before showing the full countdown", async () => {
+    const state = createDefaultSoccerState("Test Match");
+    state.soccerPackage.activeOverlay = "lower-matchup";
+    const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-lower-matchup")).toBeTruthy());
+
+    const nextState = structuredClone(state);
+    nextState.soccerPackage.activeOverlay = "countdown-timer";
+    nextState.soccerPackage.selectedOverlay = "countdown-timer";
+    nextState.soccerPackage.countdown.running = true;
+    nextState.soccerPackage.countdown.startedAtMs = Date.now();
+    rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={nextState} /></div>);
+
+    const handoffBody = frameBody(container);
+    expect(handoffBody?.querySelector("#stage")?.classList.contains("timer-activating")).toBe(false);
+    expect(handoffBody?.querySelector(".overlay-layer-active .overlay-lower-matchup.overlay-entering")).toBeTruthy();
+    expect(handoffBody?.querySelector(".overlay-layer-active .overlay-countdown")).toBeFalsy();
+    await waitFor(() => expect(frameBody(container)?.querySelector("#stage")?.classList.contains("timer-activating")).toBe(true), { timeout: 1600 });
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-layer-active .overlay-countdown.overlay-entering")).toBeTruthy(), { timeout: 2400 });
   });
 
   it("renders a church slide", () => {

@@ -135,6 +135,10 @@ function applySoccerAction(state: SoccerState, action: PresetAction, payload: Re
 
   if (action === "clock-toggle") {
     next.clock = next.clock.running ? pauseClock(next.clock, nowMs) : startClock(next.clock, nowMs);
+    if (next.clock.running) {
+      next.soccerPackage.activeOverlay = "scorebug";
+      next.soccerPackage.selectedOverlay = "scorebug";
+    }
   }
 
   if (action === "clock-reset") {

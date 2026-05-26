@@ -157,6 +157,7 @@ export interface SoccerCountdownPackageState {
   startedAtMs: number | null;
   mode: SoccerTimerMode;
   position: PositionPreset;
+  label: string;
 }
 
 export interface SoccerOverlayPackageState {
@@ -348,18 +349,24 @@ export function parseRoster(text: string): RosterEntry[] {
     });
 }
 
+export const defaultTeamColors = {
+  home: { primaryColor: "#0f766e", secondaryColor: "#99f6e4" },
+  away: { primaryColor: "#334155", secondaryColor: "#facc15" }
+} as const;
+
 export function defaultTeam(side: "home" | "away"): SoccerTeam {
   const rosterText =
     side === "home"
       ? "1 Avery Stone\n4 Jordan Ellis\n7 Max Grenham\n9 Luca Reyes\n11 Noah Brooks"
       : "1 Riley Park\n3 Sam Carter\n8 Eli Morgan\n10 Kai Bennett\n14 Theo Hayes";
+  const colors = defaultTeamColors[side];
   return {
     fullName: side === "home" ? "OpenOverlay United" : "Skyline FC",
     shortName: side === "home" ? "United" : "Skyline",
     abbreviation: side === "home" ? "OOU" : "SKY",
     imageCrop: defaultTeamImageCrop(),
-    primaryColor: side === "home" ? "#0f766e" : "#334155",
-    secondaryColor: side === "home" ? "#99f6e4" : "#facc15",
+    primaryColor: colors.primaryColor,
+    secondaryColor: colors.secondaryColor,
     rosterText,
     roster: parseRoster(rosterText),
     coach: side === "home" ? "Coach Harper" : "Coach Lane",
@@ -390,7 +397,8 @@ export function defaultSoccerPackageState(): SoccerOverlayPackageState {
       running: false,
       startedAtMs: null,
       mode: "full",
-      position: "bottom-right"
+      position: "bottom-right",
+      label: "Kickoff Countdown"
     },
     oneLineText: "Tonight on OpenOverlay",
     oneLinePosition: "bottom-left",
@@ -515,7 +523,8 @@ export function normalizeSoccerPackageState(packageState: Partial<SoccerOverlayP
       running: Boolean(countdown.running),
       startedAtMs: typeof countdown.startedAtMs === "number" ? countdown.startedAtMs : null,
       mode: countdown.mode === "small" ? "small" : "full",
-      position: isPositionPreset(countdown.position) ? countdown.position : "bottom-right"
+      position: isPositionPreset(countdown.position) ? countdown.position : "bottom-right",
+      label: typeof countdown.label === "string" && countdown.label.trim() ? countdown.label : fallback.countdown.label
     },
     oneLinePosition: isPositionPreset(packageState?.oneLinePosition) ? packageState.oneLinePosition : fallback.oneLinePosition,
     twoLinePosition: isPositionPreset(packageState?.twoLinePosition) ? packageState.twoLinePosition : fallback.twoLinePosition,
@@ -652,12 +661,20 @@ export function pauseClock(clock: SoccerClockState, nowMs = Date.now()): SoccerC
 }
 
 export function startClock(clock: SoccerClockState, nowMs = Date.now()): SoccerClockState {
-  if (clock.running) return clock;
-  if (clockIsAtStop(clock, nowMs)) {
-    return { ...clock, running: false };
+  let nextClock = clock;
+  if (
+    clock.mode === "down" &&
+    clock.stopAtEnabled &&
+    clock.stopAtSeconds >= computeClockSeconds(clock, nowMs)
+  ) {
+    nextClock = { ...clock, stopAtSeconds: 0 };
+  }
+  if (nextClock.running) return nextClock;
+  if (clockIsAtStop(nextClock, nowMs)) {
+    return { ...nextClock, running: false };
   }
   return {
-    ...clock,
+    ...nextClock,
     running: true,
     startedAtMs: nowMs
   };

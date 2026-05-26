@@ -502,9 +502,9 @@ function serializeTeam(row: TeamRow): TeamLibraryEntry {
 }
 
 function sanitizeTeamInput(body: Record<string, unknown>, fallback = defaultTeam("home")): Omit<TeamLibraryEntry, "id" | "createdAt" | "updatedAt"> {
-  const fullName = stringField(body.fullName ?? body.name, fallback.fullName || "New Team").slice(0, 120);
+  const fullName = requiredStringField(body.fullName ?? body.name, fallback.fullName || "New Team").slice(0, 120);
   const shortName = stringField(body.shortName, fallback.shortName || fullName).slice(0, 48);
-  const rosterText = stringField(body.rosterText, fallback.rosterText).slice(0, 10_000);
+  const rosterText = rawStringField(body.rosterText, fallback.rosterText).slice(0, 10_000);
   return {
     fullName,
     shortName,
@@ -534,7 +534,15 @@ function sanitizeRecord(input: unknown, fallback?: TeamRecord): TeamRecord {
 function stringField(value: unknown, fallback: string): string {
   if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
-  return trimmed || fallback;
+  return trimmed;
+}
+
+function requiredStringField(value: unknown, fallback: string): string {
+  return stringField(value, fallback) || fallback;
+}
+
+function rawStringField(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
 }
 
 function optionalStringField(value: unknown): string | undefined {

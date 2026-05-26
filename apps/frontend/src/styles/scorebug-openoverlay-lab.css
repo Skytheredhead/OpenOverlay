@@ -3911,3 +3911,649 @@ h1::after {
   translate: 0 0 !important;
   transform: none !important;
 }
+
+/* Final text-bug face pass: keep the white card above the animated hard shadow. */
+.overlay-text-bug {
+  background: transparent !important;
+  border: 0 !important;
+  filter: none !important;
+  isolation: isolate;
+  overflow: visible;
+}
+
+.overlay-text-bug .text-bug-shadow {
+  background: #111111 !important;
+  inset: 0;
+  opacity: 1;
+  position: absolute !important;
+  transform: translate(8px, 8px);
+  z-index: 0 !important;
+}
+
+.overlay-text-bug > div {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid #111111 !important;
+  color: #111111 !important;
+  display: grid !important;
+  min-width: min(74vw, 360px);
+  overflow: visible;
+  position: relative;
+  z-index: 1 !important;
+}
+
+.overlay-text-bug > div::before,
+.overlay-text-bug > div::after {
+  content: none !important;
+  animation: none !important;
+}
+
+.overlay .two-line-text > div {
+  gap: 4px;
+  padding: 13px 18px 14px;
+}
+
+.overlay .two-line-text [data-bind-text-two-a],
+.overlay .two-line-text [data-bind-text-two-b] {
+  display: block !important;
+  max-width: 100%;
+  overflow: hidden;
+  position: relative;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.overlay .two-line-text [data-bind-text-two-a] {
+  color: #111111 !important;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.overlay .two-line-text [data-bind-text-two-b] {
+  color: #555555 !important;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+/* Two-line text bug: keep bind-animation display rules from flattening the lines. */
+.overlay .two-line-text > div {
+  display: grid !important;
+  gap: 3px;
+  min-width: min(74vw, 360px);
+  padding: 13px 18px 14px;
+  align-items: center;
+}
+
+.overlay .two-line-text [data-bind-text-two-a],
+.overlay .two-line-text [data-bind-text-two-b] {
+  display: block !important;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overlay .two-line-text [data-bind-text-two-a] {
+  color: var(--oo-ink);
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.overlay .two-line-text [data-bind-text-two-b] {
+  color: var(--oo-muted);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+/* Countdown timer shadow fix: let the shadow animate independently instead of being masked by the card wipe. */
+@keyframes ooTimerCardLayerIntro {
+  0% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+
+  70% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes ooTimerCardLayerOutro {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.timer-card {
+  filter: none !important;
+}
+
+.timer-card > .timer-card-shadow {
+  z-index: 0 !important;
+}
+
+.timer-card::before {
+  z-index: 1 !important;
+}
+
+.timer-card > :not(.timer-card-shadow) {
+  z-index: 2 !important;
+}
+
+.overlay-countdown.overlay-entering .timer-card {
+  animation: ooTimerCardLayerIntro 700ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both !important;
+  clip-path: none !important;
+}
+
+.overlay-countdown.overlay-exiting .timer-card {
+  animation: ooTimerCardLayerOutro 640ms cubic-bezier(0.7, 0, 0.84, 0) both !important;
+  clip-path: none !important;
+}
+
+.overlay-countdown.overlay-entering .timer-card-shadow {
+  animation: ooHardShadowIntro 700ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both !important;
+}
+
+.overlay-countdown.overlay-exiting .timer-card-shadow {
+  animation: ooHardShadowOutro 640ms cubic-bezier(0.7, 0, 0.84, 0) both !important;
+}
+
+/* Final layer correction: shadows are real elements at layer 0; faces/content sit above them. */
+.match-label-shadow,
+.lower-kicker-shadow,
+.full-teams-shadow,
+.lower-row-shadow,
+.lineup-shadow,
+.scorebug-shadow,
+.timer-card-shadow,
+.text-bug-shadow {
+  z-index: 0 !important;
+}
+
+.match-kicker,
+.match-footer,
+.lower-kicker {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.match-kicker > span:not(.match-label-shadow),
+.match-footer > span:not(.match-label-shadow),
+.lower-kicker > span:not(.lower-kicker-shadow) {
+  background: var(--oo-bg);
+  border: 1px solid var(--oo-ink);
+  color: var(--oo-ink);
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.match-kicker > span:not(.match-label-shadow),
+.match-footer > span:not(.match-label-shadow) {
+  padding: 9px 18px;
+}
+
+.lower-kicker > span:not(.lower-kicker-shadow) {
+  border-bottom: 0;
+  padding: 8px 16px;
+}
+
+.full-teams,
+.lower-match-row,
+.lower-result-row {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.full-team,
+.full-divider,
+.lower-match-row > :not(.lower-row-shadow),
+.lower-result-row > :not(.lower-row-shadow),
+.overlay-scorebug > :not(.scorebug-shadow),
+.timer-card > :not(.timer-card-shadow),
+.overlay-text-bug > div {
+  position: relative;
+  z-index: 1;
+}
+
+.full-team:first-of-type {
+  border: 1px solid var(--oo-ink);
+  border-right: 0;
+}
+
+.full-divider {
+  border-bottom: 1px solid var(--oo-ink);
+  border-top: 1px solid var(--oo-ink);
+}
+
+.full-team.away {
+  border: 1px solid var(--oo-ink);
+  border-left: 0;
+}
+
+.lower-match-row > :not(.lower-row-shadow),
+.lower-result-row > :not(.lower-row-shadow) {
+  border-bottom: 1px solid var(--oo-ink);
+  border-top: 1px solid var(--oo-ink);
+}
+
+.lower-match-row > :nth-child(2),
+.lower-result-row > :nth-child(2) {
+  border-left: 1px solid var(--oo-ink);
+}
+
+.lower-match-row > :not(.lower-row-shadow):last-child,
+.lower-result-row > :not(.lower-row-shadow):last-child {
+  border-right: 1px solid var(--oo-ink);
+}
+
+.overlay-lineup {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.overlay-lineup::after {
+  z-index: 1 !important;
+}
+
+.overlay-lineup .lineup-head,
+.overlay-lineup .lineup-list,
+.overlay-lineup .lineup-page {
+  position: relative;
+  z-index: 2;
+}
+
+.timer-card {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.timer-card::before {
+  z-index: 1 !important;
+}
+
+.timer-card > :not(.timer-card-shadow) {
+  z-index: 2;
+}
+
+/* Keep animated text bug shadows in their own layer behind the card face. */
+.overlay-text-bug {
+  isolation: isolate;
+  overflow: visible;
+}
+
+.text-bug-shadow {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--oo-ink);
+  opacity: 1;
+  transform: translate(8px, 8px);
+  clip-path: inset(0 0 0 0);
+}
+
+.overlay-text-bug > div {
+  position: relative;
+  z-index: 1;
+}
+
+.overlay-text-bug > div::before,
+.overlay-text-bug > div::after {
+  content: none !important;
+  animation: none !important;
+}
+
+.overlay-text-bug > div > * {
+  position: relative;
+  z-index: 2;
+}
+
+.overlay-text-bug.overlay-entering .text-bug-shadow {
+  animation: ooHardShadowIntro 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.overlay-text-bug.overlay-exiting .text-bug-shadow {
+  animation: ooHardShadowOutro 720ms cubic-bezier(0.7, 0, 0.84, 0) both;
+}
+
+/* Timer handoff: morph matchup centers to their clock state before the full timer enters. */
+.overlay-lower-matchup .lower-match-center {
+  display: grid;
+  place-items: center;
+}
+
+.overlay-lower-matchup .lower-versus,
+.overlay-lower-matchup .lower-match-countdown {
+  grid-area: 1 / 1;
+  transition:
+    opacity 360ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.overlay-lower-matchup .lower-match-countdown {
+  display: grid !important;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px) scale(0.94);
+}
+
+.timer-running .overlay-lower-matchup .lower-versus,
+.timer-exiting .overlay-lower-matchup .lower-versus,
+.timer-activating .overlay-lower-matchup .lower-versus {
+  display: block !important;
+  opacity: 0;
+  transform: translateY(-10px) scale(0.94);
+}
+
+.timer-running .overlay-lower-matchup .lower-match-countdown,
+.timer-exiting .overlay-lower-matchup .lower-match-countdown,
+.timer-activating .overlay-lower-matchup .lower-match-countdown {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.overlay-lower-result .lower-result-state {
+  overflow: hidden;
+}
+
+.overlay-lower-result .lower-result-state > span,
+.overlay-lower-result .lower-result-state > b,
+.overlay-lower-result .lower-result-state > em {
+  transition:
+    opacity 360ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.overlay-lower-result .lower-result-state > b,
+.overlay-lower-result .lower-result-state > em {
+  display: block !important;
+  opacity: 0;
+  transform: translateY(10px) scale(0.94);
+}
+
+.timer-running:not(.result-final) .overlay-lower-result .lower-result-state > span,
+.timer-exiting:not(.result-final) .overlay-lower-result .lower-result-state > span,
+.timer-activating:not(.result-final) .overlay-lower-result .lower-result-state > span {
+  display: block !important;
+  opacity: 0;
+  transform: translateY(-10px) scale(0.94);
+}
+
+.timer-running:not(.result-final) .overlay-lower-result .lower-result-state > b,
+.timer-running:not(.result-final) .overlay-lower-result .lower-result-state > em,
+.timer-exiting:not(.result-final) .overlay-lower-result .lower-result-state > b,
+.timer-exiting:not(.result-final) .overlay-lower-result .lower-result-state > em,
+.timer-activating:not(.result-final) .overlay-lower-result .lower-result-state > b,
+.timer-activating:not(.result-final) .overlay-lower-result .lower-result-state > em {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Production object shadows: real elements, not late pseudo-element shadows. */
+.match-kicker,
+.match-footer,
+.lower-kicker,
+.full-teams,
+.lower-match-row,
+.lower-result-row,
+.overlay-lineup,
+.overlay-scorebug,
+.timer-card {
+  isolation: isolate;
+  overflow: visible;
+  position: relative;
+}
+
+.match-kicker::before,
+.match-kicker::after,
+.match-footer::before,
+.match-footer::after,
+.lower-kicker::before,
+.lower-kicker::after,
+.full-teams::before,
+.lower-match-row::after,
+.lower-result-row::after,
+.overlay-lineup::before,
+.overlay-scorebug::before,
+.timer-card::after {
+  content: none !important;
+  animation: none !important;
+}
+
+.match-label-shadow,
+.lower-kicker-shadow,
+.full-teams-shadow,
+.lower-row-shadow,
+.lineup-shadow,
+.scorebug-shadow,
+.timer-card-shadow {
+  position: absolute !important;
+  inset: 0;
+  pointer-events: none;
+  background: var(--oo-ink);
+  opacity: 1;
+  clip-path: inset(0 0 0 0);
+  transform: translate(var(--oo-shadow-x, 10px), var(--oo-shadow-y, 10px));
+  transition: none;
+}
+
+.match-label-shadow,
+.lower-kicker-shadow,
+.full-teams-shadow,
+.lower-row-shadow,
+.lineup-shadow,
+.scorebug-shadow {
+  z-index: -1;
+}
+
+.match-kicker,
+.match-footer,
+.lower-kicker {
+  box-shadow: none !important;
+}
+
+.match-kicker > span:not(.match-label-shadow),
+.match-footer > span:not(.match-label-shadow),
+.lower-kicker > span:not(.lower-kicker-shadow) {
+  position: relative;
+  z-index: 1;
+}
+
+.match-kicker .match-label-shadow {
+  --oo-shadow-x: 7px;
+  --oo-shadow-y: 7px;
+  --oo-shadow-intro-x: -7px;
+  --oo-shadow-out-x: 18px;
+  background: var(--oo-red);
+}
+
+.match-footer .match-label-shadow {
+  --oo-shadow-x: 7px;
+  --oo-shadow-y: 7px;
+  --oo-shadow-intro-x: -7px;
+  --oo-shadow-out-x: 18px;
+  background: var(--oo-ink);
+}
+
+.lower-kicker-shadow {
+  --oo-shadow-x: 10px;
+  --oo-shadow-y: 10px;
+  --oo-shadow-intro-x: -8px;
+  --oo-shadow-out-x: 22px;
+}
+
+.timer-card > .timer-card-shadow {
+  z-index: -1 !important;
+}
+
+.full-teams-shadow {
+  --oo-shadow-x: 9px;
+  --oo-shadow-y: 9px;
+  --oo-shadow-intro-x: -8px;
+  --oo-shadow-out-x: 20px;
+}
+
+.lower-row-shadow,
+.scorebug-shadow {
+  --oo-shadow-x: 10px;
+  --oo-shadow-y: 10px;
+  --oo-shadow-intro-x: -8px;
+  --oo-shadow-out-x: 22px;
+}
+
+.lineup-shadow {
+  --oo-shadow-x: 12px;
+  --oo-shadow-y: 12px;
+  --oo-shadow-intro-x: -10px;
+  --oo-shadow-out-x: 26px;
+}
+
+.timer-card-shadow {
+  --oo-shadow-x: 14px;
+  --oo-shadow-y: 14px;
+  --oo-shadow-intro-x: -12px;
+  --oo-shadow-out-x: 28px;
+}
+
+.overlay-entering .match-label-shadow,
+.overlay-entering .lower-kicker-shadow,
+.overlay-entering .full-teams-shadow,
+.overlay-entering .lower-row-shadow,
+.overlay-entering .lineup-shadow,
+.overlay-entering .scorebug-shadow,
+.overlay-entering .timer-card-shadow {
+  animation: ooHardShadowIntro 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.overlay-exiting .match-label-shadow,
+.overlay-exiting .lower-kicker-shadow,
+.overlay-exiting .full-teams-shadow,
+.overlay-exiting .lower-row-shadow,
+.overlay-exiting .lineup-shadow,
+.overlay-exiting .scorebug-shadow,
+.overlay-exiting .timer-card-shadow {
+  animation: ooHardShadowOutro 720ms cubic-bezier(0.7, 0, 0.84, 0) both;
+}
+
+.overlay-full-matchup .match-kicker,
+.overlay-full-matchup .match-footer {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid #111111 !important;
+  color: #111111 !important;
+  inline-size: min(48vw, 560px);
+  min-inline-size: min(82vw, 420px);
+  justify-self: center;
+  text-align: center;
+  translate: 0 0 !important;
+  transform: none !important;
+  animation: none !important;
+  will-change: auto !important;
+}
+
+.overlay-full-matchup .match-kicker::before,
+.overlay-full-matchup .match-kicker::after,
+.overlay-full-matchup .match-footer::before,
+.overlay-full-matchup .match-footer::after {
+  content: none !important;
+  animation: none !important;
+}
+
+.overlay-full-matchup.overlay-entering .match-kicker,
+.overlay-full-matchup.overlay-entering .match-footer,
+.overlay-full-matchup.overlay-exiting .match-kicker,
+.overlay-full-matchup.overlay-exiting .match-footer {
+  animation: none !important;
+  opacity: 1 !important;
+  translate: 0 0 !important;
+  transform: none !important;
+}
+
+/* EOF text-bug correction: keep the white face above the hard shadow. */
+.overlay-text-bug {
+  background: transparent !important;
+  border: 0 !important;
+  filter: none !important;
+  isolation: isolate;
+  overflow: visible;
+}
+
+.overlay-text-bug .text-bug-shadow {
+  background: #111111 !important;
+  opacity: 1;
+  position: absolute !important;
+  transform: translate(8px, 8px);
+  z-index: 0 !important;
+}
+
+.overlay-text-bug > div {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border: 1px solid #111111 !important;
+  color: #111111 !important;
+  display: grid !important;
+  min-width: min(74vw, 360px);
+  position: relative;
+  z-index: 1 !important;
+}
+
+.overlay-text-bug > div::before,
+.overlay-text-bug > div::after {
+  content: none !important;
+  animation: none !important;
+}
+
+.overlay .two-line-text > div {
+  gap: 4px;
+  padding: 13px 18px 14px;
+}
+
+.overlay .two-line-text [data-bind-text-two-a],
+.overlay .two-line-text [data-bind-text-two-b] {
+  display: block !important;
+  max-width: 100%;
+  overflow: hidden;
+  position: relative;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.overlay .two-line-text [data-bind-text-two-a] {
+  color: #111111 !important;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.overlay .two-line-text [data-bind-text-two-b] {
+  color: #555555 !important;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+}

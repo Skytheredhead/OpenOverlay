@@ -59,6 +59,7 @@ async function handleSocket(
   const overlayId = stringQuery(socket, "overlayId");
   const presetId = stringQuery(socket, "presetId");
   const role = stringQuery(socket, "role");
+  const client = stringQuery(socket, "client");
 
   if (overlayId && role === "overlay") {
     const row = ctx.db.getPresetByPublicId(overlayId);
@@ -68,15 +69,20 @@ async function handleSocket(
       return;
     }
     socket.join(`overlay:${row.public_id}`);
+    const countsAsOverlayClient = client !== "preview";
     const set = overlayClients.get(row.public_id) || new Set<string>();
-    set.add(socket.id);
-    overlayClients.set(row.public_id, set);
+    if (countsAsOverlayClient) {
+      set.add(socket.id);
+      overlayClients.set(row.public_id, set);
+    }
     socket.emit("state:update", publicPayload(row, materializeState(parsePresetState(row))));
-    hub.broadcastConnectionCount(row);
-    socket.on("disconnect", () => {
-      set.delete(socket.id);
+    if (countsAsOverlayClient) {
       hub.broadcastConnectionCount(row);
-    });
+      socket.on("disconnect", () => {
+        set.delete(socket.id);
+        hub.broadcastConnectionCount(row);
+      });
+    }
     return;
   }
 

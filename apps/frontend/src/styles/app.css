@@ -47,7 +47,8 @@ a {
 
 .marketing {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
+  align-content: stretch;
 }
 
 .topbar {
@@ -124,6 +125,19 @@ a {
   min-height: 420px;
 }
 
+.home-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px 0 22px;
+}
+
+.home-footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .auth-page {
   min-height: 100vh;
   display: grid;
@@ -154,9 +168,86 @@ a {
   margin-top: 12px;
 }
 
+.clock-toggle-option {
+  display: grid;
+  gap: 6px;
+}
+
+.clock-toggle-option.is-disabled {
+  opacity: 0.55;
+}
+
+.clock-toggle-inline {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
 .field {
   display: grid;
   gap: 4px;
+}
+
+.custom-checkbox-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  cursor: pointer;
+  position: relative;
+  color: var(--sw-ink-soft);
+  font-family: "Inter Tight", Helvetica, sans-serif;
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.custom-checkbox-control input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--sw-ink);
+  background: var(--sw-bg);
+  border-radius: 2px;
+  margin: 0;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.custom-checkbox-glyph {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  display: inline-grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--sw-bg);
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.custom-checkbox-control input:checked {
+  border-color: var(--sw-red);
+  background: var(--sw-red);
+}
+
+.custom-checkbox-control input:checked + .custom-checkbox-glyph {
+  opacity: 1;
+}
+
+.custom-checkbox-control input:disabled {
+  border-color: var(--sw-ink-mute);
+  background: var(--sw-bg-soft);
+}
+
+.custom-checkbox-control input:focus-visible {
+  outline: 2px solid var(--sw-red);
+  outline-offset: 2px;
 }
 
 .field input,
@@ -198,7 +289,7 @@ a {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: var(--sidebar-width, 208px) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 232px) minmax(0, 1fr);
   transition: grid-template-columns 220ms ease;
 }
 
@@ -282,9 +373,22 @@ a {
   transform: translateX(-10px);
 }
 
+.sidebar-nav-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 40px;
+  padding-top: 300px;
+}
+
 .sidebar nav {
   display: grid;
-  margin-top: 16px;
+  width: 100%;
+  margin-top: 0;
+  align-content: center;
 }
 
 .sidebar a,
@@ -317,7 +421,7 @@ a {
 }
 
 .sidebar-account {
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .sidebar-account .muted {
@@ -376,6 +480,28 @@ a {
 .panel {
   display: grid;
   gap: 8px;
+}
+
+.preset-card-new {
+  width: calc(100% - 8px);
+  justify-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  cursor: pointer;
+  min-height: 132px;
+  padding-right: 8px;
+}
+
+.new-game-card-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--sw-ink);
+  color: var(--sw-red);
 }
 
 .preset-card h2,
@@ -538,7 +664,7 @@ a {
     linear-gradient(0deg, rgba(255, 255, 255, 0.14) 1px, transparent 1px),
     radial-gradient(circle at 50% 50%, transparent 0 82px, rgba(255, 255, 255, 0.26) 83px 85px, transparent 86px),
     linear-gradient(90deg, transparent 49.85%, rgba(255, 255, 255, 0.26) 49.85% 50.15%, transparent 50.15%),
-    linear-gradient(135deg, #0f7a46, #064f35);
+    linear-gradient(#0f7a46, #0f7a46);
   background-size: 96px 96px, 96px 96px, 100% 100%, 100% 100%, 100% 100%;
 }
 
@@ -600,7 +726,8 @@ a {
 
 .record-color-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(120px, 220px) max-content;
+  justify-content: start;
   gap: 10px;
   align-items: end;
 }
@@ -612,7 +739,7 @@ a {
 }
 
 .color-swatch-field {
-  width: 42px;
+  width: 76px;
 }
 
 .field.color-swatch-field input[type="color"] {
@@ -641,9 +768,17 @@ a {
 
 .team-library-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 720px);
+  grid-template-columns: minmax(220px, 280px) minmax(0, 620px);
   gap: 12px;
   align-items: start;
+}
+
+.teams-page {
+  padding-top: 40px;
+}
+
+.live-game-page {
+  padding-top: 40px;
 }
 
 .team-library-layout.empty {
@@ -658,6 +793,20 @@ a {
   align-items: center;
   text-align: left;
   cursor: pointer;
+}
+
+.team-list-item-new {
+  justify-content: start;
+}
+
+.team-list-item-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--team-primary, var(--sw-ink));
+  color: var(--team-primary, var(--sw-ink));
+  background: color-mix(in srgb, var(--team-secondary, var(--sw-bg)) 85%, white);
 }
 
 .team-list-item span {
