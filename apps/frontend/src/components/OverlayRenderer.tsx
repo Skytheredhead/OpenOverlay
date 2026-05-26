@@ -8,6 +8,7 @@ import {
   type Placement,
   type PresetState,
   type PresetType,
+  type SoccerLabOverlay,
   type SoccerState
 } from "@openoverlay/shared";
 import { mediaApi } from "../lib/api";
@@ -25,6 +26,8 @@ interface OverlayRendererProps {
 
 const BASE_WIDTH = 1920;
 const BASE_HEIGHT = 1080;
+const SOCCER_EXIT_MS = 960;
+type OverlayPhase = "entering" | "exiting";
 
 export function OverlayRenderer({ type, state, transparent = true, safeArea = false, interactive = false, onDragStart }: OverlayRendererProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -93,9 +96,25 @@ function SoccerOverlay({
 }) {
   const soccer = state.soccerPackage;
   const activeOverlay = soccer.activeOverlay;
+  const [exitingOverlay, setExitingOverlay] = useState<SoccerLabOverlay | null>(null);
+  const previousOverlayRef = useRef<SoccerLabOverlay | null>(activeOverlay);
   const countdownSeconds = packageCountdownSeconds(soccer.countdown, now);
   const timerRunning = soccer.countdown.running && countdownSeconds > 0;
   const activeClass = activeOverlay ? `show-${activeOverlay}` : "show-none";
+
+  useEffect(() => {
+    const previousOverlay = previousOverlayRef.current;
+    if (previousOverlay && previousOverlay !== activeOverlay) {
+      setExitingOverlay(previousOverlay);
+      const timeout = window.setTimeout(() => {
+        setExitingOverlay((current) => current === previousOverlay ? null : current);
+      }, SOCCER_EXIT_MS);
+      previousOverlayRef.current = activeOverlay;
+      return () => window.clearTimeout(timeout);
+    }
+    previousOverlayRef.current = activeOverlay;
+    if (activeOverlay) setExitingOverlay((current) => current === activeOverlay ? null : current);
+  }, [activeOverlay]);
 
   const labCss = soccer.overlayPackage === "rounded" ? scorebugLabCss : scorebugOpenOverlayLabCss;
   return (
@@ -118,18 +137,38 @@ function SoccerOverlay({
             "--scorebug-width": `${soccer.scorebugWidth}%`
           } as React.CSSProperties}
         >
-          {activeOverlay === "full-matchup" ? <FullMatchup state={state} countdownSeconds={countdownSeconds} /> : null}
-          {activeOverlay === "lower-matchup" ? <LowerMatchup state={state} countdownSeconds={countdownSeconds} /> : null}
-          {activeOverlay === "lower-result" ? <LowerResult state={state} countdownSeconds={countdownSeconds} /> : null}
-          {activeOverlay === "lineup-panel" ? <LineupPanel state={state} /> : null}
-          {activeOverlay === "scorebug" ? <LabScorebug state={state} now={now} /> : null}
-          {activeOverlay === "countdown-timer" ? <CountdownOverlay state={state} countdownSeconds={countdownSeconds} /> : null}
-          {activeOverlay === "one-line-text" ? <OneLineText state={state} /> : null}
-          {activeOverlay === "two-line-text" ? <TwoLineText state={state} /> : null}
+          {exitingOverlay && exitingOverlay !== activeOverlay ? renderSoccerLabOverlay(exitingOverlay, "exiting", state, now, countdownSeconds) : null}
+          {activeOverlay ? renderSoccerLabOverlay(activeOverlay, "entering", state, now, countdownSeconds) : null}
         </div>
       </LabFrame>
     </Positioned>
   );
+}
+
+function renderSoccerLabOverlay(overlay: SoccerLabOverlay, phase: OverlayPhase, state: SoccerState, now: number, countdownSeconds: number) {
+  const key = `${phase}-${overlay}`;
+  switch (overlay) {
+    case "full-matchup":
+      return <FullMatchup key={key} state={state} countdownSeconds={countdownSeconds} phase={phase} />;
+    case "lower-matchup":
+      return <LowerMatchup key={key} state={state} countdownSeconds={countdownSeconds} phase={phase} />;
+    case "lower-result":
+      return <LowerResult key={key} state={state} countdownSeconds={countdownSeconds} phase={phase} />;
+    case "lineup-panel":
+      return <LineupPanel key={key} state={state} phase={phase} />;
+    case "scorebug":
+      return <LabScorebug key={key} state={state} now={now} phase={phase} />;
+    case "countdown-timer":
+      return <CountdownOverlay key={key} state={state} countdownSeconds={countdownSeconds} phase={phase} />;
+    case "one-line-text":
+      return <OneLineText key={key} state={state} phase={phase} />;
+    case "two-line-text":
+      return <TwoLineText key={key} state={state} phase={phase} />;
+  }
+}
+
+function labOverlayClass(base: string, phase: OverlayPhase, extra = "") {
+  return ["overlay", phase === "entering" ? "active" : "", base, extra, `overlay-${phase}`].filter(Boolean).join(" ");
 }
 
 function LabFrame({ css, children }: { css: string; children: React.ReactNode }) {
@@ -281,9 +320,9 @@ function Positioned({
   );
 }
 
-function FullMatchup({ state, countdownSeconds }: { state: SoccerState; countdownSeconds: number }) {
+function FullMatchup({ state, countdownSeconds, phase }: { state: SoccerState; countdownSeconds: number; phase: OverlayPhase }) {
   return (
-    <article key="full-matchup" className="overlay active overlay-full-matchup overlay-entering" aria-label="Full page matchup">
+    <article className={labOverlayClass("overlay-full-matchup", phase)} aria-label="Full page matchup">
       <PackageBackground enabled={state.soccerPackage.packageBackground} />
       <div className="full-panel">
         <div className="match-kicker">{state.gameTitle}</div>
@@ -313,9 +352,9 @@ function FullTeam({ team, side }: { team: SoccerState["home"]; side: "home" | "a
   );
 }
 
-function LowerMatchup({ state, countdownSeconds }: { state: SoccerState; countdownSeconds: number }) {
+function LowerMatchup({ state, countdownSeconds, phase }: { state: SoccerState; countdownSeconds: number; phase: OverlayPhase }) {
   return (
-    <article key="lower-matchup" className="overlay active overlay-lower-matchup overlay-entering" aria-label="Lower matchup">
+    <article className={labOverlayClass("overlay-lower-matchup", phase)} aria-label="Lower matchup">
       <div className="lower-shell">
         <div className="lower-kicker">{state.gameTitle}</div>
         <div className="lower-match-row">
@@ -341,9 +380,9 @@ function LowerTeam({ team, side }: { team: SoccerState["home"]; side: "home" | "
   );
 }
 
-function LowerResult({ state, countdownSeconds }: { state: SoccerState; countdownSeconds: number }) {
+function LowerResult({ state, countdownSeconds, phase }: { state: SoccerState; countdownSeconds: number; phase: OverlayPhase }) {
   return (
-    <article key="lower-result" className="overlay active overlay-lower-result overlay-entering" aria-label="Lower matchup with score">
+    <article className={labOverlayClass("overlay-lower-result", phase)} aria-label="Lower matchup with score">
       <div className="lower-shell">
         <div className="lower-kicker">{state.gameTitle}</div>
         <div className="lower-result-row">
@@ -364,7 +403,7 @@ function LowerResult({ state, countdownSeconds }: { state: SoccerState; countdow
   );
 }
 
-function LineupPanel({ state }: { state: SoccerState }) {
+function LineupPanel({ state, phase }: { state: SoccerState; phase: OverlayPhase }) {
   const team = state.soccerPackage.lineupTeam === "away" ? state.away : state.home;
   const pageSize = 6;
   const totalPages = Math.max(1, Math.ceil(team.roster.length / pageSize));
@@ -372,7 +411,7 @@ function LineupPanel({ state }: { state: SoccerState }) {
   const rows = team.roster.slice(page * pageSize, page * pageSize + pageSize);
   while (rows.length < pageSize) rows.push({ id: `blank-${rows.length}`, line: "", name: "", starter: false });
   return (
-    <article key="lineup-panel" className="overlay active overlay-lineup overlay-entering" aria-label="Lineup panel">
+    <article className={labOverlayClass("overlay-lineup", phase)} aria-label="Lineup panel">
       <div className="lineup-head">
         <span>{team.fullName}</span>
         <TeamImage team={team} className="team-logo lineup-logo" />
@@ -385,12 +424,11 @@ function LineupPanel({ state }: { state: SoccerState }) {
   );
 }
 
-function LabScorebug({ state, now }: { state: SoccerState; now: number }) {
+function LabScorebug({ state, now, phase }: { state: SoccerState; now: number; phase: OverlayPhase }) {
   const vertical = state.soccerPackage.scorebugLayout === "vertical";
   return (
     <article
-      key={`scorebug-${state.soccerPackage.scorebugLayout}`}
-      className={`overlay active overlay-scorebug ${vertical ? "scorebug-vertical" : "scorebug-horizontal"} overlay-entering`}
+      className={labOverlayClass("overlay-scorebug", phase, vertical ? "scorebug-vertical" : "scorebug-horizontal")}
       aria-label="Scorebug"
     >
       <div className="bug-team">{state.home.abbreviation}</div>
@@ -402,12 +440,11 @@ function LabScorebug({ state, now }: { state: SoccerState; now: number }) {
   );
 }
 
-function CountdownOverlay({ state, countdownSeconds }: { state: SoccerState; countdownSeconds: number }) {
+function CountdownOverlay({ state, countdownSeconds, phase }: { state: SoccerState; countdownSeconds: number; phase: OverlayPhase }) {
   const small = state.soccerPackage.countdown.mode === "small";
   return (
     <article
-      key={`countdown-${state.soccerPackage.countdown.mode}-${state.soccerPackage.countdown.position}`}
-      className={`overlay active overlay-countdown ${small ? `countdown-small position-${state.soccerPackage.countdown.position}` : "countdown-full"} overlay-entering`}
+      className={labOverlayClass("overlay-countdown", phase, small ? `countdown-small position-${state.soccerPackage.countdown.position}` : "countdown-full")}
       aria-label="Countdown timer"
     >
       <PackageBackground enabled={!small && state.soccerPackage.packageBackground} />
@@ -416,17 +453,17 @@ function CountdownOverlay({ state, countdownSeconds }: { state: SoccerState; cou
   );
 }
 
-function OneLineText({ state }: { state: SoccerState }) {
+function OneLineText({ state, phase }: { state: SoccerState; phase: OverlayPhase }) {
   return (
-    <article key="one-line-text" className={`overlay active overlay-text-bug one-line-text position-${state.soccerPackage.oneLinePosition} overlay-entering`} aria-label="One line text bug">
+    <article className={labOverlayClass("overlay-text-bug", phase, `one-line-text position-${state.soccerPackage.oneLinePosition}`)} aria-label="One line text bug">
       <div>{state.soccerPackage.oneLineText}</div>
     </article>
   );
 }
 
-function TwoLineText({ state }: { state: SoccerState }) {
+function TwoLineText({ state, phase }: { state: SoccerState; phase: OverlayPhase }) {
   return (
-    <article key="two-line-text" className={`overlay active overlay-text-bug two-line-text position-${state.soccerPackage.twoLinePosition} overlay-entering`} aria-label="Two line text bug">
+    <article className={labOverlayClass("overlay-text-bug", phase, `two-line-text position-${state.soccerPackage.twoLinePosition}`)} aria-label="Two line text bug">
       <div><strong>{state.soccerPackage.twoLineTextA}</strong><span>{state.soccerPackage.twoLineTextB}</span></div>
     </article>
   );

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 import {
@@ -6,19 +6,15 @@ import {
   Image,
   LayoutDashboard,
   LogOut,
-  MonitorPlay,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pause,
   Play,
   Plus,
   RotateCcw,
-  Save,
-  Settings,
-  ShieldAlert,
   Trash2,
-  Undo2,
   Upload,
-  Users,
-  X
+  Users
 } from "lucide-react";
 import {
   computeClockSeconds,
@@ -42,8 +38,8 @@ import {
   type StyleVariant,
   type TeamLibraryEntry
 } from "@openoverlay/shared";
-import { getElementById, OverlayRenderer, updateElementPlacement } from "./components/OverlayRenderer";
-import { API_BASE, WS_URL, authApi, mediaApi, overlayApi, presetApi, teamApi, type MediaItem, type User } from "./lib/api";
+import { getElementById, OverlayRenderer } from "./components/OverlayRenderer";
+import { WS_URL, authApi, mediaApi, overlayApi, presetApi, teamApi, type MediaItem, type User } from "./lib/api";
 import { useDebouncedCallback } from "./lib/hooks";
 
 interface AuthContextValue {
@@ -288,19 +284,31 @@ function Login({ mode }: { mode: "login" | "signup" }) {
 function AppShell({ children }: { children: React.ReactNode }) {
   const { logout, user } = useAuth();
   const [games, setGames] = useState<PresetSummary[]>([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     void presetApi.list().then((response) => setGames(response.presets)).catch(() => setGames([]));
   }, []);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
-        <Link to="/dash" className="brand">
-          <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
-          <span>OpenOverlay</span>
-        </Link>
-        <nav>
+        <div className="sidebar-header">
+          <Link to="/dash" className="brand sidebar-brand" aria-label="OpenOverlay dashboard">
+            <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
+            <span className="sidebar-brand-text">OpenOverlay</span>
+          </Link>
+          <button
+            className="sidebar-collapse-toggle"
+            type="button"
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setSidebarCollapsed((value) => !value)}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={19} strokeWidth={2.2} /> : <PanelLeftClose size={19} strokeWidth={2.2} />}
+          </button>
+        </div>
+        <nav className="sidebar-nav" aria-hidden={sidebarCollapsed}>
           <NavLink to="/dash" end><LayoutDashboard size={18} /> <span className="nav-label">Games</span></NavLink>
           {games.length > 0 ? (
             <div className="sidebar-subnav" aria-label="Active games">
@@ -314,7 +322,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <NavLink to="/dash/teams"><Users size={18} /> <span className="nav-label">Teams</span></NavLink>
           <NavLink to="/dash/media"><Image size={18} /> <span className="nav-label">Media</span></NavLink>
         </nav>
-        <div className="sidebar-account">
+        <div className="sidebar-account" aria-hidden={sidebarCollapsed}>
           <p className="muted">{user?.email}</p>
           <button className="sidebar-logout" type="button" aria-label="Logout" title="Logout" onClick={() => void logout()}><LogOut size={20} strokeWidth={2.4} /></button>
         </div>
@@ -540,20 +548,16 @@ function PresetEditor() {
   const [tab, setTab] = useState("live");
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [actionKey, setActionKey] = useState<string | null>(null);
   const [history, setHistory] = useState<PresetState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const frameRef = useRef<HTMLDivElement | null>(null);
   const socketRef = useRef<Socket | null>(null);
-  const prompt = usePromptDialog();
 
   const selectedElement = useMemo(() => {
     if (!preset) return undefined;
-    if (isSoccerState(preset.state)) return tab === "design" ? preset.state.elements.fullscreen : undefined;
+    if (isSoccerState(preset.state)) return undefined;
     if (isChurchState(preset.state)) return preset.state.elements.lowerThird;
     return undefined;
-  }, [preset, tab]);
+  }, [preset]);
 
   const load = useCallback(async () => {
     if (!presetId) return;
@@ -571,7 +575,7 @@ function PresetEditor() {
 
   useEffect(() => {
     if (!preset) return;
-    if (preset.type === "soccer" && !["setup", "live", "design"].includes(tab)) setTab("live");
+    if (preset.type === "soccer" && !["match", "live"].includes(tab)) setTab("live");
     if (preset.type !== "soccer" && !["slides", "style"].includes(tab)) setTab("slides");
   }, [preset, tab]);
 
@@ -645,122 +649,110 @@ function PresetEditor() {
     setHistoryIndex((index) => Math.min(index + 1, 59));
   }
 
-  async function duplicatePreset() {
-    if (!preset) return;
-    const response = await presetApi.duplicate(preset.id);
-    window.location.href = `/dash/presets/${response.preset.id}`;
-  }
-
-  async function sharePreset() {
-    if (!preset) return;
-    const email = await prompt({
-      title: "Share game",
-      label: "Recipient email",
-      inputType: "email",
-      submitLabel: "Share"
-    });
-    const trimmedEmail = email?.trim();
-    if (!trimmedEmail) return;
-    try {
-      await presetApi.share(preset.id, trimmedEmail);
-      setError(null);
-      setNotice("Game duplicated into recipient account.");
-    } catch (err) {
-      setNotice(null);
-      setError(err instanceof Error ? err.message : "Could not share game");
-    }
-  }
-
-  async function rotateActionKey() {
-    if (!preset) return;
-    const response = await presetApi.actionKey(preset.id);
-    setActionKey(response.actionKey);
-  }
-
-  function handleDragStart(elementId: string, event: PointerEvent<HTMLElement>) {
-    if (!preset || !frameRef.current) return;
-    const element = getElementById(preset.state, elementId);
-    if (!element) return;
-    const baseState = preset.state;
-    const start = { x: event.clientX, y: event.clientY, placement: { ...element.placement } };
-    const rect = frameRef.current.getBoundingClientRect();
-    const scale = Math.min(rect.width / 1920, rect.height / 1080);
-
-    function onMove(moveEvent: globalThis.PointerEvent) {
-      const dx = (moveEvent.clientX - start.x) / scale;
-      const dy = (moveEvent.clientY - start.y) / scale;
-      const nextPlacement = { ...start.placement, x: Math.round(start.placement.x + dx), y: Math.round(start.placement.y + dy), preset: "custom" as PositionPreset };
-      commitState(updateElementPlacement(baseState, elementId, nextPlacement));
-    }
-    function onUp() {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    }
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }
-
   if (!preset) return <div>Loading game...</div>;
   const overlayUrl = `${window.location.origin}/overlay/${preset.publicId}`;
   const soccerState = preset.type === "soccer" && isSoccerState(preset.state) ? preset.state : null;
-  const tabs = soccerState ? ["setup", "live", "design"] : ["slides", "style"];
+  const tabs = soccerState ? ["match", "live"] : ["slides", "style"];
+  const isSoccerEditor = Boolean(soccerState);
+  const tabLabels: Record<string, string> = { match: "Match", live: "Live", slides: "slides", style: "style" };
+  const tabButtons = (
+    <div className="tabs">
+      {tabs.map((item) => (
+        <button key={item} className={`tab ${tab === item ? "active" : ""}`} type="button" onClick={() => setTab(item)}>{tabLabels[item]}</button>
+      ))}
+    </div>
+  );
+
+  function updateSoccerClock(patch: Partial<SoccerState["clock"]>) {
+    if (!soccerState) return;
+    commitState({ ...soccerState, clock: { ...soccerState.clock, ...patch } });
+  }
+
+  function updateSoccerPackage(patch: Partial<SoccerState["soccerPackage"]>) {
+    if (!soccerState) return;
+    commitState({ ...soccerState, soccerPackage: { ...soccerState.soccerPackage, ...patch } });
+  }
+
+  async function copyOverlayUrl() {
+    try {
+      await navigator.clipboard.writeText(overlayUrl);
+      setError(null);
+    } catch {
+      setError("Could not copy output URL.");
+    }
+  }
 
   return (
     <>
       <div className="page-title">
         <div>
           <h1>{preset.name}</h1>
-          <p className="muted">{preset.type === "soccer" ? "soccer game" : `${preset.type} production`} · OBS URL: {overlayUrl}</p>
+          <p className="muted preset-meta">
+            <span>{preset.type === "soccer" ? "soccer game" : `${preset.type} production`}</span>
+            <button className="inline-copy-button" type="button" onClick={() => void copyOverlayUrl()}><Copy size={15} /> Copy Output URL</button>
+          </p>
         </div>
         <div className="status-row">
           <span className={`status-pill ${connection === "connected" ? "ok" : "warn"}`}>{connection}</span>
           <span className="status-pill ok">{preset.overlayClientCount || 0} overlay clients</span>
-          <Link className="button" to={`/overlay-test/${preset.publicId}`} target="_blank"><MonitorPlay size={17} /> Test</Link>
-          <button className="button" onClick={() => void duplicatePreset()}><Copy size={17} /> Duplicate</button>
-          <button className="button" onClick={() => void sharePreset()}><Users size={17} /> Share</button>
         </div>
       </div>
 
       {connection !== "connected" ? <div className="error">Backend or overlay WebSocket is disconnected. The overlay will keep showing its last known state.</div> : null}
       {error ? <div className="error">{error}</div> : null}
-      {notice ? <div className="notice">{notice}</div> : null}
 
-      <div className="editor-layout">
-        <section className="preview-column">
-          <div className="preview-frame" ref={frameRef}>
-            <OverlayRenderer type={preset.type} state={preset.state} safeArea interactive onDragStart={handleDragStart} />
-          </div>
-          <div className="panel">
-            <div className="control-row">
-              <button className="button danger" onClick={() => void runAction("clear")}><ShieldAlert size={17} /> Panic clear</button>
-              <button className="button" onClick={() => restoreHistory("undo")}><Undo2 size={17} /> Undo</button>
-              <button className="button" onClick={() => void presetApi.patch(preset.id, { state: preset.state })}><Save size={17} /> Save</button>
-              <button className="button" onClick={() => void rotateActionKey()}><Settings size={17} /> Action key</button>
+      <div className={`editor-layout ${isSoccerEditor ? "live-editor-layout" : ""}`}>
+        {soccerState ? (
+          <>
+            <SoccerLabOverlayControls state={soccerState} updatePackage={updateSoccerPackage} runAction={runAction} />
+            <section className="preview-column live-preview-pane">
+              <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} />
+            </section>
+            <SoccerBottomControlPanel
+              state={soccerState}
+              teams={teams}
+              activeTab={tab}
+              tabButtons={tabButtons}
+              updateClock={updateSoccerClock}
+              updatePackage={updateSoccerPackage}
+              commitState={commitState}
+              runAction={runAction}
+            />
+          </>
+        ) : (
+          <>
+          <section className="preview-column">
+            <div className="preview-workspace">
+              <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} />
             </div>
-            {actionKey ? (
-              <p className="muted" style={{ marginTop: 10 }}>
-                Action key created. Store it somewhere secure; it will not be shown again. Example: POST {API_BASE}/api/presets/{preset.id}/actions/home-score-plus with x-openoverlay-action-key.
-              </p>
+          </section>
+          <aside className="inspector">
+            {tabButtons}
+            {soccerState ? (
+              <SoccerControls state={soccerState} media={media} teams={teams} tab={tab} commitState={commitState} />
             ) : null}
-          </div>
-        </section>
-
-        <aside className="inspector">
-          <div className="tabs">
-            {tabs.map((item) => (
-              <button key={item} className={`tab ${tab === item ? "active" : ""}`} onClick={() => setTab(item)}>{item}</button>
-            ))}
-          </div>
-          {soccerState ? (
-            <SoccerControls state={soccerState} media={media} teams={teams} tab={tab} commitState={commitState} runAction={runAction} />
-          ) : null}
-          {preset.type === "church" && isChurchState(preset.state) ? (
-            <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} />
-          ) : null}
-          {selectedElement ? <ElementInspector state={preset.state} element={selectedElement} commitState={commitState} /> : null}
-        </aside>
+            {preset.type === "church" && isChurchState(preset.state) ? (
+              <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} />
+            ) : null}
+            {selectedElement ? <ElementInspector state={preset.state} element={selectedElement} commitState={commitState} /> : null}
+          </aside>
+          </>
+        )}
       </div>
     </>
+  );
+}
+
+function OutputPreviewFrame({ src, title }: { src: string; title: string }) {
+  return (
+    <div className="preview-frame">
+      <iframe
+        className="output-preview-iframe"
+        src={src}
+        title={title}
+        loading="eager"
+      />
+    </div>
   );
 }
 
@@ -769,24 +761,16 @@ function SoccerControls({
   media,
   teams,
   tab,
-  commitState,
-  runAction
+  commitState
 }: {
   state: SoccerState;
   media: MediaItem[];
   teams: TeamLibraryEntry[];
   tab: string;
   commitState: (state: PresetState) => void;
-  runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
-  const clockValue = formatClock(computeClockSeconds(state.clock));
-
   function update(patch: Partial<SoccerState>) {
     commitState({ ...state, ...patch });
-  }
-
-  function updateClock(patch: Partial<SoccerState["clock"]>) {
-    update({ clock: { ...state.clock, ...patch } });
   }
 
   function updateTeam(side: "home" | "away", patch: Partial<SoccerState["home"]>) {
@@ -890,80 +874,261 @@ function SoccerControls({
     );
   }
 
+  return null;
+}
+
+function SoccerBottomControlPanel({
+  state,
+  teams,
+  activeTab,
+  tabButtons,
+  updateClock,
+  updatePackage,
+  commitState,
+  runAction
+}: {
+  state: SoccerState;
+  teams: TeamLibraryEntry[];
+  activeTab: string;
+  tabButtons: React.ReactNode;
+  updateClock: (patch: Partial<SoccerState["clock"]>) => void;
+  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
+  commitState: (state: PresetState) => void;
+  runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
+}) {
   return (
-    <>
-      <div className="live-grid">
-        <div className="panel live-score-panel">
-          <h2>Score</h2>
+    <div className="panel soccer-bottom-control-panel">
+      <div className="bottom-control-tabs">{tabButtons}</div>
+      {activeTab === "match" ? (
+        <div className="match-control-stack">
+          <SoccerLiveSetupPanel state={state} teams={teams} updatePackage={updatePackage} commitState={commitState} />
+          <SoccerMatchupTextPanel state={state} commitState={commitState} />
+          <SoccerTextBugPanel state={state} updatePackage={updatePackage} />
+          <SoccerCountdownPanel state={state} updatePackage={updatePackage} runAction={runAction} />
+        </div>
+      ) : (
+        <div className="live-control-stack">
+          <SoccerScoreClockPanel state={state} updateClock={updateClock} runAction={runAction} />
+          <SoccerCountdownPanel state={state} updatePackage={updatePackage} runAction={runAction} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SoccerLiveSetupPanel({
+  state,
+  teams,
+  updatePackage,
+  commitState
+}: {
+  state: SoccerState;
+  teams: TeamLibraryEntry[];
+  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
+  commitState: (state: PresetState) => void;
+}) {
+  const homeMatch = findSavedTeamMatch(state.home, teams);
+  const awayMatch = findSavedTeamMatch(state.away, teams);
+
+  function update(patch: Partial<SoccerState>) {
+    commitState({ ...state, ...patch });
+  }
+
+  function applySavedTeam(side: "home" | "away", teamId: string) {
+    const team = teams.find((candidate) => candidate.id === teamId);
+    if (!team) return;
+    update({ [side]: teamLibraryToSoccerTeam(team) } as Partial<SoccerState>);
+  }
+
+  function swapTeams() {
+    update({ home: state.away, away: state.home });
+  }
+
+  return (
+    <section className="control-section live-setup-panel">
+      <div className="panel-heading">
+        <h2>Match setup</h2>
+        <button className="button" type="button" onClick={swapTeams}>Swap teams</button>
+      </div>
+      <div className="two-col">
+        <label className="field">
+          <span>Home team</span>
+          <select value={homeMatch?.id ?? ""} onChange={(event) => applySavedTeam("home", event.target.value)}>
+            <option value="">{teams.length ? "Select saved team" : "No saved teams"}</option>
+            {teams.map((item) => <option key={item.id} value={item.id}>{item.fullName}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Away team</span>
+          <select value={awayMatch?.id ?? ""} onChange={(event) => applySavedTeam("away", event.target.value)}>
+            <option value="">{teams.length ? "Select saved team" : "No saved teams"}</option>
+            {teams.map((item) => <option key={item.id} value={item.id}>{item.fullName}</option>)}
+          </select>
+        </label>
+      </div>
+      <label className="field">
+        <span>Design</span>
+        <select value={state.soccerPackage.overlayPackage} onChange={(event) => updatePackage({ overlayPackage: event.target.value as SoccerState["soccerPackage"]["overlayPackage"] })}>
+          <option value="classic">Classic</option>
+          <option value="rounded">Rounded</option>
+        </select>
+      </label>
+    </section>
+  );
+}
+
+function SoccerMatchupTextPanel({ state, commitState }: { state: SoccerState; commitState: (state: PresetState) => void }) {
+  function update(patch: Partial<Pick<SoccerState, "gameTitle" | "productionName">>) {
+    commitState({ ...state, ...patch });
+  }
+
+  return (
+    <section className="control-section">
+      <h2>Matchup text</h2>
+      <div className="form-grid">
+        <label className="field">
+          <span>Title</span>
+          <input value={state.gameTitle} onChange={(event) => update({ gameTitle: event.target.value })} />
+        </label>
+        <label className="field">
+          <span>Subtitle</span>
+          <input value={state.productionName} onChange={(event) => update({ productionName: event.target.value })} />
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function SoccerTextBugPanel({ state, updatePackage }: { state: SoccerState; updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void }) {
+  return (
+    <section className="control-section">
+      <h2>Text bugs</h2>
+      <div className="form-grid">
+        <label className="field"><span>1-line text</span><input value={state.soccerPackage.oneLineText} onChange={(event) => updatePackage({ oneLineText: event.target.value })} /></label>
+        <PositionSelect value={state.soccerPackage.oneLinePosition} onChange={(value) => updatePackage({ oneLinePosition: value })} />
+        <label className="field"><span>2-line top</span><input value={state.soccerPackage.twoLineTextA} onChange={(event) => updatePackage({ twoLineTextA: event.target.value })} /></label>
+        <label className="field"><span>2-line bottom</span><input value={state.soccerPackage.twoLineTextB} onChange={(event) => updatePackage({ twoLineTextB: event.target.value })} /></label>
+        <PositionSelect value={state.soccerPackage.twoLinePosition} onChange={(value) => updatePackage({ twoLinePosition: value })} />
+      </div>
+    </section>
+  );
+}
+
+function SoccerCountdownPanel({
+  state,
+  updatePackage,
+  runAction
+}: {
+  state: SoccerState;
+  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
+  runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
+}) {
+  function updateCountdown(patch: Partial<SoccerState["soccerPackage"]["countdown"]>) {
+    updatePackage({ countdown: { ...state.soccerPackage.countdown, ...patch } });
+  }
+
+  return (
+    <section className="control-section countdown-panel">
+      <h2>Countdown</h2>
+      <div className="form-grid">
+        <div className="control-row">
+          <button className="button primary" type="button" onClick={() => void runAction("countdown-toggle")}>{state.soccerPackage.countdown.running ? "Stop timer" : "Start timer"}</button>
+          <button className="button" type="button" onClick={() => updateCountdown({ seconds: 300, resetSeconds: 300, running: false, startedAtMs: null })}>5:00</button>
+          <button className="button" type="button" onClick={() => updateCountdown({ seconds: 600, resetSeconds: 600, running: false, startedAtMs: null })}>10:00</button>
+          <button className="button" type="button" onClick={() => void runAction("countdown-reset")}>Reset</button>
+        </div>
+        <div className="two-col">
+          <label className="field">
+            <span>Custom length</span>
+            <input defaultValue={formatClock(state.soccerPackage.countdown.resetSeconds)} onBlur={(event) => {
+              const seconds = parseClockTime(event.target.value);
+              updateCountdown({ seconds, resetSeconds: seconds, running: false, startedAtMs: null });
+            }} />
+          </label>
+          <label className="field">
+            <span>Mode</span>
+            <select value={state.soccerPackage.countdown.mode} onChange={(event) => updateCountdown({ mode: event.target.value as SoccerState["soccerPackage"]["countdown"]["mode"] })}>
+              <option value="full">Full page</option>
+              <option value="small">Small</option>
+            </select>
+          </label>
+        </div>
+        <label className="field">
+          <span>Position</span>
+          <select value={state.soccerPackage.countdown.position} disabled={state.soccerPackage.countdown.mode !== "small"} onChange={(event) => updateCountdown({ position: event.target.value as PositionPreset })}>
+            {positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function SoccerScoreClockPanel({
+  state,
+  updateClock,
+  runAction
+}: {
+  state: SoccerState;
+  updateClock: (patch: Partial<SoccerState["clock"]>) => void;
+  runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
+}) {
+  const clockValue = formatClock(computeClockSeconds(state.clock));
+
+  return (
+    <div className="score-clock-panel">
+      <section className="score-clock-section">
+        <h2>Score</h2>
+        <div className="two-col">
+          <ScoreControls label={state.home.abbreviation} score={state.score.home} plus={() => runAction("home-score-plus")} minus={() => runAction("home-score-minus")} />
+          <ScoreControls label={state.away.abbreviation} score={state.score.away} plus={() => runAction("away-score-plus")} minus={() => runAction("away-score-minus")} />
+        </div>
+      </section>
+      <section className="score-clock-section">
+        <h2>Clock</h2>
+        <div className="control-row">
+          <button className="button primary" onClick={() => runAction("clock-toggle")}>{state.clock.running ? <Pause size={17} /> : <Play size={17} />} {state.clock.running ? "Pause" : "Start"}</button>
+          <button className="button" onClick={() => runAction("clock-reset")}><RotateCcw size={17} /> Reset</button>
+        </div>
+        <div className="form-grid">
+          <label className="field">
+            <span>Manual time</span>
+            <input defaultValue={clockValue} onBlur={(event) => updateClock(setClockSeconds(state.clock, parseClockTime(event.target.value)))} />
+          </label>
           <div className="two-col">
-            <ScoreControls label={state.home.abbreviation} score={state.score.home} plus={() => runAction("home-score-plus")} minus={() => runAction("home-score-minus")} />
-            <ScoreControls label={state.away.abbreviation} score={state.score.away} plus={() => runAction("away-score-plus")} minus={() => runAction("away-score-minus")} />
-          </div>
-        </div>
-        <div className="panel">
-          <h2>Clock</h2>
-          <div className="control-row">
-            <button className="button primary" onClick={() => runAction("clock-toggle")}>{state.clock.running ? <Pause size={17} /> : <Play size={17} />} {state.clock.running ? "Pause" : "Start"}</button>
-            <button className="button" onClick={() => runAction("clock-reset")}><RotateCcw size={17} /> Reset</button>
-          </div>
-          <div className="form-grid">
             <label className="field">
-              <span>Manual time</span>
-              <input defaultValue={clockValue} onBlur={(event) => updateClock(setClockSeconds(state.clock, parseClockTime(event.target.value)))} />
+              <span>Mode</span>
+              <select value={state.clock.mode} onChange={(event) => updateClock({ mode: event.target.value as "up" | "down" })}>
+                <option value="up">Count up</option>
+                <option value="down">Count down</option>
+              </select>
             </label>
-            <div className="two-col">
-              <label className="field">
-                <span>Mode</span>
-                <select value={state.clock.mode} onChange={(event) => updateClock({ mode: event.target.value as "up" | "down" })}>
-                  <option value="up">Count up</option>
-                  <option value="down">Count down</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Period</span>
-                <input value={state.clock.periodLabel} onChange={(event) => updateClock({ periodLabel: event.target.value })} />
-              </label>
-            </div>
             <label className="field">
-              <span>Stop at</span>
-              <input defaultValue={formatClock(state.clock.stopAtSeconds)} onBlur={(event) => updateClock({ stopAtSeconds: parseClockTime(event.target.value) })} />
+              <span>Period</span>
+              <input value={state.clock.periodLabel} onChange={(event) => updateClock({ periodLabel: event.target.value })} />
             </label>
-            <div className="two-col">
-              <label className="field">
-                <span>Stoppage minutes</span>
-                <input type="number" min="0" value={state.clock.stoppageMinutes} onChange={(event) => updateClock({ stoppageMinutes: Math.max(0, Number(event.target.value)) })} />
-              </label>
-              <label className="control-row">
-                <input type="checkbox" checked={state.clock.stopAtEnabled} onChange={(event) => updateClock({ stopAtEnabled: event.target.checked })} />
-                Stop at enabled
-              </label>
-            </div>
+          </div>
+          <label className="field">
+            <span>Stop at</span>
+            <input defaultValue={formatClock(state.clock.stopAtSeconds)} onBlur={(event) => updateClock({ stopAtSeconds: parseClockTime(event.target.value) })} />
+          </label>
+          <div className="two-col">
+            <label className="field">
+              <span>Stoppage minutes</span>
+              <input type="number" min="0" value={state.clock.stoppageMinutes} onChange={(event) => updateClock({ stoppageMinutes: Math.max(0, Number(event.target.value)) })} />
+            </label>
             <label className="control-row">
-              <input type="checkbox" checked={state.clock.showStoppage} onChange={(event) => updateClock({ showStoppage: event.target.checked })} />
-              Show stoppage time
+              <input type="checkbox" checked={state.clock.stopAtEnabled} onChange={(event) => updateClock({ stopAtEnabled: event.target.checked })} />
+              Stop at enabled
             </label>
           </div>
+          <label className="control-row">
+            <input type="checkbox" checked={state.clock.showStoppage} onChange={(event) => updateClock({ showStoppage: event.target.checked })} />
+            Show stoppage time
+          </label>
         </div>
-      </div>
-      <div className="panel">
-        <h2>Scorebug clock</h2>
-        <p className="muted">The lab scorebug uses the game clock and period above.</p>
-      </div>
-      <SoccerLabOverlayControls state={state} updatePackage={updatePackage} runAction={runAction} />
-      <div className="panel">
-        <h2>On air now</h2>
-        {!state.soccerPackage.activeOverlay ? <p className="muted">No soccer overlay is live.</p> : null}
-        {state.soccerPackage.activeOverlay ? (
-          <div className="on-air-item">
-            <span>
-              <strong>{labOverlayLabels[state.soccerPackage.activeOverlay]}</strong>
-              <small>{state.soccerPackage.overlayPackage}</small>
-            </span>
-            <button className="button" type="button" onClick={() => void runAction("hide-overlay", { overlay: state.soccerPackage.activeOverlay })}><X size={16} /> Clear</button>
-          </div>
-        ) : null}
-      </div>
-    </>
+      </section>
+    </div>
   );
 }
 
@@ -1048,10 +1213,6 @@ function SoccerLabOverlayControls({
 }) {
   const selected = state.soccerPackage.selectedOverlay;
 
-  function updateCountdown(patch: Partial<SoccerState["soccerPackage"]["countdown"]>) {
-    updatePackage({ countdown: { ...state.soccerPackage.countdown, ...patch } });
-  }
-
   function takeOverlay(overlay: SoccerLabOverlay) {
     if (state.soccerPackage.activeOverlay === overlay) {
       void runAction("hide-overlay", { overlay });
@@ -1061,11 +1222,10 @@ function SoccerLabOverlayControls({
   }
 
   return (
-    <div className="panel">
+    <div className="lab-overlay-list">
       <div className="panel-heading">
         <div>
-          <h2>Lab overlays</h2>
-          <p className="muted">Rounded and Classic share the same game/team data.</p>
+          <h2>Overlays</h2>
         </div>
       </div>
       <div className="overlay-card-grid">
@@ -1084,7 +1244,6 @@ function SoccerLabOverlayControls({
             }}
           >
             <strong>{labOverlayLabels[overlay]}</strong>
-            <span>{state.soccerPackage.activeOverlay === overlay ? "On air" : "Ready"}</span>
             <button
               className="overlay-card-action"
               type="button"
@@ -1097,97 +1256,6 @@ function SoccerLabOverlayControls({
             </button>
           </div>
         ))}
-      </div>
-      <div className="overlay-detail-panel">
-        {selected === "full-matchup" || selected === "lower-matchup" ? (
-          <p className="muted">Uses game title, production, team images, names, records, and countdown data from setup.</p>
-        ) : null}
-        {selected === "lower-result" ? (
-          <div className="form-grid">
-            <label className="field">
-              <span>State</span>
-              <select value={state.soccerPackage.lowerResultState} onChange={(event) => updatePackage({ lowerResultState: event.target.value as SoccerState["soccerPackage"]["lowerResultState"] })}>
-                <option value="HALF">Halftime</option>
-                <option value="FINAL">Final</option>
-              </select>
-            </label>
-          </div>
-        ) : null}
-        {selected === "lineup-panel" ? (
-          <div className="form-grid">
-            <label className="field">
-              <span>Team</span>
-              <select value={state.soccerPackage.lineupTeam} onChange={(event) => updatePackage({ lineupTeam: event.target.value as "home" | "away", lineupPage: 0 })}>
-                <option value="home">{state.home.fullName}</option>
-                <option value="away">{state.away.fullName}</option>
-              </select>
-            </label>
-            <div className="control-row">
-              <button className="button" type="button" onClick={() => void runAction("lineup-prev")}>Previous</button>
-              <button className="button" type="button" onClick={() => void runAction("lineup-next")}>Next</button>
-            </div>
-          </div>
-        ) : null}
-        {selected === "scorebug" ? (
-          <div className="form-grid">
-            <label className="field">
-              <span>Layout</span>
-              <select value={state.soccerPackage.scorebugLayout} onChange={(event) => updatePackage({ scorebugLayout: event.target.value as SoccerState["soccerPackage"]["scorebugLayout"] })}>
-                <option value="horizontal">Horizontal</option>
-                <option value="vertical">Vertical</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Length</span>
-              <input type="range" min="44" max="82" value={state.soccerPackage.scorebugWidth} onChange={(event) => updatePackage({ scorebugWidth: Number(event.target.value) })} />
-            </label>
-          </div>
-        ) : null}
-        {selected === "countdown-timer" ? (
-          <div className="form-grid">
-            <div className="control-row">
-              <button className="button primary" type="button" onClick={() => void runAction("countdown-toggle")}>{state.soccerPackage.countdown.running ? "Stop timer" : "Start timer"}</button>
-              <button className="button" type="button" onClick={() => updateCountdown({ seconds: 300, resetSeconds: 300, running: false, startedAtMs: null })}>5:00</button>
-              <button className="button" type="button" onClick={() => updateCountdown({ seconds: 600, resetSeconds: 600, running: false, startedAtMs: null })}>10:00</button>
-              <button className="button" type="button" onClick={() => void runAction("countdown-reset")}>Reset</button>
-            </div>
-            <div className="two-col">
-              <label className="field">
-                <span>Custom length</span>
-                <input defaultValue={formatClock(state.soccerPackage.countdown.resetSeconds)} onBlur={(event) => {
-                  const seconds = parseClockTime(event.target.value);
-                  updateCountdown({ seconds, resetSeconds: seconds, running: false, startedAtMs: null });
-                }} />
-              </label>
-              <label className="field">
-                <span>Mode</span>
-                <select value={state.soccerPackage.countdown.mode} onChange={(event) => updateCountdown({ mode: event.target.value as SoccerState["soccerPackage"]["countdown"]["mode"] })}>
-                  <option value="full">Full page</option>
-                  <option value="small">Small</option>
-                </select>
-              </label>
-            </div>
-            <label className="field">
-              <span>Position</span>
-              <select value={state.soccerPackage.countdown.position} disabled={state.soccerPackage.countdown.mode !== "small"} onChange={(event) => updateCountdown({ position: event.target.value as PositionPreset })}>
-                {positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </label>
-          </div>
-        ) : null}
-        {selected === "one-line-text" ? (
-          <div className="form-grid">
-            <label className="field"><span>Text</span><input value={state.soccerPackage.oneLineText} onChange={(event) => updatePackage({ oneLineText: event.target.value })} /></label>
-            <PositionSelect value={state.soccerPackage.oneLinePosition} onChange={(value) => updatePackage({ oneLinePosition: value })} />
-          </div>
-        ) : null}
-        {selected === "two-line-text" ? (
-          <div className="form-grid">
-            <label className="field"><span>Line 1</span><input value={state.soccerPackage.twoLineTextA} onChange={(event) => updatePackage({ twoLineTextA: event.target.value })} /></label>
-            <label className="field"><span>Line 2</span><input value={state.soccerPackage.twoLineTextB} onChange={(event) => updatePackage({ twoLineTextB: event.target.value })} /></label>
-            <PositionSelect value={state.soccerPackage.twoLinePosition} onChange={(value) => updatePackage({ twoLinePosition: value })} />
-          </div>
-        ) : null}
       </div>
     </div>
   );

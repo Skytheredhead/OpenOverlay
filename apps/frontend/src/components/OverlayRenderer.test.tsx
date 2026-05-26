@@ -33,6 +33,19 @@ describe("OverlayRenderer", () => {
     await expect(frameText(container)).resolves.toContain("SKY");
   });
 
+  it("keeps a soccer overlay mounted with the exit class after hiding it", async () => {
+    const state = createDefaultSoccerState("Test Match");
+    state.soccerPackage.activeOverlay = "full-matchup";
+    const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-entering")).toBeTruthy());
+
+    const hiddenState = structuredClone(state);
+    hiddenState.soccerPackage.activeOverlay = null;
+    rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={hiddenState} /></div>);
+
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy());
+  });
+
   it("renders a church slide", () => {
     const state = createDefaultChurchState("Sunday");
     render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="church" state={state} /></div>);
