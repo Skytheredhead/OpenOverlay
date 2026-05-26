@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 import {
@@ -2199,7 +2199,7 @@ function OverlayPage({ test }: { test: boolean }) {
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.body.classList.add("overlay-route-body");
     return () => document.body.classList.remove("overlay-route-body");
   }, []);

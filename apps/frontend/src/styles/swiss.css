@@ -1060,3 +1060,11 @@ a:not(.button):not(.brand):not(.sidebar a):hover {
     font-size: 28px;
   }
 }
+
+body.overlay-route-body,
+body.overlay-route-body #root,
+body.overlay-route-body .overlay-page,
+body.overlay-route-body .overlay-viewport,
+body.overlay-route-body .overlay-stage {
+  background: transparent !important;
+}
