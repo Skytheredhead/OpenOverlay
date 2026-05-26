@@ -70,39 +70,24 @@ let scores = {
 let lineupPlayers = parseLineup(lineupInput.value);
 let lineupPage = 0;
 const animationTimers = new WeakMap();
+const pendingHideOverlays = new WeakSet();
 const ENTER_ANIMATION_MS = 920;
 const EXIT_ANIMATION_MS = 900;
 const SWITCH_IN_DELAY_MS = Math.round(EXIT_ANIMATION_MS * 0.9);
-const TEXT_UPDATE_ANIMATION_MS = 360;
-const SCORE_UP_ANIMATION_MS = 720;
-const SCOREBUG_LAYOUT_OUT_MS = 320;
-const SCOREBUG_LAYOUT_IN_MS = 520;
-const MATCHUP_TIMER_ANIMATION_MS = 520;
-const ANIMATION_CLEANUP_BUFFER_MS = 50;
-const SHADOW_FADE_MS = 1100;
-const SHADOW_ENTER_FADE_MS = 450;
-const SHADOW_ENTER_OFFSET_MS = 400;
-const SHADOW_ENTER_EASING = "linear";
-const SHADOW_EXIT_FADE_MS = 450;
-const SHADOW_EXIT_EASING = "linear";
-const SCOREBUG_SHADOW_ENTER_MS = 880;
 let switchTimer = null;
-let appReady = false;
 const textAnimationTimers = new WeakMap();
-let scorebugLayoutTimer = null;
-const shadowAnimations = new WeakMap();
-const shadowMirrorMap = new WeakMap();
-const shadowSyncFrames = new WeakMap();
-const enterAnimationEndsAt = new WeakMap();
-const pendingExitAfterEnter = new WeakSet();
-let timerVisualTimer = null;
+let scorebugLayoutSwitchTimer = null;
+let timerActivationTimer = null;
+let pendingSwitchOverlay = null;
+let countdownToggleTimer = null;
+let countdownToggleLocked = false;
 
 const overlayMeta = {
-  "full-matchup": ["01", "Full page matchup", "Full-frame matchup with flags, records, event, and optional timer"],
-  "lower-matchup": ["02", "Lower matchup", "Pregame lower-third matchup using the shared matchup data"],
+  "full-matchup": ["01", "Full page matchup", "Full-frame square package with flags, records, event, and optional timer"],
+  "lower-matchup": ["02", "Lower matchup", "Pregame lower-third matchup using the shared hard-edge package system"],
   "lower-result": ["03", "Lower score matchup", "Halftime or final lower-third with score and optional return timer"],
-  "lineup-panel": ["04", "Lineup panel", "Paged roster panel with animated name changes"],
-  scorebug: ["05", "Scorebug", "Horizontal or vertical scorebug in the World Cup ribbon style"],
+  "lineup-panel": ["04", "Lineup panel", "Paged roster panel with snap-in name rows"],
+  scorebug: ["05", "Scorebug", "Horizontal or vertical scorebug in the OpenOverlay square style"],
   "countdown-timer": ["06", "Countdown timer", "Full-page or small positional timer with presets and exact time entry"],
   "one-line-text": ["07", "1-line text bug", "Custom single-line text with positional placement"],
   "two-line-text": ["08", "2-line text bug", "Custom two-line text with positional placement"]
@@ -116,32 +101,6 @@ const positionClasses = [
   "position-bottom-center",
   "position-bottom-right"
 ];
-
-const matchupTimerOverlays = ["full-matchup", "lower-matchup", "lower-result"];
-const shadowTargetSelector = [
-  ".match-kicker",
-  ".match-footer",
-  ".full-teams",
-  ".lower-shell",
-  ".overlay-lineup",
-  ".overlay-scorebug",
-  ".timer-card",
-  ".overlay-text-bug"
-].join(",");
-
-function setupShadowObjects() {
-  document.querySelectorAll(shadowTargetSelector).forEach((target) => {
-    if (!shadowMirrorMap.has(target)) {
-      const shadowMirror = document.createElement("span");
-      shadowMirror.className = "shadow-mirror";
-      if (target.classList.contains("overlay-lineup")) shadowMirror.classList.add("shadow-lineup");
-      shadowMirror.setAttribute("aria-hidden", "true");
-      stage.append(shadowMirror);
-      shadowMirrorMap.set(target, shadowMirror);
-    }
-    target.classList.add("has-shadow-object");
-  });
-}
 
 function parseTime(value) {
   const parts = value.trim().split(":").map((part) => Number(part));
@@ -181,248 +140,105 @@ function isCountdownRunning() {
   return countdownInterval !== null;
 }
 
-function getVisibleMatchupOverlay() {
-  return matchupTimerOverlays.find((id) => {
-    const overlay = [...overlays].find((item) => item.dataset.overlay === id);
-    return overlay && overlay.classList.contains("active") && !overlay.classList.contains("overlay-exiting");
-  });
+function supportsEmbeddedCountdown(id = activeOverlay) {
+  return ["full-matchup", "lower-matchup", "lower-result"].includes(id);
 }
 
 function isDisplayedOverlayText(target) {
   const overlay = target.closest("[data-overlay]");
-  return appReady && overlay && overlay.classList.contains("active");
+  return Boolean(overlay?.classList.contains("active") && !overlay.classList.contains("overlay-entering"));
 }
 
-function restartAnimation(target, className, duration) {
-  const existingAnimation = textAnimationTimers.get(target);
-  if (existingAnimation) {
-    window.clearTimeout(existingAnimation.timer);
-    target.classList.remove(existingAnimation.className);
-  }
-  target.classList.remove(className);
+function restartTextAnimation(target, className) {
+  const existingTimer = textAnimationTimers.get(target);
+  if (existingTimer) window.clearTimeout(existingTimer);
+  target.classList.remove("text-updated", "score-updated");
   void target.offsetWidth;
   target.classList.add(className);
-  const timer = window.setTimeout(() => {
-    target.classList.remove(className);
+  textAnimationTimers.set(target, window.setTimeout(() => {
     textAnimationTimers.delete(target);
-  }, duration + ANIMATION_CLEANUP_BUFFER_MS);
-  textAnimationTimers.set(target, { timer, className });
+  }, className === "score-updated" ? 720 : 420));
 }
 
-function setTextPreservingShadow(target, value) {
-  const shadowObject = target.querySelector(":scope > .shadow-object");
-  if (!shadowObject) {
-    target.textContent = value;
-    return;
-  }
-  [...target.childNodes].forEach((node) => {
-    if (node !== shadowObject) node.remove();
-  });
-  target.append(document.createTextNode(value));
-}
-
-function setAnimatedText(target, value, className = "text-updated", duration = TEXT_UPDATE_ANIMATION_MS) {
+function setAnimatedText(target, value, options = {}) {
   const nextValue = String(value);
-  if (target.textContent === nextValue) return;
-  setTextPreservingShadow(target, nextValue);
-  if (isDisplayedOverlayText(target)) restartAnimation(target, className, duration);
+  const previousValue = target.textContent;
+  if (previousValue === nextValue) return;
+
+  const previousNumber = Number(previousValue);
+  const nextNumber = Number(nextValue);
+  const scoreIncreased = options.score && !Number.isNaN(previousNumber) && nextNumber > previousNumber;
+  const visible = isDisplayedOverlayText(target);
+
+  target.textContent = nextValue;
+  if (!visible) return;
+  restartTextAnimation(target, scoreIncreased ? "score-updated" : "text-updated");
+}
+
+function setAnimatedCountdown(target, value) {
+  const nextValue = String(value);
+  const previousValue = target.dataset.countdownValue ?? target.textContent;
+  if (previousValue === nextValue) return;
+
+  const visible = isDisplayedOverlayText(target);
+  target.dataset.countdownValue = nextValue;
+  target.replaceChildren(...[...nextValue].map((char, index) => {
+    const span = document.createElement("span");
+    span.className = "countdown-char";
+    if (visible && previousValue[index] !== char) span.classList.add("countdown-char-updated");
+    span.textContent = char;
+    return span;
+  }));
 }
 
 function clearAnimation(overlay) {
   const timer = animationTimers.get(overlay);
   if (timer) window.clearTimeout(timer);
   animationTimers.delete(overlay);
-  enterAnimationEndsAt.delete(overlay);
-  pendingExitAfterEnter.delete(overlay);
+  pendingHideOverlays.delete(overlay);
   overlay.classList.remove("overlay-entering", "overlay-exiting");
-}
-
-function getOverlayShadowTargets(overlay) {
-  const targets = [...overlay.querySelectorAll(".has-shadow-object")];
-  if (overlay.classList.contains("has-shadow-object")) targets.unshift(overlay);
-  return targets;
-}
-
-function getOverlayShadowObjects(overlay) {
-  return getOverlayShadowTargets(overlay)
-    .map((target) => shadowMirrorMap.get(target))
-    .filter(Boolean);
-}
-
-function syncOverlayShadowMirrors(overlay) {
-  const stageRect = stage.getBoundingClientRect();
-  const stageLeft = stageRect.left + stage.clientLeft;
-  const stageTop = stageRect.top + stage.clientTop;
-  getOverlayShadowTargets(overlay).forEach((target) => {
-    const shadowMirror = shadowMirrorMap.get(target);
-    if (!shadowMirror) return;
-    const targetRect = target.getBoundingClientRect();
-    const targetStyle = getComputedStyle(target);
-    shadowMirror.style.left = `${targetRect.left - stageLeft}px`;
-    shadowMirror.style.top = `${targetRect.top - stageTop}px`;
-    shadowMirror.style.width = `${targetRect.width}px`;
-    shadowMirror.style.height = `${targetRect.height}px`;
-    shadowMirror.style.borderRadius = targetStyle.borderRadius;
-  });
-}
-
-function cancelOverlayShadowSync(overlay) {
-  const frame = shadowSyncFrames.get(overlay);
-  if (frame) window.cancelAnimationFrame(frame);
-  shadowSyncFrames.delete(overlay);
-}
-
-function syncOverlayShadowDuring(overlay, duration) {
-  cancelOverlayShadowSync(overlay);
-  syncOverlayShadowMirrors(overlay);
-  if (duration <= 0) return;
-
-  const endAt = performance.now() + duration;
-  const tick = () => {
-    syncOverlayShadowMirrors(overlay);
-    if (performance.now() < endAt) {
-      shadowSyncFrames.set(overlay, window.requestAnimationFrame(tick));
-      return;
-    }
-    shadowSyncFrames.delete(overlay);
-  };
-  shadowSyncFrames.set(overlay, window.requestAnimationFrame(tick));
-}
-
-function cancelOverlayShadowAnimations(overlay) {
-  getOverlayShadowObjects(overlay).forEach((shadowObject) => {
-    const animation = shadowAnimations.get(shadowObject);
-    if (!animation) return;
-    animation.cancel();
-    shadowAnimations.delete(shadowObject);
-  });
-}
-
-function setOverlayShadowOpacity(overlay, opacity) {
-  getOverlayShadowObjects(overlay).forEach((shadowObject) => {
-    shadowObject.style.opacity = opacity;
-  });
-}
-
-function clearOverlayShadow(overlay) {
-  cancelOverlayShadowSync(overlay);
-  cancelOverlayShadowAnimations(overlay);
-  setOverlayShadowOpacity(overlay, "0");
-  overlay.classList.remove("shadow-ready", "shadow-exiting");
-}
-
-function getOverlayShadowTiming(overlay, targetOpacity) {
-  const entering = targetOpacity === 1;
-  if (overlay.classList.contains("overlay-full-matchup")) {
-    const delay = entering ? ENTER_ANIMATION_MS + SHADOW_ENTER_OFFSET_MS : 0;
-    return {
-      delay,
-      duration: entering ? SHADOW_ENTER_FADE_MS : SHADOW_EXIT_FADE_MS,
-      easing: entering ? SHADOW_ENTER_EASING : SHADOW_EXIT_EASING,
-      syncDuration: (entering ? delay + SHADOW_ENTER_FADE_MS : EXIT_ANIMATION_MS) + ANIMATION_CLEANUP_BUFFER_MS
-    };
-  }
-  if (overlay !== scorebugOverlay) return { duration: SHADOW_FADE_MS, syncDuration: 0 };
-  const delay = entering ? SCOREBUG_SHADOW_ENTER_MS + SHADOW_ENTER_OFFSET_MS : 0;
-  const duration = entering ? SHADOW_ENTER_FADE_MS : SHADOW_EXIT_FADE_MS;
-  return {
-    delay,
-    duration,
-    easing: entering ? SHADOW_ENTER_EASING : SHADOW_EXIT_EASING,
-    syncDuration: delay + duration + ANIMATION_CLEANUP_BUFFER_MS
-  };
-}
-
-function animateOverlayShadow(overlay, targetOpacity, timing = getOverlayShadowTiming(overlay, targetOpacity)) {
-  if (timing.syncDuration > 0) {
-    syncOverlayShadowDuring(overlay, timing.syncDuration);
-  } else {
-    syncOverlayShadowMirrors(overlay);
-    window.requestAnimationFrame(() => syncOverlayShadowMirrors(overlay));
-  }
-  overlay.classList.toggle("shadow-ready", targetOpacity === 1);
-  overlay.classList.toggle("shadow-exiting", targetOpacity === 0);
-  getOverlayShadowObjects(overlay).forEach((shadowObject) => {
-    const existingAnimation = shadowAnimations.get(shadowObject);
-    if (existingAnimation) existingAnimation.cancel();
-    const currentOpacity = Number.parseFloat(getComputedStyle(shadowObject).opacity) || 0;
-    shadowObject.style.opacity = currentOpacity;
-    const animation = shadowObject.animate(
-      [{ opacity: currentOpacity }, { opacity: targetOpacity }],
-      {
-        delay: timing.delay || 0,
-        duration: timing.duration,
-        easing: timing.easing || "cubic-bezier(0.16, 1, 0.3, 1)",
-        fill: "forwards"
-      }
-    );
-    shadowAnimations.set(shadowObject, animation);
-    animation.onfinish = () => {
-      shadowObject.style.opacity = targetOpacity;
-      shadowAnimations.delete(shadowObject);
-    };
-    animation.oncancel = () => {
-      shadowAnimations.delete(shadowObject);
-    };
-  });
-}
-
-function fadeOverlayShadowIn(overlay, timing) {
-  if (!overlay.classList.contains("active") || overlay.classList.contains("overlay-exiting")) return;
-  animateOverlayShadow(overlay, 1, timing);
-}
-
-function fadeOverlayShadowOut(overlay, timing) {
-  animateOverlayShadow(overlay, 0, timing);
 }
 
 function clearSwitchTimer() {
   if (switchTimer) window.clearTimeout(switchTimer);
   switchTimer = null;
+  pendingSwitchOverlay = null;
 }
 
-function clearScorebugLayoutSwap() {
-  if (scorebugLayoutTimer) window.clearTimeout(scorebugLayoutTimer);
-  scorebugLayoutTimer = null;
-  scorebugOverlay.classList.remove("scorebug-layout-entering", "scorebug-layout-exiting");
+function clearScorebugLayoutSwitchTimer() {
+  if (scorebugLayoutSwitchTimer) window.clearTimeout(scorebugLayoutSwitchTimer);
+  scorebugLayoutSwitchTimer = null;
 }
 
 function showOverlay(overlay) {
+  const hideAfterIntro = pendingHideOverlays.has(overlay);
   clearAnimation(overlay);
-  clearOverlayShadow(overlay);
+  if (hideAfterIntro) pendingHideOverlays.add(overlay);
   overlay.classList.add("active", "overlay-entering");
-  fadeOverlayShadowIn(overlay);
-  enterAnimationEndsAt.set(overlay, performance.now() + ENTER_ANIMATION_MS + ANIMATION_CLEANUP_BUFFER_MS);
   const timer = window.setTimeout(() => {
     overlay.classList.remove("overlay-entering");
     animationTimers.delete(overlay);
-    enterAnimationEndsAt.delete(overlay);
-    if (pendingExitAfterEnter.has(overlay)) {
-      pendingExitAfterEnter.delete(overlay);
+    if (pendingHideOverlays.has(overlay)) {
+      pendingHideOverlays.delete(overlay);
       hideOverlay(overlay);
-      return;
     }
-  }, ENTER_ANIMATION_MS + ANIMATION_CLEANUP_BUFFER_MS);
+  }, ENTER_ANIMATION_MS);
   animationTimers.set(overlay, timer);
 }
 
 function hideOverlay(overlay) {
-  if (overlay === scorebugOverlay) clearScorebugLayoutSwap();
-  if (!overlay.classList.contains("active")) return 0;
-  fadeOverlayShadowOut(overlay);
+  if (!overlay.classList.contains("active")) return;
   if (overlay.classList.contains("overlay-entering")) {
-    const remainingIntroMs = Math.max(0, (enterAnimationEndsAt.get(overlay) || performance.now()) - performance.now());
-    pendingExitAfterEnter.add(overlay);
-    return remainingIntroMs + SWITCH_IN_DELAY_MS;
+    pendingHideOverlays.add(overlay);
+    return;
   }
   clearAnimation(overlay);
   overlay.classList.add("overlay-exiting");
   const timer = window.setTimeout(() => {
-    overlay.classList.remove("active", "overlay-exiting", "shadow-ready", "shadow-exiting");
+    overlay.classList.remove("active", "overlay-exiting");
     animationTimers.delete(overlay);
-  }, EXIT_ANIMATION_MS + ANIMATION_CLEANUP_BUFFER_MS);
+  }, EXIT_ANIMATION_MS);
   animationTimers.set(overlay, timer);
-  return SWITCH_IN_DELAY_MS;
 }
 
 function updateCards() {
@@ -444,28 +260,26 @@ function updateCards() {
 
 function setActiveOverlay(id) {
   clearSwitchTimer();
-  if (id === "countdown-timer" && getVisibleMatchupOverlay()) {
-    activeOverlay = getVisibleMatchupOverlay();
-    selectedCard = id;
-    syncDetailPanel();
-    startCountdown();
-    updateCards();
-    return;
-  }
   activeOverlay = id;
   selectedCard = id;
   syncDetailPanel();
   const targetOverlay = [...overlays].find((overlay) => overlay.dataset.overlay === id);
-  let switchInDelay = 0;
+  const outgoingOverlays = [...overlays].filter((overlay) => {
+    return overlay.dataset.overlay !== id && overlay.classList.contains("active");
+  });
   overlays.forEach((overlay) => {
-    if (overlay.dataset.overlay !== id) switchInDelay = Math.max(switchInDelay, hideOverlay(overlay));
+    if (overlay.dataset.overlay !== id) hideOverlay(overlay);
   });
   if (targetOverlay) {
-    if (switchInDelay > 0) {
+    if (outgoingOverlays.length > 0) {
+      const hasQueuedOutro = outgoingOverlays.some((overlay) => overlay.classList.contains("overlay-entering"));
+      const switchDelay = hasQueuedOutro ? ENTER_ANIMATION_MS + SWITCH_IN_DELAY_MS : SWITCH_IN_DELAY_MS;
+      pendingSwitchOverlay = targetOverlay;
       switchTimer = window.setTimeout(() => {
         showOverlay(targetOverlay);
         switchTimer = null;
-      }, switchInDelay);
+        pendingSwitchOverlay = null;
+      }, switchDelay);
     } else {
       showOverlay(targetOverlay);
     }
@@ -475,7 +289,13 @@ function setActiveOverlay(id) {
 }
 
 function stopOverlay(id) {
-  clearSwitchTimer();
+  const targetOverlay = [...overlays].find((overlay) => overlay.dataset.overlay === id);
+  const stopQueuedIntro = Boolean(switchTimer && pendingSwitchOverlay === targetOverlay);
+  if (stopQueuedIntro) {
+    pendingHideOverlays.add(targetOverlay);
+  } else {
+    clearSwitchTimer();
+  }
   selectedCard = id;
   syncDetailPanel();
   overlays.forEach((overlay) => {
@@ -487,36 +307,49 @@ function stopOverlay(id) {
 }
 
 function startCountdown() {
+  const wasRunning = isCountdownRunning();
   if (countdownSeconds <= 0) setCountdownSeconds(parseTime(countdownInput.value || "5:00"));
-  if (timerVisualTimer) window.clearTimeout(timerVisualTimer);
-  timerVisualTimer = null;
-  stage.classList.remove("timer-exiting");
-  if (countdownInterval) window.clearInterval(countdownInterval);
+  stopCountdown(false);
   countdownInterval = window.setInterval(() => {
     countdownSeconds = Math.max(0, countdownSeconds - 1);
     syncCountdown();
     if (countdownSeconds === 0) stopCountdown(false);
   }, 1000);
+  if (!wasRunning) {
+    if (timerActivationTimer) window.clearTimeout(timerActivationTimer);
+    stage.classList.remove("timer-activating");
+    void stage.offsetWidth;
+    stage.classList.add("timer-activating");
+    timerActivationTimer = window.setTimeout(() => {
+      stage.classList.remove("timer-activating");
+      timerActivationTimer = null;
+    }, 760);
+  }
   updateCards();
 }
 
 function stopCountdown(reset) {
-  const wasRunning = isCountdownRunning();
   if (countdownInterval) window.clearInterval(countdownInterval);
   countdownInterval = null;
+  if (timerActivationTimer) window.clearTimeout(timerActivationTimer);
+  timerActivationTimer = null;
+  stage.classList.remove("timer-activating");
   if (reset) {
     countdownSeconds = parseTime(countdownInput.value);
     syncCountdown();
   }
-  if (wasRunning) {
-    if (timerVisualTimer) window.clearTimeout(timerVisualTimer);
-    stage.classList.add("timer-exiting");
-    timerVisualTimer = window.setTimeout(() => {
-      stage.classList.remove("timer-exiting");
-      timerVisualTimer = null;
-    }, MATCHUP_TIMER_ANIMATION_MS + ANIMATION_CLEANUP_BUFFER_MS);
-  }
   updateCards();
+}
+
+function lockCountdownToggle() {
+  if (countdownToggleLocked) return false;
+  countdownToggleLocked = true;
+  if (countdownToggleTimer) window.clearTimeout(countdownToggleTimer);
+  countdownToggleTimer = window.setTimeout(() => {
+    countdownToggleLocked = false;
+    countdownToggleTimer = null;
+  }, 320);
+  return true;
 }
 
 function syncClock() {
@@ -535,7 +368,7 @@ function syncHalf() {
 function syncCountdown() {
   const value = formatTime(countdownSeconds);
   countdownTargets.forEach((target) => {
-    target.textContent = value;
+    setAnimatedCountdown(target, value);
   });
   countdownInput.value = value;
   timerHours.value = Math.floor(countdownSeconds / 3600);
@@ -549,14 +382,12 @@ function setCountdownSeconds(seconds) {
   syncCountdown();
 }
 
-function syncScores(scoreChange) {
+function syncScores() {
   homeScoreLabel.textContent = scores.home;
   awayScoreLabel.textContent = scores.away;
   scoreTargets.forEach((target) => {
     const side = target.dataset.bindScore;
-    const animationClass = scoreChange?.side === side && scoreChange.step > 0 ? "score-increased" : "text-updated";
-    const duration = animationClass === "score-increased" ? SCORE_UP_ANIMATION_MS : TEXT_UPDATE_ANIMATION_MS;
-    setAnimatedText(target, scores[side], animationClass, duration);
+    setAnimatedText(target, scores[side], { score: true });
   });
 }
 
@@ -619,7 +450,6 @@ function renderLineup(direction) {
 
   if (!direction) {
     writeRows();
-    if (isDisplayedOverlayText(lineupList)) restartAnimation(lineupList, "lineup-text-updated", TEXT_UPDATE_ANIMATION_MS);
     return;
   }
 
@@ -650,37 +480,33 @@ function syncCountdownMode() {
 function syncScorebugLayout() {
   const vertical = scorebugLayout.value === "vertical";
   const alreadyVertical = scorebugOverlay.classList.contains("scorebug-vertical");
-  const deployed = appReady && scorebugOverlay.classList.contains("active") && !scorebugOverlay.classList.contains("overlay-exiting");
-  if (vertical === alreadyVertical && !scorebugLayoutTimer) return;
-  clearScorebugLayoutSwap();
-  if (vertical === alreadyVertical) return;
-  if (!deployed) {
-    applyScorebugLayout(vertical);
+  const isLive = scorebugOverlay.classList.contains("active") && activeOverlay === "scorebug";
+  const canAnimate = isLive && alreadyVertical !== vertical;
+  const wasSwitching = scorebugOverlay.classList.contains("layout-switching");
+
+  clearScorebugLayoutSwitchTimer();
+  if (wasSwitching) {
+    clearAnimation(scorebugOverlay);
+    scorebugOverlay.classList.remove("layout-switching");
+  }
+
+  if (canAnimate) {
+    clearAnimation(scorebugOverlay);
+    scorebugOverlay.classList.add("overlay-exiting", "layout-switching");
+    scorebugLayoutSwitchTimer = window.setTimeout(() => {
+      scorebugOverlay.classList.toggle("scorebug-vertical", vertical);
+      scorebugOverlay.classList.toggle("scorebug-horizontal", !vertical);
+      scorebugOverlay.classList.remove("overlay-exiting");
+      scorebugOverlay.classList.add("overlay-entering");
+      scorebugLayoutSwitchTimer = window.setTimeout(() => {
+        scorebugOverlay.classList.remove("overlay-entering", "layout-switching");
+        scorebugLayoutSwitchTimer = null;
+      }, ENTER_ANIMATION_MS);
+    }, Math.round(EXIT_ANIMATION_MS * 0.82));
     return;
   }
-  fadeOverlayShadowOut(scorebugOverlay, {
-    duration: SCOREBUG_LAYOUT_OUT_MS,
-    easing: "cubic-bezier(0.7, 0, 0.84, 0)",
-    syncDuration: SCOREBUG_LAYOUT_OUT_MS + ANIMATION_CLEANUP_BUFFER_MS
-  });
-  scorebugOverlay.classList.add("scorebug-layout-exiting");
-  scorebugLayoutTimer = window.setTimeout(() => {
-    applyScorebugLayout(vertical);
-    clearOverlayShadow(scorebugOverlay);
-    scorebugOverlay.classList.remove("scorebug-layout-exiting");
-    scorebugOverlay.classList.add("scorebug-layout-entering");
-    fadeOverlayShadowIn(scorebugOverlay, {
-      duration: SCOREBUG_LAYOUT_IN_MS,
-      syncDuration: SCOREBUG_LAYOUT_IN_MS + ANIMATION_CLEANUP_BUFFER_MS
-    });
-    scorebugLayoutTimer = window.setTimeout(() => {
-      scorebugOverlay.classList.remove("scorebug-layout-entering");
-      scorebugLayoutTimer = null;
-    }, SCOREBUG_LAYOUT_IN_MS + ANIMATION_CLEANUP_BUFFER_MS);
-  }, SCOREBUG_LAYOUT_OUT_MS + ANIMATION_CLEANUP_BUFFER_MS);
-}
 
-function applyScorebugLayout(vertical) {
+  scorebugOverlay.classList.remove("layout-switching");
   scorebugOverlay.classList.toggle("scorebug-vertical", vertical);
   scorebugOverlay.classList.toggle("scorebug-horizontal", !vertical);
 }
@@ -739,6 +565,7 @@ mirroredEventInputs.forEach((input) => {
 lowerResultState.addEventListener("change", syncResultState);
 
 countdownStartStop.addEventListener("click", () => {
+  if (!lockCountdownToggle()) return;
   if (isCountdownRunning()) stopCountdown(false);
   else startCountdown();
 });
@@ -774,7 +601,7 @@ scoreButtons.forEach((button) => {
     const side = button.dataset.score;
     const step = Number(button.dataset.step);
     scores[side] = Math.max(0, scores[side] + step);
-    syncScores({ side, step });
+    syncScores();
   });
 });
 
@@ -784,7 +611,7 @@ toggleButtons.forEach((button) => {
     selectedCard = id;
     syncDetailPanel();
     if (id === "countdown-timer") {
-      const visibleMatchupOverlay = getVisibleMatchupOverlay();
+      if (!lockCountdownToggle()) return;
       if (isCountdownRunning()) {
         if (activeOverlay === "countdown-timer") stopOverlay(id);
         else {
@@ -793,8 +620,7 @@ toggleButtons.forEach((button) => {
         }
         return;
       }
-      if (visibleMatchupOverlay) {
-        activeOverlay = visibleMatchupOverlay;
+      if (supportsEmbeddedCountdown()) {
         startCountdown();
         updateCards();
         return;
@@ -818,7 +644,6 @@ cards.forEach((card) => {
 
 stage.style.setProperty("--package-bg-opacity", Number(backgroundOpacity.value) / 100);
 scorebugOverlay.style.setProperty("--scorebug-width", `${scorebugLength.value}%`);
-setupShadowObjects();
 syncDetailPanel();
 syncEventTitle(eventTitleInput.value);
 syncTeamFields();
@@ -831,7 +656,3 @@ syncCountdown();
 syncScores();
 renderLineup();
 updateCards();
-appReady = true;
-overlays.forEach((overlay) => {
-  if (overlay.classList.contains("active")) fadeOverlayShadowIn(overlay);
-});

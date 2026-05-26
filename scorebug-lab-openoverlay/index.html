@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>World Cup Overlay Lab</title>
+    <title>OpenOverlay Square Overlay Lab</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -12,8 +12,8 @@
         <div class="brand-row">
           <div class="mark">OO</div>
           <div>
-            <h1>World Cup Lab</h1>
-            <p>Matchups, scorebugs, text bugs, and timers</p>
+            <h1>OpenOverlay Square Lab</h1>
+            <p>Hard-edge matchups, scorebugs, text bugs, and timers</p>
           </div>
         </div>
 
@@ -79,13 +79,13 @@
                   <div class="team-logo arg" aria-label="Argentina flag"></div>
                   <div><b data-bind-team="home-name">Argentina</b><span data-bind-team="home-record">12-2-4 · CONMEBOL</span></div>
                 </section>
-                <div class="lower-match-center">
-                  <strong>VS</strong>
-                  <div class="lower-countdown">
-                    <em>Back in</em>
+                <strong class="lower-match-center">
+                  <span class="lower-versus">VS</span>
+                  <span class="lower-match-countdown">
+                    <em>Countdown</em>
                     <b data-bind-countdown>05:00</b>
-                  </div>
-                </div>
+                  </span>
+                </strong>
                 <section>
                   <div><b data-bind-team="away-name">France</b><span data-bind-team="away-record">11-3-3 · UEFA</span></div>
                   <div class="team-logo fra" aria-label="France flag"></div>
