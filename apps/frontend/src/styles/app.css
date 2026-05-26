@@ -194,7 +194,7 @@ a {
 .app-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 188px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 208px) minmax(0, 1fr);
   transition: grid-template-columns 220ms ease;
 }
 
@@ -208,7 +208,6 @@ a {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   transition: padding 220ms ease;
 }
 
@@ -374,7 +373,7 @@ a {
 }
 
 .live-editor-layout {
-  grid-template-columns: 280px minmax(460px, 1fr);
+  grid-template-columns: 220px minmax(420px, 1fr) minmax(320px, 360px);
   gap: 12px;
 }
 
@@ -411,20 +410,24 @@ a {
 .match-control-stack {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   min-width: 0;
 }
 
 .live-preview-pane {
   grid-column: 2;
   grid-row: 1;
+  align-self: start;
+  min-width: 0;
 }
 
 .soccer-bottom-control-panel {
-  grid-column: 1 / -1;
-  grid-row: 2;
+  grid-column: 3;
+  grid-row: 1;
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  align-self: start;
+  min-width: 0;
 }
 
 .bottom-control-tabs .tabs {
@@ -433,12 +436,21 @@ a {
 
 .live-control-stack {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .live-control-stack .countdown-panel {
-  border-top: 1px solid var(--sw-ink, #111);
-  padding-top: 12px;
+  border-top: 1px solid var(--sw-rule-faint, #e5e5e5);
+  padding-top: 10px;
+}
+
+.soccer-bottom-control-panel .score-clock-panel {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.soccer-bottom-control-panel .two-col {
+  grid-template-columns: 1fr 1fr;
 }
 
 .preview-frame {
@@ -447,10 +459,10 @@ a {
   overflow: hidden;
   position: relative;
   background:
-    linear-gradient(45deg, rgba(17, 17, 17, 0.06) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(17, 17, 17, 0.06) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(17, 17, 17, 0.06) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(17, 17, 17, 0.06) 75%);
+    linear-gradient(45deg, var(--sw-preview-checker, rgba(17, 17, 17, 0.06)) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--sw-preview-checker, rgba(17, 17, 17, 0.06)) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--sw-preview-checker, rgba(17, 17, 17, 0.06)) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--sw-preview-checker, rgba(17, 17, 17, 0.06)) 75%);
   background-size: 32px 32px;
   background-position: 0 0, 0 16px, 16px -16px, -16px 0;
 }
@@ -635,11 +647,41 @@ a {
   display: grid;
   gap: 8px;
   min-width: 0;
+  align-content: start;
 }
 
-.score-control > strong {
-  font-size: clamp(40px, 6vw, 68px);
+.score-control-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.score-control-row h3 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.score-control strong {
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 900;
   line-height: 0.85;
+  letter-spacing: -0.04em;
+  color: var(--sw-ink);
+}
+
+.score-control-actions {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 6px;
+}
+
+.score-control-actions .button {
+  min-height: 36px;
+  padding: 0 8px;
+  font-weight: 700;
+  font-size: 13px;
 }
 
 .on-air-item {
@@ -1038,11 +1080,36 @@ a {
   }
 }
 
+@media (max-width: 1280px) {
+  .live-editor-layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .live-editor-layout .lab-overlay-list {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .live-editor-layout .live-preview-pane {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .live-editor-layout .soccer-bottom-control-panel {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
 @media (max-width: 1100px) {
   .editor-layout,
   .preview-workspace,
   .match-control-stack,
   .score-clock-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .live-editor-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1078,13 +1145,14 @@ a {
     padding: 16px;
   }
 
-  .app-shell {
+  .app-shell,
+  .app-shell.sidebar-collapsed {
     grid-template-columns: 1fr;
     overflow-x: hidden;
   }
 
-  .app-shell.sidebar-collapsed {
-    grid-template-columns: 1fr;
+  .sidebar-resize-handle {
+    display: none;
   }
 
   .app-shell.sidebar-collapsed .main {

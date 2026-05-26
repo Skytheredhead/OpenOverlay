@@ -6,12 +6,14 @@ import {
   Image,
   LayoutDashboard,
   LogOut,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Pause,
   Play,
   Plus,
   RotateCcw,
+  Sun,
   Trash2,
   Upload,
   Users
@@ -58,28 +60,116 @@ interface PromptDialogOptions {
   inputType?: string;
 }
 
+type Theme = "light" | "dark";
+
+interface ThemeContextValue {
+  theme: Theme;
+  toggle: () => void;
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 const PromptDialogContext = createContext<((options: PromptDialogOptions) => Promise<string | null>) | null>(null);
+const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+const THEME_STORAGE_KEY = "openoverlay:theme";
+const SIDEBAR_WIDTH_STORAGE_KEY = "openoverlay:sidebar-width";
+const SIDEBAR_MIN_WIDTH = 168;
+const SIDEBAR_MAX_WIDTH = 360;
+const SIDEBAR_DEFAULT_WIDTH = 208;
 
 export function App() {
   return (
-    <PromptDialogProvider>
-      <AuthProvider>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login mode="login" />} />
-          <Route path="/signup" element={<Login mode="signup" />} />
-          <Route path="/overlay/:overlayId" element={<OverlayPage test={false} />} />
-          <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
-          <Route path="/dash" element={<RequireAuth><AppShell><Dashboard /></AppShell></RequireAuth>} />
-          <Route path="/dash/teams" element={<RequireAuth><AppShell><TeamsLibrary /></AppShell></RequireAuth>} />
-          <Route path="/dash/media" element={<RequireAuth><AppShell><MediaLibrary /></AppShell></RequireAuth>} />
-          <Route path="/dash/presets/:presetId" element={<RequireAuth><AppShell><PresetEditor /></AppShell></RequireAuth>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
-    </PromptDialogProvider>
+    <ThemeProvider>
+      <PromptDialogProvider>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login mode="login" />} />
+            <Route path="/signup" element={<Login mode="signup" />} />
+            <Route path="/overlay/:overlayId" element={<OverlayPage test={false} />} />
+            <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
+            <Route path="/dash" element={<RequireAuth><AppShell><Dashboard /></AppShell></RequireAuth>} />
+            <Route path="/dash/teams" element={<RequireAuth><AppShell><TeamsLibrary /></AppShell></RequireAuth>} />
+            <Route path="/dash/media" element={<RequireAuth><AppShell><MediaLibrary /></AppShell></RequireAuth>} />
+            <Route path="/dash/presets/:presetId" element={<RequireAuth><AppShell><PresetEditor /></AppShell></RequireAuth>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </PromptDialogProvider>
+    </ThemeProvider>
   );
+}
+
+function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // localStorage may be unavailable; safe to ignore
+    }
+  }, [theme]);
+
+  const toggle = useCallback(() => setTheme((value) => (value === "dark" ? "light" : "dark")), []);
+
+  const value = useMemo(() => ({ theme, toggle }), [theme, toggle]);
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+function useTheme() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error("Theme context missing");
+  return ctx;
+}
+
+function useResizableSidebar() {
+  const [width, setWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return SIDEBAR_DEFAULT_WIDTH;
+    const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+    if (!Number.isFinite(stored) || stored <= 0) return SIDEBAR_DEFAULT_WIDTH;
+    return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, stored));
+  });
+  const [resizing, setResizing] = useState(false);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
+    } catch {
+      // ignore
+    }
+  }, [width]);
+
+  const startDrag = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setResizing(true);
+    const previousCursor = document.body.style.cursor;
+    const previousSelect = document.body.style.userSelect;
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+
+    function onMove(moveEvent: MouseEvent) {
+      const next = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, moveEvent.clientX));
+      setWidth(next);
+    }
+    function onUp() {
+      setResizing(false);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousSelect;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
+  return { width, resizing, startDrag };
 }
 
 function PromptDialogProvider({ children }: { children: React.ReactNode }) {
@@ -283,6 +373,8 @@ function Login({ mode }: { mode: "login" | "signup" }) {
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const { logout, user } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
+  const { width: sidebarWidth, resizing, startDrag } = useResizableSidebar();
   const [games, setGames] = useState<PresetSummary[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -290,8 +382,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
     void presetApi.list().then((response) => setGames(response.presets)).catch(() => setGames([]));
   }, []);
 
+  const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties;
+  const shellClass = [
+    "app-shell",
+    sidebarCollapsed ? "sidebar-collapsed" : "",
+    resizing ? "is-resizing" : ""
+  ].filter(Boolean).join(" ");
+
   return (
-    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <div className={shellClass} style={shellStyle}>
       <aside className="sidebar">
         <div className="sidebar-header">
           <Link to="/dash" className="brand sidebar-brand" aria-label="OpenOverlay dashboard">
@@ -324,8 +423,26 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="sidebar-account" aria-hidden={sidebarCollapsed}>
           <p className="muted">{user?.email}</p>
+          <button
+            className="sidebar-theme-toggle"
+            type="button"
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? <Sun size={18} strokeWidth={2.2} /> : <Moon size={18} strokeWidth={2.2} />}
+          </button>
           <button className="sidebar-logout" type="button" aria-label="Logout" title="Logout" onClick={() => void logout()}><LogOut size={20} strokeWidth={2.4} /></button>
         </div>
+        {!sidebarCollapsed ? (
+          <div
+            className="sidebar-resize-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onMouseDown={startDrag}
+          />
+        ) : null}
       </aside>
       <main className="main">{children}</main>
     </div>
@@ -684,12 +801,12 @@ function PresetEditor() {
 
   return (
     <>
-      <div className="page-title">
+      <div className="page-title compact">
         <div>
           <h1>{preset.name}</h1>
           <p className="muted preset-meta">
             <span>{preset.type === "soccer" ? "soccer game" : `${preset.type} production`}</span>
-            <button className="inline-copy-button" type="button" onClick={() => void copyOverlayUrl()}><Copy size={15} /> Copy Output URL</button>
+            <button className="inline-copy-button" type="button" onClick={() => void copyOverlayUrl()}><Copy size={14} /> Copy output URL</button>
           </p>
         </div>
         <div className="status-row">
@@ -1135,11 +1252,13 @@ function SoccerScoreClockPanel({
 function ScoreControls({ label, score, plus, minus }: { label: string; score: number; plus: () => void; minus: () => void }) {
   return (
     <div className="score-control">
-      <h3>{label}</h3>
-      <strong>{score}</strong>
-      <div className="control-row">
-        <button className="button primary" onClick={plus}><Plus size={17} /> 1</button>
-        <button className="button" onClick={minus}>-1</button>
+      <div className="score-control-row">
+        <h3>{label}</h3>
+        <strong>{score}</strong>
+      </div>
+      <div className="score-control-actions">
+        <button className="button primary" type="button" onClick={plus} aria-label={`Add point to ${label}`}><Plus size={16} /> 1</button>
+        <button className="button" type="button" onClick={minus} aria-label={`Subtract point from ${label}`}>−1</button>
       </div>
     </div>
   );

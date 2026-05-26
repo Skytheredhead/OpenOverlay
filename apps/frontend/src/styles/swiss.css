@@ -15,10 +15,39 @@
   --sw-rule: #111111;
   --sw-rule-faint: #e5e5e5;
   --sw-red: #e30613;
+  --sw-on-red: #ffffff;
+  --sw-backdrop: rgba(255, 255, 255, 0.74);
+  --sw-preview-checker: rgba(17, 17, 17, 0.06);
+  --sw-handle-hover: rgba(227, 6, 19, 0.5);
   background: var(--sw-bg);
   color: var(--sw-ink);
   font-family: "Inter Tight", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-feature-settings: "ss01", "cv11";
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --sw-bg: #0e0e10;
+  --sw-bg-soft: #18181b;
+  --sw-ink: #f5f5f5;
+  --sw-ink-soft: #a8a8a8;
+  --sw-ink-mute: #6f6f6f;
+  --sw-rule: #f5f5f5;
+  --sw-rule-faint: #2a2a2c;
+  --sw-red: #ff4756;
+  --sw-on-red: #0e0e10;
+  --sw-backdrop: rgba(0, 0, 0, 0.66);
+  --sw-preview-checker: rgba(255, 255, 255, 0.08);
+  --sw-handle-hover: rgba(255, 71, 86, 0.55);
+}
+
+:root[data-theme="dark"] .button.primary {
+  color: #fff;
+}
+
+:root[data-theme="dark"] .button.primary:hover {
+  background: var(--sw-ink);
+  color: var(--sw-bg);
 }
 
 body {
@@ -311,7 +340,7 @@ body {
 }
 
 .prompt-backdrop {
-  background: rgba(255, 255, 255, 0.74);
+  background: var(--sw-backdrop);
   backdrop-filter: blur(2px);
 }
 
@@ -346,12 +375,17 @@ body {
 /* --- app shell --- */
 .app-shell {
   background: var(--sw-bg);
-  grid-template-columns: 188px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 208px) minmax(0, 1fr);
   transition: grid-template-columns 220ms ease;
 }
 
 .app-shell.sidebar-collapsed {
   grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.app-shell.is-resizing,
+.app-shell.is-resizing .sidebar {
+  transition: none;
 }
 
 .sidebar {
@@ -361,6 +395,24 @@ body {
   display: flex;
   flex-direction: column;
   transition: padding 220ms ease;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  background: transparent;
+  z-index: 5;
+  border: 0;
+  padding: 0;
+}
+
+.sidebar-resize-handle:hover,
+.app-shell.is-resizing .sidebar-resize-handle {
+  background: var(--sw-handle-hover);
 }
 
 .app-shell.sidebar-collapsed .sidebar {
@@ -547,7 +599,8 @@ body {
   white-space: nowrap;
 }
 
-.sidebar-logout {
+.sidebar-logout,
+.sidebar-theme-toggle {
   border: 0;
   border-bottom: 0;
   min-height: 28px;
@@ -558,14 +611,16 @@ body {
   background: var(--sw-bg);
 }
 
-.sidebar button.sidebar-logout svg {
+.sidebar button.sidebar-logout svg,
+.sidebar button.sidebar-theme-toggle svg {
   display: block;
   width: 18px;
   height: 18px;
   stroke: currentColor;
 }
 
-.sidebar-logout:hover {
+.sidebar-logout:hover,
+.sidebar-theme-toggle:hover {
   background: transparent;
   color: var(--sw-red);
 }
@@ -579,6 +634,27 @@ body {
   padding-bottom: 14px;
   margin-bottom: 16px;
   align-items: end;
+}
+
+.page-title.compact {
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.page-title.compact h1 {
+  font-size: clamp(16px, 1.6vw, 22px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.page-title.compact .preset-meta {
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.page-title.compact .status-pill {
+  font-size: 11px;
 }
 
 .inline-copy-button {
