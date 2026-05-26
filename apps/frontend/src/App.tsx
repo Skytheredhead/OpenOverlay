@@ -9,10 +9,10 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  Pause,
   Play,
   Plus,
   RotateCcw,
+  Square,
   Sun,
   Trash2,
   Upload,
@@ -1149,7 +1149,15 @@ function SoccerCountdownPanel({
       <h2>Countdown</h2>
       <div className="form-grid">
         <div className="control-row">
-          <button className="button primary" type="button" onClick={() => void runAction("countdown-toggle")}>{state.soccerPackage.countdown.running ? "Stop timer" : "Start timer"}</button>
+          <button
+            className="button primary icon-toggle"
+            type="button"
+            aria-label={state.soccerPackage.countdown.running ? "Stop countdown" : "Start countdown"}
+            title={state.soccerPackage.countdown.running ? "Stop countdown" : "Start countdown"}
+            onClick={() => void runAction("countdown-toggle")}
+          >
+            {state.soccerPackage.countdown.running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
+          </button>
           <button className="button" type="button" onClick={() => updateCountdown({ seconds: 300, resetSeconds: 300, running: false, startedAtMs: null })}>5:00</button>
           <button className="button" type="button" onClick={() => updateCountdown({ seconds: 600, resetSeconds: 600, running: false, startedAtMs: null })}>10:00</button>
           <button className="button" type="button" onClick={() => void runAction("countdown-reset")}>Reset</button>
@@ -1204,8 +1212,16 @@ function SoccerScoreClockPanel({
       <section className="score-clock-section">
         <h2>Clock</h2>
         <div className="control-row">
-          <button className="button primary" onClick={() => runAction("clock-toggle")}>{state.clock.running ? <Pause size={17} /> : <Play size={17} />} {state.clock.running ? "Pause" : "Start"}</button>
-          <button className="button" onClick={() => runAction("clock-reset")}><RotateCcw size={17} /> Reset</button>
+          <button
+            className="button primary icon-toggle"
+            type="button"
+            aria-label={state.clock.running ? "Pause clock" : "Start clock"}
+            title={state.clock.running ? "Pause clock" : "Start clock"}
+            onClick={() => runAction("clock-toggle")}
+          >
+            {state.clock.running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
+          </button>
+          <button className="button" type="button" onClick={() => runAction("clock-reset")}><RotateCcw size={15} /> Reset</button>
         </div>
         <div className="form-grid">
           <label className="field">
@@ -1364,14 +1380,16 @@ function SoccerLabOverlayControls({
           >
             <strong>{labOverlayLabels[overlay]}</strong>
             <button
-              className="overlay-card-action"
+              className={`overlay-card-action ${state.soccerPackage.activeOverlay === overlay ? "is-active" : ""}`}
               type="button"
+              aria-label={state.soccerPackage.activeOverlay === overlay ? `Stop ${labOverlayLabels[overlay]}` : `Play ${labOverlayLabels[overlay]}`}
+              title={state.soccerPackage.activeOverlay === overlay ? "Stop overlay" : "Play overlay"}
               onClick={(event) => {
                 event.stopPropagation();
                 takeOverlay(overlay);
               }}
             >
-              {state.soccerPackage.activeOverlay === overlay ? "Stop" : "Play"}
+              {state.soccerPackage.activeOverlay === overlay ? <Square size={12} fill="currentColor" strokeWidth={0} /> : <Play size={12} fill="currentColor" strokeWidth={0} />}
             </button>
           </div>
         ))}

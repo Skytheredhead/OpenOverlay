@@ -43,6 +43,7 @@ describe("OverlayRenderer", () => {
     hiddenState.soccerPackage.activeOverlay = null;
     rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={hiddenState} /></div>);
 
+    expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy();
     await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy());
   });
 

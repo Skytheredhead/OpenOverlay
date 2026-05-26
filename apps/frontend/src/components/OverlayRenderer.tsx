@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   formatSoccerClock,
@@ -102,7 +102,7 @@ function SoccerOverlay({
   const timerRunning = soccer.countdown.running && countdownSeconds > 0;
   const activeClass = activeOverlay ? `show-${activeOverlay}` : "show-none";
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousOverlay = previousOverlayRef.current;
     if (previousOverlay && previousOverlay !== activeOverlay) {
       setExitingOverlay(previousOverlay);

@@ -1226,16 +1226,45 @@ a {
 .overlay-card-action {
   position: static;
   justify-self: end;
-  min-width: 48px;
+  min-width: 32px;
   min-height: 26px;
   display: grid;
   place-items: center;
   background: var(--sw-ink, #111);
-  color: #fff;
+  color: var(--sw-bg, #fff);
+  border: 1px solid var(--sw-ink, #111);
   font-size: 11px;
   font-weight: 800;
   cursor: pointer;
   padding: 0 8px;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.overlay-card-action:hover {
+  background: var(--sw-red, #e30613);
+  color: #fff;
+  border-color: var(--sw-red, #e30613);
+}
+
+.overlay-card-action.is-active {
+  background: var(--sw-red, #e30613);
+  color: #fff;
+  border-color: var(--sw-red, #e30613);
+}
+
+.overlay-card-action.is-active:hover {
+  background: var(--sw-ink, #111);
+  color: var(--sw-bg, #fff);
+  border-color: var(--sw-ink, #111);
+}
+
+.icon-toggle {
+  min-width: 38px;
+  padding: 0;
+}
+
+.icon-toggle svg {
+  display: block;
 }
 
 .overlay-control-card.active {
