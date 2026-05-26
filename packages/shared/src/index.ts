@@ -35,6 +35,8 @@ export type SoccerTextAnimationField =
   | "away-record"
   | "home-logo"
   | "away-logo"
+  | "home-score"
+  | "away-score"
   | "lineup-title"
   | "lineup-logo"
   | "lineup-rows"

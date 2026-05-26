@@ -130,6 +130,8 @@ function applySoccerAction(state: SoccerState, action: PresetAction, payload: Re
   if (action === "home-score-minus") next.score.home = Math.max(0, next.score.home - 1);
   if (action === "away-score-plus") next.score.away += 1;
   if (action === "away-score-minus") next.score.away = Math.max(0, next.score.away - 1);
+  if (action === "home-score-plus" || action === "home-score-minus") next.soccerPackage.textAnimation = { id: nowMs, fields: ["home-score"] };
+  if (action === "away-score-plus" || action === "away-score-minus") next.soccerPackage.textAnimation = { id: nowMs, fields: ["away-score"] };
 
   if (action === "clock-toggle") {
     next.clock = next.clock.running ? pauseClock(next.clock, nowMs) : startClock(next.clock, nowMs);

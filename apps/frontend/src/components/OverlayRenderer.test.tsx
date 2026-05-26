@@ -75,6 +75,37 @@ describe("OverlayRenderer", () => {
     expect(frameBody(container)?.querySelector(".full-team.away [data-bind-team-logo]")?.classList.contains("text-updated")).toBe(false);
   });
 
+  it("animates only the changed score without replaying lineup intro rows", async () => {
+    const state = createDefaultSoccerState("Test Match");
+    state.soccerPackage.activeOverlay = "lineup-panel";
+    const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-lineup.overlay-entering")).toBeTruthy());
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-lineup.overlay-live")).toBeTruthy(), { timeout: 1400 });
+
+    const nextState = structuredClone(state);
+    nextState.score.home = 1;
+    nextState.soccerPackage.textAnimation = { id: 3, fields: ["home-score"] };
+    rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={nextState} /></div>);
+
+    expect(frameBody(container)?.querySelector(".overlay-lineup.overlay-entering")).toBeFalsy();
+    expect(frameBody(container)?.querySelector(".lineup-list.lineup-text-updated")).toBeFalsy();
+  });
+
+  it("adds a score update class to the changed score", async () => {
+    const state = createDefaultSoccerState("Test Match");
+    state.soccerPackage.activeOverlay = "scorebug";
+    const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-scorebug")).toBeTruthy());
+
+    const nextState = structuredClone(state);
+    nextState.score.home = 1;
+    nextState.soccerPackage.textAnimation = { id: 4, fields: ["home-score"] };
+    rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={nextState} /></div>);
+
+    await waitFor(() => expect(frameBody(container)?.querySelector("[data-bind-score].score-increased")).toBeTruthy());
+    expect(frameBody(container)?.querySelectorAll("[data-bind-score].score-increased")).toHaveLength(1);
+  });
+
   it("keeps a soccer overlay mounted with the exit class after hiding it", async () => {
     const state = createDefaultSoccerState("Test Match");
     state.soccerPackage.activeOverlay = "full-matchup";
