@@ -39,7 +39,7 @@ body {
   background: var(--sw-bg);
   border-bottom: 1px solid var(--sw-rule);
   backdrop-filter: none;
-  padding: 24px clamp(28px, 5vw, 80px);
+  padding: 14px clamp(20px, 3vw, 48px);
 }
 
 .brand {
@@ -56,20 +56,20 @@ body {
 }
 
 .topbar .brand {
-  font-size: 32px;
+  font-size: 22px;
   line-height: 0.9;
 }
 
 .brand-mark {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   display: block;
   flex: none;
 }
 
 .topbar .brand-mark {
-  width: 38px;
-  height: 38px;
+  width: 28px;
+  height: 28px;
 }
 
 /* --- buttons --- */
@@ -80,11 +80,11 @@ body {
   border: 1px solid var(--sw-ink);
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: -0.01em;
   text-transform: none;
-  min-height: 38px;
-  padding: 0 18px;
+  min-height: 30px;
+  padding: 0 12px;
   box-shadow: none;
   transition: background 120ms ease, color 120ms ease;
 }
@@ -185,16 +185,23 @@ body {
   border: 1px solid var(--sw-ink);
   border-radius: 0;
   box-shadow: none;
-  padding: 40px;
+  padding: 28px;
 }
 
-.auth-panel h1,
+.auth-panel h1 {
+  font-family: "Inter Tight", Helvetica, sans-serif;
+  font-weight: 900;
+  font-size: clamp(28px, 3.2vw, 40px);
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+}
+
 .page-title h1 {
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 900;
-  font-size: clamp(36px, 4vw, 56px);
-  letter-spacing: -0.04em;
-  line-height: 0.92;
+  font-size: clamp(22px, 2.4vw, 32px);
+  letter-spacing: -0.03em;
+  line-height: 1;
 }
 
 .auth-panel h1::after,
@@ -208,7 +215,7 @@ body {
   color: var(--sw-ink-soft);
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 500;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -223,8 +230,8 @@ body {
   border-radius: 0;
   color: var(--sw-ink);
   font-family: "Inter Tight", Helvetica, sans-serif;
-  font-size: 16px;
-  padding: 8px 0;
+  font-size: 14px;
+  padding: 5px 0;
 }
 
 .field input:focus,
@@ -232,20 +239,20 @@ body {
 .field select:focus,
 .number-input:focus {
   border-bottom: 2px solid var(--sw-red);
-  padding-bottom: 7px;
+  padding-bottom: 4px;
 }
 
 .field textarea.roster-textarea {
   border: 1px solid var(--sw-ink);
   background: var(--sw-bg-soft);
-  padding: 12px;
-  line-height: 1.45;
-  min-height: 150px;
+  padding: 10px;
+  line-height: 1.4;
+  min-height: 120px;
 }
 
 .field textarea.roster-textarea:focus {
   border: 2px solid var(--sw-red);
-  padding: 11px;
+  padding: 9px;
 }
 
 .field.color-swatch-field {
@@ -258,8 +265,8 @@ body {
   border-radius: 0;
   background: var(--sw-bg);
   padding: 0;
-  width: 42px;
-  height: 42px;
+  width: 32px;
+  height: 32px;
 }
 
 .field.color-swatch-field input[type="color"]::-webkit-color-swatch-wrapper {
@@ -313,13 +320,13 @@ body {
   border: 1px solid var(--sw-ink);
   border-radius: 0;
   box-shadow: none;
-  padding: 32px;
+  padding: 22px;
 }
 
 .prompt-dialog h2 {
-  margin: 0 0 28px;
+  margin: 0 0 18px;
   font-family: "Inter Tight", Helvetica, sans-serif;
-  font-size: 42px;
+  font-size: 26px;
   font-weight: 900;
   letter-spacing: -0.04em;
   line-height: 0.92;
@@ -333,13 +340,13 @@ body {
 
 .prompt-actions {
   border-top: 1px solid var(--sw-ink);
-  padding-top: 18px;
+  padding-top: 14px;
 }
 
 /* --- app shell --- */
 .app-shell {
   background: var(--sw-bg);
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 188px minmax(0, 1fr);
   transition: grid-template-columns 220ms ease;
 }
 
@@ -350,7 +357,7 @@ body {
 .sidebar {
   background: var(--sw-bg);
   border-right: 1px solid var(--sw-ink);
-  padding: 36px 28px;
+  padding: 20px 18px;
   display: flex;
   flex-direction: column;
   transition: padding 220ms ease;
@@ -370,20 +377,21 @@ body {
   gap: 8px;
   min-width: 0;
   border-bottom: 1px solid var(--sw-rule-faint);
-  padding-bottom: 12px;
+  padding-bottom: 8px;
 }
 
 .sidebar .sidebar-brand {
   border-bottom: 0;
-  min-height: 34px;
+  min-height: 28px;
   padding: 0;
   flex: 1;
   min-width: 0;
+  font-size: 16px;
 }
 
 .sidebar .sidebar-brand .brand-mark {
-  width: 25px;
-  height: 25px;
+  width: 20px;
+  height: 20px;
 }
 
 .sidebar-brand-text {
@@ -443,11 +451,11 @@ body {
   background: transparent;
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 500;
-  font-size: 14px;
+  font-size: 13px;
   letter-spacing: -0.01em;
   text-transform: none;
   border-bottom: 1px solid var(--sw-rule-faint);
-  min-height: 44px;
+  min-height: 32px;
   padding: 0 4px;
   position: relative;
   text-decoration: none;
@@ -501,14 +509,14 @@ body {
 .sidebar-subnav {
   display: grid;
   border-bottom: 1px solid var(--sw-rule-faint);
-  padding: 2px 0 8px 20px;
+  padding: 2px 0 6px 16px;
 }
 
 .sidebar-subnav a {
-  min-height: 28px;
+  min-height: 24px;
   border-bottom: 0;
   color: var(--sw-ink-soft);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .sidebar-subnav a.active {
@@ -520,7 +528,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 44px;
+  min-height: 32px;
   padding: 0 4px;
   border-top: 1px solid var(--sw-rule-faint);
   border-bottom: 1px solid var(--sw-rule-faint);
@@ -532,7 +540,7 @@ body {
   margin: 0;
   color: var(--sw-ink-soft);
   font-family: "Inter Tight", Helvetica, sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -542,8 +550,8 @@ body {
 .sidebar-logout {
   border: 0;
   border-bottom: 0;
-  min-height: 32px;
-  width: 32px;
+  min-height: 28px;
+  width: 28px;
   padding: 0;
   justify-content: center;
   color: var(--sw-ink);
@@ -552,8 +560,8 @@ body {
 
 .sidebar button.sidebar-logout svg {
   display: block;
-  width: 21px;
-  height: 21px;
+  width: 18px;
+  height: 18px;
   stroke: currentColor;
 }
 
@@ -563,19 +571,19 @@ body {
 }
 
 .main {
-  padding: 48px clamp(28px, 5vw, 72px);
+  padding: 22px clamp(20px, 3vw, 40px);
 }
 
 .page-title {
   border-bottom: 1px solid var(--sw-ink);
-  padding-bottom: 28px;
-  margin-bottom: 28px;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
   align-items: end;
 }
 
 .inline-copy-button {
   font-family: "Inter Tight", Helvetica, sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--sw-ink);
   text-decoration-color: var(--sw-red);
@@ -626,15 +634,15 @@ body {
 }
 
 .preset-card {
-  padding: 22px;
+  padding: 14px;
 }
 
 .preset-card h2 {
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 800;
-  font-size: 26px;
+  font-size: 18px;
   letter-spacing: -0.03em;
-  line-height: 1;
+  line-height: 1.05;
   color: var(--sw-ink);
 }
 
@@ -643,16 +651,16 @@ body {
   color: var(--sw-ink-soft);
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 400;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: -0.01em;
 }
 
 .panel {
-  padding: 22px;
+  padding: 14px;
 }
 
 .setup-panel {
-  border-top: 6px solid var(--sw-ink);
+  border-top: 3px solid var(--sw-ink);
 }
 
 .panel h2,
@@ -660,13 +668,13 @@ body {
 .lab-overlay-list h2 {
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--sw-ink-soft);
   border-bottom: 1px solid var(--sw-ink);
-  padding-bottom: 10px;
-  margin-bottom: 18px;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
 }
 
 .preset-grid {
@@ -688,8 +696,8 @@ body {
   background: var(--sw-bg);
   color: var(--sw-ink);
   margin-bottom: -1px;
-  min-height: 64px;
-  padding: 10px 12px 10px 9px;
+  min-height: 48px;
+  padding: 6px 10px 6px 8px;
 }
 
 .team-list-item.active,
@@ -745,7 +753,7 @@ body {
 .on-air-item {
   border: 1px solid var(--sw-ink);
   background: var(--sw-bg);
-  padding: 14px;
+  padding: 10px;
 }
 
 .assignment-card {
@@ -780,9 +788,9 @@ body {
 /* --- tabs (text-only with underline) --- */
 .tabs {
   border-bottom: 1px solid var(--sw-ink);
-  gap: 24px;
+  gap: 18px;
   padding-bottom: 0;
-  margin-bottom: 24px;
+  margin-bottom: 14px;
 }
 
 .live-editor-layout .tabs {
@@ -796,10 +804,10 @@ body {
   color: var(--sw-ink-soft);
   font-family: "Inter Tight", Helvetica, sans-serif;
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0;
   text-transform: none;
-  padding: 0 0 12px;
+  padding: 0 0 8px;
   min-height: 0;
   box-shadow: none;
   margin-bottom: -1px;
@@ -837,8 +845,8 @@ body {
   background: var(--sw-bg);
   color: var(--sw-ink-soft);
   font-family: "Inter Tight", Helvetica, sans-serif;
-  font-size: 13px;
-  padding: 40px;
+  font-size: 12px;
+  padding: 22px;
 }
 
 .overlay-test-page {
