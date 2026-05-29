@@ -138,6 +138,20 @@ a {
   gap: 8px;
 }
 
+.deployment-check-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px clamp(16px, 3vw, 48px);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.deployment-check-banner svg {
+  flex: none;
+}
+
 .auth-page {
   min-height: 100vh;
   display: grid;

@@ -15,6 +15,7 @@
     "test:backend": "npm run test --workspace @openoverlay/backend",
     "test:e2e": "npm run test:e2e --workspace @openoverlay/frontend",
     "typecheck": "npm run build --workspace @openoverlay/shared && npm run typecheck --workspace @openoverlay/backend && npm run typecheck --workspace @openoverlay/frontend",
+    "check:deployments": "node scripts/check-deployment-sync.mjs",
     "seed": "npm run seed --workspace @openoverlay/backend"
   },
   "engines": {

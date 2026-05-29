@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 import {
+  AlertTriangle,
   Check,
   Copy,
   Image,
@@ -21,6 +22,8 @@ import {
   Users
 } from "lucide-react";
 import {
+  OPENOVERLAY_API_VERSION,
+  OPENOVERLAY_REALTIME_VERSION,
   computeClockSeconds,
   createDefaultChurchState,
   createDefaultSoccerState,
@@ -46,7 +49,7 @@ import {
   type TeamLibraryEntry
 } from "@openoverlay/shared";
 import { getElementById, OverlayRenderer } from "./components/OverlayRenderer";
-import { WS_URL, authApi, mediaApi, overlayApi, presetApi, teamApi, type MediaItem, type User } from "./lib/api";
+import { FRONTEND_BUILD, WS_URL, authApi, mediaApi, overlayApi, presetApi, statusApi, teamApi, type BuildInfo, type MediaItem, type User } from "./lib/api";
 import { useDebouncedCallback } from "./lib/hooks";
 
 interface AuthContextValue {
@@ -67,6 +70,11 @@ interface PromptDialogOptions {
 
 type Theme = "light" | "dark";
 type SoccerEditorTab = "match" | "live" | "setup";
+type DeploymentCheckResult =
+  | { status: "idle" | "ok" }
+  | { status: "mismatch"; frontend: BuildInfo; backend: BuildInfo }
+  | { status: "unknown"; reason: string }
+  | { status: "error"; reason: string };
 
 interface ThemeContextValue {
   theme: Theme;
@@ -84,6 +92,7 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "openoverlay:sidebar-width";
 const SIDEBAR_MIN_WIDTH = 232;
 const SIDEBAR_MAX_WIDTH = 360;
 const SIDEBAR_DEFAULT_WIDTH = 232;
+const DEPLOYMENT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_TEAM_COLOR_PAIRS = [
   defaultTeamColors.home,
   defaultTeamColors.away
@@ -99,6 +108,7 @@ export function App() {
     <ThemeProvider>
       <PromptDialogProvider>
         <AuthProvider>
+          <DeploymentCompatibilityChecker />
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login mode="login" />} />
@@ -115,6 +125,93 @@ export function App() {
       </PromptDialogProvider>
     </ThemeProvider>
   );
+}
+
+function DeploymentCompatibilityChecker() {
+  const location = useLocation();
+  const [result, setResult] = useState<DeploymentCheckResult>({ status: "idle" });
+  const isOverlayOutput = location.pathname.startsWith("/overlay/");
+
+  useEffect(() => {
+    if (isOverlayOutput) return;
+
+    const controller = new AbortController();
+    let timeoutId: number | undefined;
+
+    async function check() {
+      try {
+        const health = await statusApi.health(controller.signal);
+        if (controller.signal.aborted) return;
+        const backendBuild = health.build;
+        const supportsFrontendApi = health.compatibility?.api?.supported.includes(FRONTEND_BUILD.requiredApiVersion);
+        const supportsFrontendRealtime = health.compatibility?.realtime?.supported.includes(FRONTEND_BUILD.requiredRealtimeVersion);
+
+        if (supportsFrontendApi === false || supportsFrontendRealtime === false) {
+          setResult({ status: "error", reason: `Backend does not support required API/realtime version ${FRONTEND_BUILD.requiredApiVersion}/${FRONTEND_BUILD.requiredRealtimeVersion}.` });
+          return;
+        }
+
+        if (FRONTEND_BUILD.commit && backendBuild?.commit) {
+          setResult(FRONTEND_BUILD.commit === backendBuild.commit ? { status: "ok" } : { status: "mismatch", frontend: FRONTEND_BUILD, backend: backendBuild });
+          return;
+        }
+
+        if (import.meta.env.PROD) {
+          const missing = [FRONTEND_BUILD.commit ? null : "frontend", backendBuild?.commit ? null : "backend"].filter(Boolean).join(" and ");
+          setResult({ status: "unknown", reason: `Missing ${missing} build metadata.` });
+        } else {
+          setResult({ status: "ok" });
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setResult({ status: "error", reason: error instanceof Error ? error.message : "Could not reach backend health." });
+      } finally {
+        if (!controller.signal.aborted) {
+          timeoutId = window.setTimeout(check, DEPLOYMENT_CHECK_INTERVAL_MS);
+        }
+      }
+    }
+
+    void check();
+
+    return () => {
+      controller.abort();
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [isOverlayOutput]);
+
+  if (isOverlayOutput) return null;
+
+  let message: string;
+  let tone: "warn" | "neutral";
+
+  switch (result.status) {
+    case "mismatch":
+      message = `Frontend build ${formatBuildLabel(result.frontend)} and backend build ${formatBuildLabel(result.backend)} differ. Redeploy the stale side before going live.`;
+      tone = "warn";
+      break;
+    case "unknown":
+      message = `Deployment sync check incomplete. ${result.reason}`;
+      tone = "neutral";
+      break;
+    case "error":
+      message = `Deployment sync check failed. ${result.reason}`;
+      tone = "neutral";
+      break;
+    default:
+      return null;
+  }
+
+  return (
+    <div className={`deployment-check-banner ${tone}`} role={result.status === "mismatch" ? "alert" : "status"}>
+      <AlertTriangle size={16} aria-hidden="true" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+function formatBuildLabel(build: BuildInfo): string {
+  return build.commitShort || build.commit?.slice(0, 7) || build.version || "unknown";
 }
 
 function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -903,8 +1000,8 @@ function PresetEditor() {
     const socket = io(WS_URL, {
       withCredentials: true,
       transports: ["websocket", "polling"],
-      auth: { role: "admin", presetId },
-      query: { role: "admin", presetId }
+      auth: { role: "admin", presetId, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
+      query: { role: "admin", presetId, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION }
     });
     socketRef.current = socket;
     socket.on("connect", () => setConnection("connected"));
@@ -2585,8 +2682,8 @@ function OverlayPage({ test }: { test: boolean }) {
     void overlayApi.get(overlayId).then((response) => setOverlay(response.overlay)).catch((err) => setError(err.message));
     const socket = io(WS_URL, {
       transports: ["websocket", "polling"],
-      auth: { role: "overlay", overlayId, client },
-      query: { role: "overlay", overlayId, client }
+      auth: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
+      query: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION }
     });
     socket.on("connect", () => setConnection("connected"));
     socket.on("disconnect", () => setConnection("disconnected"));

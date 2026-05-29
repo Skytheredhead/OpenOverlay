@@ -42,6 +42,7 @@ npm run typecheck
 npm test
 npm run build
 npm run test:e2e --workspace @openoverlay/frontend
+npm run check:deployments
 npm run seed
 ```
 
@@ -61,6 +62,13 @@ Backend:
 - `CORS_ORIGINS`
 - `FRONTEND_URL`
 - `COOKIE_DOMAIN`
+- `SELF_UPDATE_ENABLED`, default disabled
+- `SELF_UPDATE_INTERVAL_MS`, default `60000`
+- `SELF_UPDATE_REPO_DIR`, default repo root
+- `SELF_UPDATE_REMOTE`, default `origin`
+- `SELF_UPDATE_BRANCH`, default `main`
+- `GATEWAY_BACKEND_PORTS`, default `8735,8736`
+- `GATEWAY_RELEASE_DIR`
 
 Frontend:
 
@@ -102,26 +110,32 @@ Create an action key from the preset editor. Store it securely. Then use a Strea
 ```bash
 curl -X POST \
   -H "x-openoverlay-action-key: ACTION_KEY" \
-  https://api.openoverlay.skylarenns.com/api/presets/PRESET_ID/actions/home-score-plus
+  https://api.openoverlay.skylarenns.com/api/v1/presets/PRESET_ID/actions/home-score-plus
 ```
 
 Common endpoints:
 
-- `POST /api/presets/:id/actions/home-score-plus`
-- `POST /api/presets/:id/actions/home-score-minus`
-- `POST /api/presets/:id/actions/away-score-plus`
-- `POST /api/presets/:id/actions/away-score-minus`
-- `POST /api/presets/:id/actions/clock-toggle`
-- `POST /api/presets/:id/actions/clock-reset`
-- `POST /api/presets/:id/actions/trigger-goal`
-- `POST /api/presets/:id/actions/trigger-yellow-card`
-- `POST /api/presets/:id/actions/trigger-red-card`
-- `POST /api/presets/:id/actions/trigger-substitution`
-- `POST /api/presets/:id/actions/trigger-halftime`
-- `POST /api/presets/:id/actions/trigger-countdown`
-- `POST /api/presets/:id/actions/clear`
+- `POST /api/v1/presets/:id/actions/home-score-plus`
+- `POST /api/v1/presets/:id/actions/home-score-minus`
+- `POST /api/v1/presets/:id/actions/away-score-plus`
+- `POST /api/v1/presets/:id/actions/away-score-minus`
+- `POST /api/v1/presets/:id/actions/clock-toggle`
+- `POST /api/v1/presets/:id/actions/clock-reset`
+- `POST /api/v1/presets/:id/actions/trigger-goal`
+- `POST /api/v1/presets/:id/actions/trigger-yellow-card`
+- `POST /api/v1/presets/:id/actions/trigger-red-card`
+- `POST /api/v1/presets/:id/actions/trigger-substitution`
+- `POST /api/v1/presets/:id/actions/trigger-halftime`
+- `POST /api/v1/presets/:id/actions/trigger-countdown`
+- `POST /api/v1/presets/:id/actions/clear`
 
-Actions accept either a logged-in session cookie or `x-openoverlay-action-key`.
+Actions accept either a logged-in session cookie or `x-openoverlay-action-key`. Unversioned `/api/...` routes remain a v1 compatibility alias.
+
+## Compatibility Versions
+
+Agents making coordinated frontend/backend contract changes must check `packages/shared/src/compatibility.ts`. Bump `OPENOVERLAY_API_VERSION` for breaking REST path, request, response, auth, or media URL changes. Bump `OPENOVERLAY_REALTIME_VERSION` for incompatible Socket.IO auth/query, room, event, or payload changes. Do not bump for additive backwards-compatible fields.
+
+When bumping either version, update backend `/health`, frontend build metadata, versioned API route tests, realtime tests, and deployment/gateway compatibility tests in the same change.
 
 ## Backend Deployment
 
@@ -147,7 +161,7 @@ The script:
 - Excludes `node_modules`, `dist`, coverage, and build/test caches
 - Runs `npm ci` and `npm run build`
 - Creates `/etc/openoverlaybackend.env` with generated secrets if missing
-- Creates/enables/restarts `Openoverlaybackend.service`
+- Creates/enables/restarts `Openoverlaybackend.service`, which runs the local gateway on port `8734`
 - Verifies `curl http://127.0.0.1:8734/health`
 - Attempts Cloudflare Tunnel setup if `cloudflared` is authenticated
 
@@ -159,6 +173,10 @@ sudo systemctl status Openoverlaybackend
 sudo journalctl -u Openoverlaybackend --no-pager -n 100
 tail -n 100 /var/log/openoverlay/backend.log
 ```
+
+The frontend publishes `/build-info.json` and the backend includes build metadata in `/health`. The app warns when those deployed commits differ, and `npm run check:deployments` can be used to verify production from the command line. Override the checked URLs with `FRONTEND_URL=` and `BACKEND_URL=` when needed.
+
+The backend systemd deployment also enables a gateway-managed self-updater. Once a minute, the gateway fetches `origin/main`; when a fast-forward update is available and the server checkout is clean, it pulls, runs `npm ci`, rebuilds `@openoverlay/shared` and `@openoverlay/backend`, starts a candidate backend on an internal slot port, verifies `/health`, then promotes it for new HTTP/WebSocket traffic. The previous backend drains existing WebSocket clients and is stopped after the count reaches zero. Only one active slot and one draining slot are allowed, so further updates wait instead of spawning unbounded backend processes.
 
 ## Cloudflare Tunnel
 

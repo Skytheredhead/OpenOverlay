@@ -10,6 +10,9 @@ import {
   defaultTeam,
   normalizeImageCrop,
   normalizeTeam,
+  openOverlayCompatibility,
+  OPENOVERLAY_API_VERSION,
+  OPENOVERLAY_SUPPORTED_API_VERSIONS,
   parseRoster,
   parseClockTime,
   setClockSeconds,
@@ -20,6 +23,7 @@ import {
   type TeamRecord
 } from "@openoverlay/shared";
 import { assertLoginAllowed, clearSessionCookie, generateActionKey, hashActionKey, hashPassword, recordFailedLogin, recordSuccessfulLogin, requireAuth, serializeUser, setSessionCookie, validateEmail, validatePassword, verifyActionKey, verifyPassword, verifySessionToken, sessionCookieName } from "./auth.js";
+import { getBuildInfo } from "./buildInfo.js";
 import { loadConfig, type AppConfig } from "./config.js";
 import { Database, parsePresetState, parseTeam, type MediaRow, type PresetRow, type TeamRow } from "./db.js";
 import { createLogger } from "./logger.js";
@@ -87,10 +91,30 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
   });
 
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, app: "OpenOverlay", time: new Date().toISOString() });
+    res.json({
+      ok: true,
+      app: "OpenOverlay",
+      component: "backend",
+      time: new Date().toISOString(),
+      build: getBuildInfo(),
+      compatibility: openOverlayCompatibility()
+    });
   });
 
-  app.post("/api/auth/signup", asyncHandler(async (req, res) => {
+  const api = express.Router();
+  api.use((req, res, next) => {
+    const requestedVersion = req.header("x-openoverlay-api-version");
+    if (requestedVersion && !OPENOVERLAY_SUPPORTED_API_VERSIONS.includes(requestedVersion as typeof OPENOVERLAY_API_VERSION)) {
+      res.status(426).json({ error: "Unsupported OpenOverlay API version", supported: OPENOVERLAY_SUPPORTED_API_VERSIONS });
+      return;
+    }
+    next();
+  });
+
+  app.use("/api/v1", api);
+  app.use("/api", api);
+
+  api.post("/auth/signup", asyncHandler(async (req, res) => {
     const email = validateEmail(req.body.email);
     const password = validatePassword(req.body.password);
     if (!email || !password) {
@@ -106,7 +130,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.status(201).json({ user: serializeUser({ id: user.id, email: user.email }) });
   }));
 
-  app.post("/api/auth/login", asyncHandler(async (req, res) => {
+  api.post("/auth/login", asyncHandler(async (req, res) => {
     const email = validateEmail(req.body.email);
     const password = validatePassword(req.body.password);
     if (!email || !password) {
@@ -130,26 +154,26 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     }
   }));
 
-  app.post("/api/auth/logout", (req, res) => {
+  api.post("/auth/logout", (req, res) => {
     clearSessionCookie(res, ctx);
     res.json({ ok: true });
   });
 
-  app.get("/api/auth/me", requireAuth, (req, res) => {
+  api.get("/auth/me", requireAuth, (req, res) => {
     res.json({ user: serializeUser(req.user!) });
   });
 
-  app.get("/api/teams", requireAuth, (req, res) => {
+  api.get("/teams", requireAuth, (req, res) => {
     res.json({ teams: db.listTeamsForUser(req.user!.id).map((row) => serializeTeam(row)) });
   });
 
-  app.post("/api/teams", requireAuth, (req, res) => {
+  api.post("/teams", requireAuth, (req, res) => {
     const team = sanitizeTeamInput(req.body || {});
     const row = db.createTeam({ ownerUserId: req.user!.id, team });
     res.status(201).json({ team: serializeTeam(row) });
   });
 
-  app.patch("/api/teams/:id", requireAuth, (req, res) => {
+  api.patch("/teams/:id", requireAuth, (req, res) => {
     const existing = db.getTeamForUser(routeParam(req, "id"), req.user!.id);
     if (!existing) {
       res.status(404).json({ error: "Team not found" });
@@ -165,7 +189,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ team: serializeTeam(updated) });
   });
 
-  app.delete("/api/teams/:id", requireAuth, (req, res) => {
+  api.delete("/teams/:id", requireAuth, (req, res) => {
     const deleted = db.deleteTeam(routeParam(req, "id"), req.user!.id);
     if (!deleted) {
       res.status(404).json({ error: "Team not found" });
@@ -174,13 +198,13 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ ok: true });
   });
 
-  app.get("/api/presets", requireAuth, (req, res) => {
+  api.get("/presets", requireAuth, (req, res) => {
     res.json({
       presets: db.listPresetsForUser(req.user!.id).map((row) => serializePreset(row, ctx))
     });
   });
 
-  app.post("/api/presets", requireAuth, (req, res) => {
+  api.post("/presets", requireAuth, (req, res) => {
     const name = typeof req.body.name === "string" && req.body.name.trim() ? req.body.name.trim().slice(0, 120) : "Untitled";
     const type: PresetType = req.body.type === "church" || req.body.type === "custom" ? req.body.type : "soccer";
     const state = ensurePresetState(type, name, req.body.state as PresetState | undefined);
@@ -189,7 +213,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.status(201).json({ preset: serializePreset(row, ctx) });
   });
 
-  app.get("/api/presets/:id", requireAuth, (req, res) => {
+  api.get("/presets/:id", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     if (!row) {
       res.status(404).json({ error: "Preset not found" });
@@ -198,7 +222,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ preset: serializePreset(row, ctx) });
   });
 
-  app.patch("/api/presets/:id", requireAuth, (req, res) => {
+  api.patch("/presets/:id", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     if (!row) {
       res.status(404).json({ error: "Preset not found" });
@@ -217,7 +241,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ preset: serializePreset(updated, ctx) });
   });
 
-  app.delete("/api/presets/:id", requireAuth, (req, res) => {
+  api.delete("/presets/:id", requireAuth, (req, res) => {
     const deleted = db.deletePreset(routeParam(req, "id"), req.user!.id);
     if (!deleted) {
       res.status(404).json({ error: "Preset not found" });
@@ -226,7 +250,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ ok: true });
   });
 
-  app.post("/api/presets/:id/duplicate", requireAuth, (req, res) => {
+  api.post("/presets/:id/duplicate", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     if (!row) {
       res.status(404).json({ error: "Preset not found" });
@@ -242,7 +266,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.status(201).json({ preset: serializePreset(created, ctx) });
   });
 
-  app.post("/api/presets/:id/share", requireAuth, (req, res) => {
+  api.post("/presets/:id/share", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     const recipientEmail = validateEmail(req.body.email);
     if (!row) {
@@ -268,7 +292,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.status(201).json({ preset: serializePreset(created, ctx) });
   });
 
-  app.post("/api/presets/:id/share-team", requireAuth, (req, res) => {
+  api.post("/presets/:id/share-team", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     const recipientEmail = validateEmail(req.body.email);
     if (!row) {
@@ -294,7 +318,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.status(201).json({ preset: serializePreset(created, ctx) });
   });
 
-  app.post("/api/presets/:id/action-key", requireAuth, (req, res) => {
+  api.post("/presets/:id/action-key", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     if (!row) {
       res.status(404).json({ error: "Preset not found" });
@@ -305,7 +329,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ actionKey, preset: updated ? serializePreset(updated, ctx) : undefined });
   });
 
-  app.get("/api/presets/:id/events", requireAuth, (req, res) => {
+  api.get("/presets/:id/events", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     if (!row) {
       res.status(404).json({ error: "Preset not found" });
@@ -314,7 +338,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ events: db.getEventLog(row.id, req.user!.id) });
   });
 
-  app.get("/api/presets/:id/soccer", requireAuth, (req, res) => {
+  api.get("/presets/:id/soccer", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     if (!row) {
       res.status(404).json({ error: "Preset not found" });
@@ -328,7 +352,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ state });
   });
 
-  app.patch("/api/presets/:id/soccer", requireAuth, (req, res) => {
+  api.patch("/presets/:id/soccer", requireAuth, (req, res) => {
     const row = db.getPresetForUser(routeParam(req, "id"), req.user!.id);
     if (!row) {
       res.status(404).json({ error: "Preset not found" });
@@ -353,7 +377,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ preset: serializePreset(updated, ctx) });
   });
 
-  app.post("/api/presets/:id/actions/:action", asyncHandler(async (req, res) => {
+  api.post("/presets/:id/actions/:action", asyncHandler(async (req, res) => {
     const row = authorizePresetAction(req, ctx, routeParam(req, "id"));
     if (!row) {
       res.status(401).json({ error: "Authentication or valid action key required" });
@@ -371,7 +395,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ preset: serializePreset(updated, ctx) });
   }));
 
-  app.get("/api/overlay/:publicId", (req, res) => {
+  api.get("/overlay/:publicId", (req, res) => {
     const row = db.getPresetByPublicId(routeParam(req, "publicId"));
     if (!row) {
       res.status(404).json({ error: "Overlay not found" });
@@ -390,11 +414,11 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     });
   });
 
-  app.get("/api/media", requireAuth, (req, res) => {
+  api.get("/media", requireAuth, (req, res) => {
     res.json({ media: db.listMediaForUser(req.user!.id).map((row) => serializeMedia(row)) });
   });
 
-  app.post("/api/media", requireAuth, upload.single("file"), asyncHandler(async (req, res) => {
+  api.post("/media", requireAuth, upload.single("file"), asyncHandler(async (req, res) => {
     if (!req.file) {
       res.status(400).json({ error: "File is required" });
       return;
@@ -403,7 +427,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.status(201).json({ media: serializeMedia(media) });
   }));
 
-  app.delete("/api/media/:id", requireAuth, (req, res) => {
+  api.delete("/media/:id", requireAuth, (req, res) => {
     const row = db.deleteMedia(routeParam(req, "id"), req.user!.id);
     if (!row) {
       res.status(404).json({ error: "Media not found" });
@@ -413,7 +437,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ ok: true });
   });
 
-  app.get("/api/media/file/:publicId", (req, res) => {
+  api.get("/media/file/:publicId", (req, res) => {
     const row = db.getMediaByPublicId(routeParam(req, "publicId"));
     if (!row || !fs.existsSync(row.path)) {
       res.status(404).send("Not found");
@@ -493,7 +517,7 @@ function serializeMedia(row: MediaRow) {
     height: row.height,
     sizeBytes: row.size_bytes,
     createdAt: row.created_at,
-    url: `/api/media/file/${row.public_id}`
+    url: `/api/v1/media/file/${row.public_id}`
   };
 }
 

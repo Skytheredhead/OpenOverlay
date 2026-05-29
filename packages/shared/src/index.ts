@@ -1,3 +1,5 @@
+export * from "./compatibility.js";
+
 export type PresetType = "soccer" | "church" | "custom";
 export type ResolutionKey = "1280x720" | "1920x1080" | "2560x1440" | "3840x2160";
 export type PositionPreset =

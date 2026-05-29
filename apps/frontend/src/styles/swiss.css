@@ -51,7 +51,7 @@
 }
 
 body {
-  background: var(--sw-bg);
+  background: transparent;
   color: var(--sw-ink);
 }
 
@@ -99,6 +99,25 @@ body {
 .topbar .brand-mark {
   width: 28px;
   height: 28px;
+}
+
+.deployment-check-banner {
+  background: var(--sw-bg);
+  border-bottom: 1px solid var(--sw-ink);
+  color: var(--sw-ink);
+  font-family: "Inter Tight", Helvetica, sans-serif;
+  font-weight: 500;
+}
+
+.deployment-check-banner.warn {
+  background: var(--sw-red);
+  border-bottom-color: var(--sw-red);
+  color: var(--sw-on-red);
+}
+
+.deployment-check-banner.neutral {
+  border-bottom-color: var(--sw-rule-faint);
+  color: var(--sw-ink-soft);
 }
 
 /* --- buttons --- */

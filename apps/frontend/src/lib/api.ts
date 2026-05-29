@@ -1,9 +1,33 @@
-import type { PresetState, PresetSummary, PresetType, TeamLibraryEntry } from "@openoverlay/shared";
+import { OPENOVERLAY_API_VERSION, OPENOVERLAY_REALTIME_VERSION, openOverlayCompatibility, type PresetState, type PresetSummary, type PresetType, type TeamLibraryEntry } from "@openoverlay/shared";
 
 const DEFAULT_API_HOST = window.location.hostname === "127.0.0.1" ? "http://127.0.0.1:8734" : "http://localhost:8734";
+const VERSIONED_API_PREFIX = `/api/${OPENOVERLAY_API_VERSION}`;
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_HOST;
 export const WS_URL = import.meta.env.VITE_WS_URL || API_BASE.replace(/^http/, "ws");
+export const FRONTEND_BUILD = {
+  ...__OPENOVERLAY_BUILD_INFO__,
+  requiredApiVersion: OPENOVERLAY_API_VERSION,
+  requiredRealtimeVersion: OPENOVERLAY_REALTIME_VERSION,
+  compatibility: openOverlayCompatibility()
+};
+
+export interface BuildInfo {
+  version: string | null;
+  commit: string | null;
+  commitShort: string | null;
+  requiredApiVersion?: string;
+  requiredRealtimeVersion?: string;
+}
+
+export interface HealthResponse {
+  ok: true;
+  app: string;
+  component?: string;
+  time: string;
+  build?: BuildInfo;
+  compatibility?: ReturnType<typeof openOverlayCompatibility>;
+}
 
 export interface User {
   id: string;
@@ -24,10 +48,11 @@ export interface MediaItem {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${versionedApiPath(path)}`, {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      "X-OpenOverlay-Api-Version": OPENOVERLAY_API_VERSION,
       ...(options.headers || {})
     },
     ...options
@@ -38,6 +63,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     throw new Error(typeof body === "object" && body?.error ? body.error : `Request failed: ${response.status}`);
   }
   return body as T;
+}
+
+function versionedApiPath(path: string): string {
+  return path.startsWith("/api/") ? `${VERSIONED_API_PREFIX}${path.slice("/api".length)}` : path;
 }
 
 export const authApi = {
@@ -91,6 +120,19 @@ export const overlayApi = {
   }
 };
 
+export const statusApi = {
+  async health(signal?: AbortSignal): Promise<HealthResponse> {
+    const response = await fetch(`${API_BASE}/health`, {
+      cache: "no-store",
+      credentials: "include",
+      signal
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || `Health check failed: ${response.status}`);
+    return body as HealthResponse;
+  }
+};
+
 export const teamApi = {
   list() {
     return api<{ teams: TeamLibraryEntry[] }>("/api/teams");
@@ -113,9 +155,12 @@ export const mediaApi = {
   async upload(file: File): Promise<{ media: MediaItem }> {
     const data = new FormData();
     data.append("file", file);
-    const response = await fetch(`${API_BASE}/api/media`, {
+    const response = await fetch(`${API_BASE}${versionedApiPath("/api/media")}`, {
       method: "POST",
       credentials: "include",
+      headers: {
+        "X-OpenOverlay-Api-Version": OPENOVERLAY_API_VERSION
+      },
       body: data
     });
     const body = await response.json();

@@ -91,10 +91,12 @@ else
 fi
 
 cd "${APP_DIR}"
+APP_GIT_SHA="$(git rev-parse HEAD)"
+APP_VERSION="$(node -p "require('./package.json').version")"
 npm ci
 npm run build
 
-sudo mkdir -p /var/lib/openoverlay/uploads /var/log/openoverlay /etc
+sudo mkdir -p /var/lib/openoverlay/uploads /var/log/openoverlay /etc "${APP_DIR}/releases"
 sudo chown -R skylarenns:skylarenns /var/lib/openoverlay /var/log/openoverlay
 
 if [[ ! -f /etc/openoverlaybackend.env ]]; then
@@ -130,7 +132,17 @@ User=skylarenns
 Group=skylarenns
 WorkingDirectory=${APP_DIR}/apps/backend
 EnvironmentFile=/etc/openoverlaybackend.env
-ExecStart=/usr/bin/node dist/index.js
+Environment=OPENOVERLAY_GIT_SHA=${APP_GIT_SHA}
+Environment=OPENOVERLAY_VERSION=${APP_VERSION}
+Environment=SELF_UPDATE_ENABLED=true
+Environment=SELF_UPDATE_REPO_DIR=${APP_DIR}
+Environment=SELF_UPDATE_REMOTE=origin
+Environment=SELF_UPDATE_BRANCH=main
+Environment=SELF_UPDATE_INTERVAL_MS=60000
+Environment=GATEWAY_BACKEND_PORTS=8735,8736
+Environment=GATEWAY_RELEASE_DIR=${APP_DIR}/releases
+Environment=OPENOVERLAY_GATEWAY_ENTRYPOINT=1
+ExecStart=/usr/bin/node dist/gateway.js
 Restart=always
 RestartSec=5
 NoNewPrivileges=true

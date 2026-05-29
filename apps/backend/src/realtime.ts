@@ -5,6 +5,7 @@ import { parsePresetState, type PresetRow } from "./db.js";
 import { verifySessionToken, sessionCookieName } from "./auth.js";
 import { materializeState } from "./state.js";
 import type { AppContext } from "./types.js";
+import { OPENOVERLAY_API_VERSION, OPENOVERLAY_REALTIME_VERSION, OPENOVERLAY_SUPPORTED_API_VERSIONS, OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS } from "@openoverlay/shared";
 
 export interface RealtimeHub {
   io: Server;
@@ -60,6 +61,15 @@ async function handleSocket(
   const presetId = stringQuery(socket, "presetId");
   const role = stringQuery(socket, "role");
   const client = stringQuery(socket, "client");
+  const apiVersion = stringQuery(socket, "apiVersion");
+  const realtimeVersion = stringQuery(socket, "realtimeVersion");
+
+  if ((apiVersion && !OPENOVERLAY_SUPPORTED_API_VERSIONS.includes(apiVersion as typeof OPENOVERLAY_API_VERSION)) ||
+    (realtimeVersion && !OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS.includes(realtimeVersion as typeof OPENOVERLAY_REALTIME_VERSION))) {
+    socket.emit("error:message", { error: "Incompatible OpenOverlay API or realtime version" });
+    socket.disconnect(true);
+    return;
+  }
 
   if (overlayId && role === "overlay") {
     const row = ctx.db.getPresetByPublicId(overlayId);
