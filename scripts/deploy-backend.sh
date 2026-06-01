@@ -170,7 +170,7 @@ if ! cloudflared tunnel list | grep -q "openoverlay-api"; then
   cloudflared tunnel create openoverlay-api
 fi
 
-cloudflared tunnel route dns openoverlay-api api.openoverlay.skylarenns.com || true
+cloudflared tunnel route dns openoverlay-api openoverlayapi.skylarenns.com || true
 TUNNEL_ID="$(cloudflared tunnel list | awk '$2 == "openoverlay-api" {print $1; exit}')"
 if [[ -z "${TUNNEL_ID}" ]]; then
   echo "Unable to resolve Cloudflare tunnel ID for openoverlay-api."
@@ -183,7 +183,7 @@ cat > "${CONFIG_FILE}" <<YAML
 tunnel: ${TUNNEL_ID}
 credentials-file: /home/skylarenns/.cloudflared/${TUNNEL_ID}.json
 ingress:
-  - hostname: api.openoverlay.skylarenns.com
+  - hostname: openoverlayapi.skylarenns.com
     service: http://127.0.0.1:${BACKEND_PORT}
   - service: http_status:404
 YAML
@@ -196,5 +196,5 @@ fi
 sudo systemctl enable cloudflared
 sudo systemctl restart cloudflared
 cloudflared tunnel info openoverlay-api || true
-curl -fsS https://api.openoverlay.skylarenns.com/health || true
+curl -fsS https://openoverlayapi.skylarenns.com/health || true
 REMOTE

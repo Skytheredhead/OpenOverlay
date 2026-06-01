@@ -12,6 +12,6 @@ if ! vercel whoami >/dev/null 2>&1; then
 fi
 
 vercel link --yes
-vercel env add VITE_API_BASE_URL production <<< "https://api.openoverlay.skylarenns.com" || true
-vercel env add VITE_WS_URL production <<< "wss://api.openoverlay.skylarenns.com" || true
+vercel env add VITE_API_BASE_URL production <<< "https://openoverlayapi.skylarenns.com" || true
+vercel env add VITE_WS_URL production <<< "wss://openoverlayapi.skylarenns.com" || true
 vercel deploy --prod --yes

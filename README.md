@@ -7,7 +7,7 @@ The frontend is a React + Vite app for Vercel. The backend is a Node.js + TypeSc
 ## URLs
 
 - Frontend: `https://openoverlay.skylarenns.com`
-- Backend API/WebSocket: `https://api.openoverlay.skylarenns.com`
+- Backend API/WebSocket: `https://openoverlayapi.skylarenns.com`
 - Admin dashboard: `https://openoverlay.skylarenns.com/dash`
 - Login: `https://openoverlay.skylarenns.com/login`
 - OBS browser source: `https://openoverlay.skylarenns.com/overlay/:overlayId`
@@ -110,7 +110,7 @@ Create an action key from the preset editor. Store it securely. Then use a Strea
 ```bash
 curl -X POST \
   -H "x-openoverlay-action-key: ACTION_KEY" \
-  https://api.openoverlay.skylarenns.com/api/v1/presets/PRESET_ID/actions/home-score-plus
+  https://openoverlayapi.skylarenns.com/api/v1/presets/PRESET_ID/actions/home-score-plus
 ```
 
 Common endpoints:
@@ -180,7 +180,7 @@ The backend systemd deployment also enables a gateway-managed self-updater. Once
 
 ## Cloudflare Tunnel
 
-Desired hostname: `api.openoverlay.skylarenns.com`
+Desired hostname: `openoverlayapi.skylarenns.com`
 
 Desired local service:
 
@@ -205,7 +205,7 @@ Verify:
 ```bash
 cloudflared tunnel list
 cloudflared tunnel info openoverlay-api
-curl https://api.openoverlay.skylarenns.com/health
+curl https://openoverlayapi.skylarenns.com/health
 ```
 
 ## Vercel Frontend Deployment
@@ -215,8 +215,8 @@ The frontend app lives in `apps/frontend`.
 Required production env vars:
 
 ```text
-VITE_API_BASE_URL=https://api.openoverlay.skylarenns.com
-VITE_WS_URL=wss://api.openoverlay.skylarenns.com
+VITE_API_BASE_URL=https://openoverlayapi.skylarenns.com
+VITE_WS_URL=wss://openoverlayapi.skylarenns.com
 ```
 
 If Vercel CLI is authenticated:
@@ -251,7 +251,7 @@ WebSocket disconnected:
 
 - Check Cloudflare Tunnel status.
 - Check `journalctl -u Openoverlaybackend --no-pager -n 100`.
-- Confirm the frontend is using `wss://api.openoverlay.skylarenns.com`.
+- Confirm the frontend is using `wss://openoverlayapi.skylarenns.com`.
 
 CORS errors:
 

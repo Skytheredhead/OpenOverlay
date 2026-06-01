@@ -1,6 +1,6 @@
 import { OPENOVERLAY_API_VERSION, OPENOVERLAY_REALTIME_VERSION, openOverlayCompatibility, type PresetState, type PresetSummary, type PresetType, type TeamLibraryEntry } from "@openoverlay/shared";
 
-const DEFAULT_API_HOST = window.location.hostname === "127.0.0.1" ? "http://127.0.0.1:8734" : "http://localhost:8734";
+const DEFAULT_API_HOST = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost" ? "http://127.0.0.1:8734" : "https://openoverlayapi.skylarenns.com";
 const VERSIONED_API_PREFIX = `/api/${OPENOVERLAY_API_VERSION}`;
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_HOST;

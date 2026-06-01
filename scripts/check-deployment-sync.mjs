@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const frontendUrl = normalizeUrl(process.env.FRONTEND_URL || "https://openoverlay.skylarenns.com");
-const backendUrl = normalizeUrl(process.env.BACKEND_URL || process.env.VITE_API_BASE_URL || "https://api.openoverlay.skylarenns.com");
+const backendUrl = normalizeUrl(process.env.BACKEND_URL || process.env.VITE_API_BASE_URL || "https://openoverlayapi.skylarenns.com");
 
 try {
   const [frontend, backend] = await Promise.all([
