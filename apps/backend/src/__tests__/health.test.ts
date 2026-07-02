@@ -37,5 +37,7 @@ describe("health", () => {
     expect(typeof response.body.time).toBe("string");
     expect(response.body.build).toHaveProperty("commit");
     expect(response.body.build).toHaveProperty("commitShort");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["referrer-policy"]).toBe("no-referrer");
   });
 });

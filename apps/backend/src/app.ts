@@ -70,13 +70,15 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
           callback(null, true);
           return;
         }
-        callback(new Error("CORS origin not allowed"));
+        callback(null, false);
       },
       credentials: true
     })
   );
   app.use(express.json({ limit: "2mb" }));
   app.use(cookieParser());
+  app.use(securityHeaders);
+  app.use(csrfOriginGuard(config));
   app.use((req, _res, next) => {
     req.ctx = ctx;
     next();
@@ -584,6 +586,32 @@ function numberField(value: unknown, fallback: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function securityHeaders(_req: Request, res: Response, next: NextFunction): void {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+}
+
+function csrfOriginGuard(config: AppConfig) {
+  const stateChangingMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!stateChangingMethods.has(req.method)) {
+      next();
+      return;
+    }
+
+    const usesSessionCookie = Boolean(req.cookies?.[sessionCookieName()]);
+    const hasHeaderAuth = Boolean(req.header("authorization") || req.header("x-openoverlay-session"));
+    const origin = req.header("origin");
+    if (usesSessionCookie && !hasHeaderAuth && origin && !config.corsOrigins.includes(origin)) {
+      res.status(403).json({ error: "Origin not allowed" });
+      return;
+    }
+
+    next();
+  };
 }
 
 async function saveMediaUpload(ctx: AppContext, ownerUserId: string, file: Express.Multer.File): Promise<MediaRow> {

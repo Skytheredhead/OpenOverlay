@@ -47,4 +47,20 @@ describe("auth", () => {
     }
     await server.request.post("/api/auth/login").send({ email: "limit@example.com", password: "wrong-password" }).expect(429);
   });
+
+  it("rejects cookie-authenticated state changes from disallowed origins", async () => {
+    await signup(server.agent, "origin-check@example.com");
+
+    await server.agent
+      .post("/api/teams")
+      .set("Origin", "https://evil.example")
+      .send({ fullName: "Evil FC", shortName: "Evil" })
+      .expect(403);
+
+    await server.agent
+      .post("/api/teams")
+      .set("Origin", "http://localhost:5173")
+      .send({ fullName: "Local FC", shortName: "Local" })
+      .expect(201);
+  });
 });
