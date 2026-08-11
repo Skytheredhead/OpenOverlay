@@ -9,9 +9,22 @@
   box-sizing: border-box;
 }
 
+.visually-hidden,
+.visually-hidden-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   min-height: 100vh;
 }
 
@@ -282,6 +295,13 @@ a {
   margin-top: 14px;
 }
 
+.error:has(.button) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .prompt-backdrop {
   position: fixed;
   inset: 0;
@@ -390,19 +410,24 @@ a {
 .sidebar-nav-wrap {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 40px;
-  padding-top: 300px;
+  gap: 12px;
+  padding-top: 0;
 }
 
 .sidebar nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: grid;
   width: 100%;
   margin-top: 0;
-  align-content: center;
+  align-content: start;
 }
 
 .sidebar a,
@@ -623,7 +648,7 @@ a {
 
 .live-control-stack {
   display: grid;
-  grid-template-columns: minmax(300px, 1.1fr) minmax(260px, 0.9fr) minmax(220px, 0.75fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   gap: 12px;
   align-items: start;
   min-width: 0;
@@ -856,6 +881,12 @@ a {
   cursor: pointer;
 }
 
+.logo-upload-target:focus-within,
+.dropzone:focus-within {
+  outline: 2px solid var(--sw-red);
+  outline-offset: 3px;
+}
+
 .logo-upload-target svg,
 .logo-upload-target img {
   grid-row: 1 / span 2;
@@ -1010,6 +1041,11 @@ a {
   place-items: center;
   text-align: center;
   gap: 4px;
+}
+
+.dropzone.disabled {
+  cursor: progress;
+  opacity: 0.68;
 }
 
 .overlay-page {
@@ -1278,11 +1314,45 @@ a {
   font-weight: 850;
 }
 
+.church-lower-third {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  overflow: hidden;
+  padding: 20px 28px 20px 34px;
+  border-left: 8px solid var(--church-accent, #60a5fa);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #fff;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.28);
+}
+
+.church-lower-third h2,
+.church-lower-third p {
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.church-lower-third h2 {
+  font-size: 34px;
+  line-height: 1.05;
+}
+
+.church-lower-third p {
+  color: #cbd5e1;
+  font-size: 21px;
+  line-height: 1.15;
+}
+
 .countdown-element {
   height: 100%;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid color-mix(in srgb, var(--church-accent, #60a5fa) 55%, rgba(255, 255, 255, 0.14));
   display: grid;
   place-items: center;
   color: #fff;
@@ -1352,7 +1422,7 @@ a {
   }
 
   .live-editor-layout .soccer-bottom-control-panel {
-    grid-column: 2;
+    grid-column: 1 / -1;
     grid-row: 2;
   }
 }
@@ -1402,6 +1472,21 @@ a {
     padding: 16px;
   }
 
+  .topbar {
+    padding-inline: 14px;
+    gap: 10px;
+  }
+
+  .topbar .brand {
+    font-size: 20px;
+  }
+
+  .topbar .nav-actions {
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
   .app-shell,
   .app-shell.sidebar-collapsed {
     grid-template-columns: 1fr;
@@ -1422,6 +1507,10 @@ a {
     border-right: 0;
   }
 
+  .sidebar-nav-wrap {
+    padding-top: 0;
+  }
+
   .app-shell.sidebar-collapsed .sidebar {
     position: static;
   }
@@ -1431,6 +1520,10 @@ a {
   .sidebar nav,
   .record-color-row {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar nav {
+    overflow-y: visible;
   }
 
   .media-grid {
@@ -1462,6 +1555,15 @@ a {
   min-height: 36px;
   padding: 5px 0;
   position: relative;
+}
+
+.overlay-card-select {
+  align-self: stretch;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -1499,13 +1601,13 @@ a {
 
 .overlay-card-action:hover {
   background: var(--sw-red, #e30613);
-  color: #fff;
+  color: var(--sw-on-red, #fff);
   border-color: var(--sw-red, #e30613);
 }
 
 .overlay-card-action.is-active {
   background: var(--sw-red, #e30613);
-  color: #fff;
+  color: var(--sw-on-red, #fff);
   border-color: var(--sw-red, #e30613);
 }
 
@@ -1560,4 +1662,121 @@ a {
   background: linear-gradient(135deg, var(--team-primary), var(--team-secondary));
   color: #fff;
   border: 1px solid var(--sw-ink, #111);
+}
+
+.editor-tools {
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.shell-error {
+  margin-bottom: 14px;
+}
+
+.action-key-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+.action-key-notice code {
+  user-select: all;
+}
+
+.event-log-panel {
+  margin-bottom: 14px;
+}
+
+.event-log-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.event-log-list li {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--sw-ink, #111);
+}
+
+.event-log-list li > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.event-log-list time,
+.event-log-list code {
+  color: var(--sw-ink-soft, #555);
+  font-size: 12px;
+}
+
+.event-log-list code {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.soccer-operations-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.soccer-stat-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.soccer-stat-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.55fr) repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 10px;
+}
+
+.stat-stepper {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 34px 34px;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stat-stepper > span {
+  overflow: hidden;
+  color: var(--sw-ink-soft, #555);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-stepper .button {
+  min-width: 34px;
+  padding-inline: 0;
+}
+
+.stat-stepper strong {
+  text-align: center;
+}
+
+.temporary-graphic-actions {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .soccer-stat-row {
+    grid-template-columns: 1fr;
+  }
+
+  .event-log-list li > span {
+    flex-direction: column;
+    gap: 2px;
+  }
 }

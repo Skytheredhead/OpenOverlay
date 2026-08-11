@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate dependency tree and security advisories
+        run: |
+          npm ls --all
+          npm audit --audit-level=high
+
+      - name: Typecheck, test, and build
+        run: |
+          npm run validate:config
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Validate shell scripts and patch whitespace
+        run: |
+          bash -n scripts/deploy-backend.sh scripts/deploy-frontend-vercel.sh
+          git diff --check
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        env:
+          OPENOVERLAY_E2E_BACKEND_PORT: 18734
+          OPENOVERLAY_E2E_FRONTEND_PORT: 15174
+          OPENOVERLAY_E2E_DATA_DIR: ${{ runner.temp }}/openoverlay-e2e
+        run: npm run test:e2e

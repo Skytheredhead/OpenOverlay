@@ -1,11 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { io, type Socket } from "socket.io-client";
+import { createPortal } from "react-dom";
+import { Link, NavLink, Navigate, Route, Routes, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { io } from "socket.io-client";
 import {
   AlertTriangle,
+  Bug,
   Check,
   Copy,
+  ExternalLink,
   Image,
+  KeyRound,
   LayoutDashboard,
   Github,
   LogOut,
@@ -15,6 +19,8 @@ import {
   Play,
   Plus,
   RotateCcw,
+  Share2,
+  ShieldAlert,
   Square,
   Sun,
   Trash2,
@@ -30,14 +36,16 @@ import {
   defaultTeamColors,
   defaultTeam,
   formatClock,
+  makeId,
   parseRoster,
-  parseClockTime,
+  tryParseClockTime,
   placementForPreset,
   setClockSeconds,
   type ChurchState,
   type ChurchSlide,
   type OverlayElementConfig,
   type PositionPreset,
+  type PresetListItem,
   type PresetState,
   type PresetSummary,
   type PresetType,
@@ -49,14 +57,15 @@ import {
   type TeamLibraryEntry
 } from "@openoverlay/shared";
 import { getElementById, OverlayRenderer } from "./components/OverlayRenderer";
-import { FRONTEND_BUILD, WS_URL, authApi, mediaApi, overlayApi, presetApi, statusApi, teamApi, type BuildInfo, type MediaItem, type User } from "./lib/api";
-import { useDebouncedCallback } from "./lib/hooks";
+import { AUTH_EXPIRED_EVENT, FRONTEND_BUILD, WS_URL, ApiError, authApi, isPreset, isPresetDeletedEvent, isRealtimeErrorMessage, mediaApi, overlayApi, presetApi, statusApi, teamApi, type BuildInfo, type MediaItem, type PresetDeletedEvent, type PresetEvent, type User } from "./lib/api";
+import { DebouncedSerialMutationQueue, KeyedDebouncer, KeyedSerialTaskQueue } from "./lib/mutationQueue";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  error: string | null;
   refresh(): Promise<void>;
-  logout(): Promise<void>;
+  logout(beforeSessionClear?: () => void): Promise<void>;
 }
 
 interface PromptDialogOptions {
@@ -92,6 +101,9 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "openoverlay:sidebar-width";
 const SIDEBAR_MIN_WIDTH = 232;
 const SIDEBAR_MAX_WIDTH = 360;
 const SIDEBAR_DEFAULT_WIDTH = 232;
+const PROGRAMMATIC_NAVIGATION_EVENT = "openoverlay:before-programmatic-navigation";
+const ALLOW_PROGRAMMATIC_NAVIGATION_EVENT = "openoverlay:allow-programmatic-navigation";
+const PRESET_DELETED_UI_EVENT = "openoverlay:preset-deleted";
 const DEPLOYMENT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_TEAM_COLOR_PAIRS = [
   defaultTeamColors.home,
@@ -217,8 +229,12 @@ function formatBuildLabel(build: BuildInfo): string {
 function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === "undefined") return "light";
-    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (saved === "light" || saved === "dark") return saved;
+    try {
+      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (saved === "light" || saved === "dark") return saved;
+    } catch {
+      // Fall through to the OS preference when storage is unavailable.
+    }
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
 
@@ -246,11 +262,16 @@ function useTheme() {
 function useResizableSidebar() {
   const [width, setWidth] = useState<number>(() => {
     if (typeof window === "undefined") return SIDEBAR_DEFAULT_WIDTH;
-    const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
-    if (!Number.isFinite(stored) || stored <= 0) return SIDEBAR_DEFAULT_WIDTH;
-    return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, stored));
+    try {
+      const stored = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+      if (!Number.isFinite(stored) || stored <= 0) return SIDEBAR_DEFAULT_WIDTH;
+      return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, stored));
+    } catch {
+      return SIDEBAR_DEFAULT_WIDTH;
+    }
   });
   const [resizing, setResizing] = useState(false);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     try {
@@ -260,8 +281,11 @@ function useResizableSidebar() {
     }
   }, [width]);
 
+  useEffect(() => () => dragCleanupRef.current?.(), []);
+
   const startDrag = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
+    dragCleanupRef.current?.();
     setResizing(true);
     const previousCursor = document.body.style.cursor;
     const previousSelect = document.body.style.userSelect;
@@ -272,21 +296,129 @@ function useResizableSidebar() {
       const next = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, moveEvent.clientX));
       setWidth(next);
     }
-    function onUp() {
-      setResizing(false);
+    function cleanup() {
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousSelect;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      dragCleanupRef.current = null;
+    }
+    function onUp() {
+      cleanup();
+      setResizing(false);
     }
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    dragCleanupRef.current = cleanup;
   }, []);
 
-  return { width, resizing, startDrag };
+  const resizeWithKeyboard = useCallback((event: React.KeyboardEvent) => {
+    let next: number | null = null;
+    if (event.key === "ArrowLeft") next = width - 8;
+    if (event.key === "ArrowRight") next = width + 8;
+    if (event.key === "Home") next = SIDEBAR_MIN_WIDTH;
+    if (event.key === "End") next = SIDEBAR_MAX_WIDTH;
+    if (next === null) return;
+    event.preventDefault();
+    setWidth(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, next)));
+  }, [width]);
+
+  return { width, resizing, startDrag, resizeWithKeyboard };
 }
 
-function PromptDialogProvider({ children }: { children: React.ReactNode }) {
+const MODAL_FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])"
+].join(",");
+
+function ModalLayer({
+  children,
+  initialFocusRef,
+  onClose
+}: {
+  children: React.ReactNode;
+  initialFocusRef?: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+}) {
+  const layerRef = useRef<HTMLDivElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useLayoutEffect(() => {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const appRoot = document.getElementById("root");
+    const wasInert = appRoot?.hasAttribute("inert") ?? false;
+    const previousAriaHidden = appRoot?.getAttribute("aria-hidden") ?? null;
+    if (appRoot) {
+      appRoot.setAttribute("inert", "");
+      appRoot.setAttribute("aria-hidden", "true");
+    }
+
+    const firstFocusable = () => {
+      const requested = initialFocusRef?.current;
+      const fallback = layerRef.current?.querySelector<HTMLElement>(MODAL_FOCUSABLE_SELECTOR) ?? layerRef.current;
+      (requested ?? fallback)?.focus();
+    };
+    firstFocusable();
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !layerRef.current) return;
+      const focusable = [...layerRef.current.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR)]
+        .filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+      if (focusable.length === 0) {
+        event.preventDefault();
+        layerRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      if (appRoot) {
+        if (!wasInert) appRoot.removeAttribute("inert");
+        if (previousAriaHidden === null) appRoot.removeAttribute("aria-hidden");
+        else appRoot.setAttribute("aria-hidden", previousAriaHidden);
+      }
+      openerRef.current?.focus();
+    };
+  }, [initialFocusRef]);
+
+  return createPortal(
+    <div
+      ref={layerRef}
+      className="prompt-backdrop"
+      tabIndex={-1}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCloseRef.current();
+      }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
+export function PromptDialogProvider({ children }: { children: React.ReactNode }) {
   const [dialog, setDialog] = useState<PromptDialogOptions | null>(null);
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -320,9 +452,7 @@ function PromptDialogProvider({ children }: { children: React.ReactNode }) {
     <PromptDialogContext.Provider value={prompt}>
       {children}
       {dialog ? (
-        <div className="prompt-backdrop" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) close(null);
-        }}>
+        <ModalLayer initialFocusRef={inputRef} onClose={() => close(null)}>
           <form
             className="prompt-dialog"
             role="dialog"
@@ -331,9 +461,6 @@ function PromptDialogProvider({ children }: { children: React.ReactNode }) {
             onSubmit={(event) => {
               event.preventDefault();
               close(value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") close(null);
             }}
           >
             <h2 id="prompt-dialog-title">{dialog.title}</h2>
@@ -352,40 +479,77 @@ function PromptDialogProvider({ children }: { children: React.ReactNode }) {
               <button className="button primary" type="submit">{dialog.submitLabel || "OK"}</button>
             </div>
           </form>
-        </div>
+        </ModalLayer>
       ) : null}
     </PromptDialogContext.Provider>
   );
 }
 
-function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const shouldLoadSession = location.pathname.startsWith("/dash");
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const refreshGenerationRef = useRef(0);
 
   const refresh = useCallback(async () => {
+    const generation = refreshGenerationRef.current + 1;
+    refreshGenerationRef.current = generation;
+    setLoading(true);
     try {
       const response = await authApi.me();
+      if (refreshGenerationRef.current !== generation) return;
       setUser(response.user);
-    } catch {
-      setUser(null);
+      setError(null);
+    } catch (err) {
+      if (refreshGenerationRef.current !== generation) return;
+      if (err instanceof ApiError && err.status === 401) {
+        setUser(null);
+        setError(null);
+      } else {
+        setError(err instanceof Error ? err.message : "Authentication service is unavailable");
+      }
     } finally {
-      setLoading(false);
+      if (refreshGenerationRef.current === generation) {
+        setLoading(false);
+        setSessionChecked(true);
+      }
     }
   }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (shouldLoadSession && !sessionChecked) void refresh();
+  }, [refresh, sessionChecked, shouldLoadSession]);
 
-  const logout = useCallback(async () => {
-    await authApi.logout();
-    setUser(null);
+  useEffect(() => {
+    const expire = () => {
+      refreshGenerationRef.current += 1;
+      setUser(null);
+      setError(null);
+      setLoading(false);
+      setSessionChecked(true);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, expire);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expire);
   }, []);
 
-  return <AuthContext.Provider value={{ user, loading, refresh, logout }}>{children}</AuthContext.Provider>;
+  const logout = useCallback(async (beforeSessionClear?: () => void) => {
+    refreshGenerationRef.current += 1;
+    setLoading(false);
+    await authApi.logout();
+    beforeSessionClear?.();
+    setUser(null);
+    setError(null);
+    setSessionChecked(true);
+  }, []);
+
+  const authLoading = shouldLoadSession && (!sessionChecked || loading);
+  return <AuthContext.Provider value={{ user, loading: authLoading, error, refresh, logout }}>{children}</AuthContext.Provider>;
 }
 
-function useAuth() {
+export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("Auth context missing");
   return ctx;
@@ -398,9 +562,21 @@ function usePromptDialog() {
 }
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, error, refresh } = useAuth();
+  const location = useLocation();
   if (loading) return <div className="auth-page">Loading...</div>;
-  if (!user) return <Navigate to="/login" replace />;
+  if (error && !user) {
+    return (
+      <div className="auth-page">
+        <div className="auth-panel" role="alert">
+          <h1>OpenOverlay is unavailable</h1>
+          <p>{error}</p>
+          <button className="button primary" type="button" onClick={() => void refresh()}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   return <>{children}</>;
 }
 
@@ -448,21 +624,34 @@ function Home() {
 
 function Login({ mode }: { mode: "login" | "signup" }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     setError(null);
     try {
       if (mode === "signup") await authApi.signup(email, password);
       else await authApi.login(email, password);
       await refresh();
-      navigate("/dash");
+      const requestedPath = (location.state as { from?: unknown } | null)?.from;
+      const destination = typeof requestedPath === "string" && requestedPath.startsWith("/dash") && !requestedPath.startsWith("//")
+        ? requestedPath
+        : "/dash";
+      navigate(destination, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed");
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   }
 
@@ -484,9 +673,9 @@ function Login({ mode }: { mode: "login" | "signup" }) {
               <span>Password</span>
               <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={8} required />
             </label>
-            <button className="button primary" type="submit">{mode === "signup" ? "Sign up" : "Login"}</button>
+            <button className="button primary" type="submit" disabled={submitting}>{submitting ? "Please wait..." : mode === "signup" ? "Sign up" : "Login"}</button>
           </div>
-          {error ? <div className="error">{error}</div> : null}
+          {error ? <div className="error" role="alert">{error}</div> : null}
           <p className="muted" style={{ marginTop: 16 }}>
             {mode === "signup" ? "Already have an account? " : "Need an account? "}
             <Link to={mode === "signup" ? "/login" : "/signup"}>{mode === "signup" ? "Login" : "Sign up"}</Link>
@@ -500,50 +689,163 @@ function Login({ mode }: { mode: "login" | "signup" }) {
 function AppShell({ children }: { children: React.ReactNode }) {
   const { logout, user } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
-  const { width: sidebarWidth, resizing, startDrag } = useResizableSidebar();
-  const [games, setGames] = useState<PresetSummary[]>([]);
+  const { width: sidebarWidth, resizing, startDrag, resizeWithKeyboard } = useResizableSidebar();
+  const [games, setGames] = useState<PresetListItem[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [presetMenu, setPresetMenu] = useState<{ game: PresetSummary; x: number; y: number } | null>(null);
+  const [presetMenu, setPresetMenu] = useState<{ game: PresetListItem; x: number; y: number; trigger: HTMLElement | null } | null>(null);
+  const presetMenuRef = useRef<HTMLDivElement | null>(null);
+  const [shellError, setShellError] = useState<string | null>(null);
+  const [sidebarMutationBusy, setSidebarMutationBusy] = useState(false);
+  const sidebarMutationBusyRef = useRef(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const locationRef = useRef(location);
+  locationRef.current = location;
 
   useEffect(() => {
-    void presetApi.list().then((response) => setGames(response.presets)).catch(() => setGames([]));
+    const controller = new AbortController();
+    void presetApi.list(controller.signal).then((response) => {
+      if (controller.signal.aborted) return;
+      setGames(response.presets);
+      setShellError(null);
+    }).catch((err) => {
+      if (controller.signal.aborted) return;
+      setShellError(err instanceof Error ? err.message : "Could not load sidebar games");
+    });
+    return () => controller.abort();
+  }, [location.pathname]);
+
+  useEffect(() => {
+    function handlePresetDeleted(event: Event) {
+      const payload = event instanceof CustomEvent ? event.detail : undefined;
+      if (!isPresetDeletedEvent(payload)) return;
+      setGames((current) => current.filter((item) => item.id !== payload.id));
+      setPresetMenu((current) => current?.game.id === payload.id ? null : current);
+    }
+    window.addEventListener(PRESET_DELETED_UI_EVENT, handlePresetDeleted);
+    return () => window.removeEventListener(PRESET_DELETED_UI_EVENT, handlePresetDeleted);
   }, []);
 
   useEffect(() => {
     if (!presetMenu) return;
+    const activeMenu = presetMenu;
     function closeMenu() {
       setPresetMenu(null);
     }
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") closeMenu();
+    function handleMenuKeyboard(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        const trigger = activeMenu.trigger;
+        closeMenu();
+        window.setTimeout(() => trigger?.focus(), 0);
+        return;
+      }
+      const menu = presetMenuRef.current;
+      if (!menu || !menu.contains(document.activeElement)) return;
+      const items = [...menu.querySelectorAll<HTMLButtonElement>("button:not([disabled])")];
+      if (items.length === 0) return;
+      const currentIndex = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+      if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = items.length - 1;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      items[nextIndex]?.focus();
     }
     window.addEventListener("click", closeMenu);
-    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", handleMenuKeyboard);
     return () => {
       window.removeEventListener("click", closeMenu);
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", handleMenuKeyboard);
     };
   }, [presetMenu]);
 
-  function openPresetMenu(game: PresetSummary, x: number, y: number) {
-    setPresetMenu({ game, x, y });
+  useEffect(() => {
+    if (!presetMenu) return;
+    const id = window.setTimeout(() => presetMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [presetMenu]);
+
+  function openPresetMenu(game: PresetListItem, x: number, y: number, trigger: HTMLElement | null) {
+    const menuWidth = 176;
+    const menuHeight = 92;
+    setPresetMenu({
+      game,
+      x: Math.max(8, Math.min(x, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - menuHeight - 8)),
+      trigger
+    });
   }
 
-  async function duplicateSidebarPreset(game: PresetSummary) {
-    const response = await presetApi.duplicate(game.id);
-    setGames((current) => [response.preset, ...current]);
-    setPresetMenu(null);
-    navigate(`/dash/presets/${response.preset.id}`);
+  async function duplicateSidebarPreset(game: PresetListItem) {
+    if (sidebarMutationBusyRef.current) return;
+    if (!requestProgrammaticNavigation()) return;
+    const sourceLocationKey = locationRef.current.key;
+    sidebarMutationBusyRef.current = true;
+    setSidebarMutationBusy(true);
+    try {
+      const response = await presetApi.duplicate(game.id);
+      setGames((current) => [response.preset, ...current]);
+      setPresetMenu(null);
+      setShellError(null);
+      if (locationRef.current.key !== sourceLocationKey) return;
+      allowProgrammaticNavigation();
+      navigate(`/dash/presets/${response.preset.id}`);
+    } catch (err) {
+      setShellError(err instanceof Error ? err.message : "Could not duplicate game");
+    } finally {
+      sidebarMutationBusyRef.current = false;
+      setSidebarMutationBusy(false);
+    }
   }
 
-  async function deleteSidebarPreset(game: PresetSummary) {
+  async function deleteSidebarPreset(game: PresetListItem) {
+    if (sidebarMutationBusyRef.current) return;
     if (!window.confirm(`Delete ${game.name}?`)) return;
-    await presetApi.remove(game.id);
-    setGames((current) => current.filter((item) => item.id !== game.id));
-    setPresetMenu(null);
-    if (location.pathname.includes(`/dash/presets/${game.id}`)) navigate("/dash");
+    const deletesCurrentGame = location.pathname === `/dash/presets/${game.id}`;
+    if (deletesCurrentGame && !requestProgrammaticNavigation()) return;
+    const sourceLocationKey = locationRef.current.key;
+    sidebarMutationBusyRef.current = true;
+    setSidebarMutationBusy(true);
+    try {
+      // Delete the revision the operator actually saw. Fetching the latest
+      // revision here would silently accept and destroy an unseen concurrent
+      // edit, defeating the purpose of the server's delete precondition.
+      await presetApi.remove(game.id, game.revision);
+      setGames((current) => current.filter((item) => item.id !== game.id));
+      setPresetMenu(null);
+      setShellError(null);
+      if (deletesCurrentGame && locationRef.current.key === sourceLocationKey) {
+        allowProgrammaticNavigation();
+        navigate("/dash");
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setGames((current) => current.filter((item) => item.id !== game.id));
+        setPresetMenu(null);
+        setShellError("That game was already deleted in another session.");
+        if (deletesCurrentGame && locationRef.current.key === sourceLocationKey) {
+          allowProgrammaticNavigation();
+          navigate("/dash");
+        }
+      } else if (err instanceof ApiError && err.status === 409) {
+        try {
+          const response = await presetApi.list();
+          setGames(response.presets);
+        } catch (refreshError) {
+          const refreshMessage = refreshError instanceof Error ? refreshError.message : "sidebar refresh failed";
+          setShellError(`That game changed while it was being deleted, and the sidebar could not be refreshed: ${refreshMessage}`);
+          return;
+        }
+        setShellError("That game changed while it was being deleted. Review the latest version and try again.");
+      } else {
+        setShellError(err instanceof Error ? err.message : "Could not delete game");
+      }
+    } finally {
+      sidebarMutationBusyRef.current = false;
+      setSidebarMutationBusy(false);
+    }
   }
 
   const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties;
@@ -556,9 +858,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className={shellClass} style={shellStyle}>
       <aside className="sidebar">
-        <div className="sidebar-nav-wrap" aria-hidden={sidebarCollapsed}>
+        <div className="sidebar-nav-wrap">
           <div className="sidebar-header">
-            <Link to="/dash" className="brand sidebar-brand" aria-label="OpenOverlay dashboard">
+            <Link to="/dash" className="brand sidebar-brand" aria-label="OpenOverlay dashboard" tabIndex={sidebarCollapsed ? -1 : undefined} aria-hidden={sidebarCollapsed}>
               <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
               <span className="sidebar-brand-text">OpenOverlay</span>
             </Link>
@@ -572,7 +874,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
               {sidebarCollapsed ? <PanelLeftOpen size={19} strokeWidth={2.2} /> : <PanelLeftClose size={19} strokeWidth={2.2} />}
             </button>
           </div>
-          <nav className="sidebar-nav">
+          <nav className="sidebar-nav" inert={sidebarCollapsed} aria-hidden={sidebarCollapsed}>
             <NavLink to="/dash" end><LayoutDashboard size={18} /> <span className="nav-label">Games</span></NavLink>
             {games.length > 0 ? (
               <div className="sidebar-subnav" aria-label="Active games">
@@ -580,16 +882,25 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   <NavLink
                     key={game.id}
                     to={`/dash/presets/${game.id}`}
+                    aria-label={game.name}
                     onMouseDown={(event) => {
                       if (event.button !== 2) return;
                       event.preventDefault();
-                      openPresetMenu(game, event.clientX, event.clientY);
+                      openPresetMenu(game, event.clientX, event.clientY, event.currentTarget);
                     }}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      openPresetMenu(game, event.clientX, event.clientY);
+                      openPresetMenu(game, event.clientX, event.clientY, event.currentTarget);
                     }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+                      event.preventDefault();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      openPresetMenu(game, rect.right, rect.top, event.currentTarget);
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={presetMenu?.game.id === game.id}
                   >
                     <span className="nav-label">{game.name}</span>
                   </NavLink>
@@ -600,7 +911,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <NavLink to="/dash/media"><Image size={18} /> <span className="nav-label">Media</span></NavLink>
           </nav>
         </div>
-        <div className="sidebar-account" aria-hidden={sidebarCollapsed}>
+        <div className="sidebar-account" inert={sidebarCollapsed} aria-hidden={sidebarCollapsed}>
           <p className="muted">{user?.email}</p>
           <button
             className="sidebar-theme-toggle"
@@ -611,30 +922,50 @@ function AppShell({ children }: { children: React.ReactNode }) {
           >
             {theme === "dark" ? <Sun size={18} strokeWidth={2.2} /> : <Moon size={18} strokeWidth={2.2} />}
           </button>
-          <button className="sidebar-logout" type="button" aria-label="Logout" title="Logout" onClick={() => void logout()}><LogOut size={20} strokeWidth={2.4} /></button>
+          <button
+            className="sidebar-logout"
+            type="button"
+            aria-label="Logout"
+            title="Logout"
+            onClick={() => {
+              if (!requestProgrammaticNavigation()) return;
+              void logout(allowProgrammaticNavigation).catch((err) => setShellError(err instanceof Error ? err.message : "Could not log out"));
+            }}
+          ><LogOut size={20} strokeWidth={2.4} /></button>
         </div>
         {!sidebarCollapsed ? (
           <div
             className="sidebar-resize-handle"
             role="separator"
+            tabIndex={0}
             aria-orientation="vertical"
             aria-label="Resize sidebar"
+            aria-valuemin={SIDEBAR_MIN_WIDTH}
+            aria-valuemax={SIDEBAR_MAX_WIDTH}
+            aria-valuenow={sidebarWidth}
             onMouseDown={startDrag}
+            onKeyDown={resizeWithKeyboard}
           />
         ) : null}
       </aside>
       {presetMenu ? (
         <div
+          ref={presetMenuRef}
           className="sidebar-preset-menu"
+          role="menu"
+          aria-label={`${presetMenu.game.name} actions`}
           style={{ left: presetMenu.x, top: presetMenu.y } as React.CSSProperties}
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
-          <button type="button" onClick={() => void duplicateSidebarPreset(presetMenu.game)}><Copy size={15} /> Duplicate</button>
-          <button type="button" className="danger" onClick={() => void deleteSidebarPreset(presetMenu.game)}><Trash2 size={15} /> Delete</button>
+          <button type="button" role="menuitem" disabled={sidebarMutationBusy} onClick={() => void duplicateSidebarPreset(presetMenu.game)}><Copy size={15} /> {sidebarMutationBusy ? "Working..." : "Duplicate"}</button>
+          <button type="button" role="menuitem" className="danger" disabled={sidebarMutationBusy} onClick={() => void deleteSidebarPreset(presetMenu.game)}><Trash2 size={15} /> Delete</button>
         </div>
       ) : null}
-      <main className="main">{children}</main>
+      <main className="main">
+        {shellError ? <div className="error shell-error" role="alert">{shellError}</div> : null}
+        {children}
+      </main>
     </div>
   );
 }
@@ -644,21 +975,44 @@ function formatOverlayClientCount(count: number): string {
 }
 
 function Dashboard() {
-  const [presets, setPresets] = useState<PresetSummary[]>([]);
+  const [presets, setPresets] = useState<PresetListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
   const [newGameType, setNewGameType] = useState<PresetType>("soccer");
   const [newGameName, setNewGameName] = useState(PRESET_NAME_PLACEHOLDERS.soccer);
+  const [creatingGame, setCreatingGame] = useState(false);
+  const creatingGameRef = useRef(false);
+  const loadGenerationRef = useRef(0);
   const navigate = useNavigate();
   const newGameNameRef = useRef<HTMLInputElement | null>(null);
 
-  const load = useCallback(async () => {
-    const response = await presetApi.list();
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const generation = loadGenerationRef.current + 1;
+    loadGenerationRef.current = generation;
+    const response = await presetApi.list(signal);
+    if (signal?.aborted || generation !== loadGenerationRef.current) return;
     setPresets(response.presets);
+    setError(null);
   }, []);
 
   useEffect(() => {
-    void load().catch((err) => setError(err.message));
+    const controller = new AbortController();
+    const refresh = () => void load(controller.signal).catch((err) => {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load games");
+    });
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 15_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [load]);
 
   useEffect(() => {
@@ -679,8 +1033,11 @@ function Dashboard() {
 
   async function createPreset(event: React.FormEvent) {
     event.preventDefault();
+    if (creatingGameRef.current) return;
     const trimmedName = newGameName.trim();
     if (!trimmedName) return;
+    creatingGameRef.current = true;
+    setCreatingGame(true);
     setError(null);
     try {
       const response = await presetApi.create(trimmedName, newGameType);
@@ -688,6 +1045,9 @@ function Dashboard() {
       navigate(`/dash/presets/${response.preset.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create game");
+    } finally {
+      creatingGameRef.current = false;
+      setCreatingGame(false);
     }
   }
 
@@ -705,13 +1065,13 @@ function Dashboard() {
       <div className="page-title">
         <h1>Games</h1>
       </div>
-      {error ? <div className="error">{error}</div> : null}
+      {error ? <div className="error" role="alert">{error}</div> : null}
       <section className="preset-grid game-card-grid">
         <button className="preset-card preset-card-new" type="button" onClick={openNewGameDialog}>
           <span className="new-game-card-icon" aria-hidden="true"><Plus size={22} /></span>
           <span className="new-game-card-copy">
             <h2>New Game</h2>
-            <p>Soccer / Church / Custom</p>
+            <p>Soccer / Church</p>
           </span>
         </button>
         {presets.map((preset) => (
@@ -724,6 +1084,7 @@ function Dashboard() {
               <h2>{preset.name}</h2>
               <div className="control-row game-card-actions">
                 <button className="button game-card-copy" type="button" onClick={() => void copyGameOverlayLink(preset.publicId)}><Copy size={14} /> Copy overlay</button>
+                <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Test</a>
               </div>
             </div>
             <Link className="button game-card-play" to={`/dash/presets/${preset.id}`} aria-label={`Open ${preset.name}`} title={`Open ${preset.name}`}>
@@ -733,18 +1094,13 @@ function Dashboard() {
         ))}
       </section>
       {isNewGameOpen ? (
-        <div className="prompt-backdrop" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) closeNewGameDialog();
-        }}>
+        <ModalLayer initialFocusRef={newGameNameRef} onClose={closeNewGameDialog}>
           <form
             className="prompt-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-game-dialog-title"
             onSubmit={createPreset}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") closeNewGameDialog();
-            }}
           >
             <h2 id="new-game-dialog-title">New game</h2>
             <label className="field">
@@ -752,6 +1108,7 @@ function Dashboard() {
               <select
                 className="number-input"
                 value={newGameType}
+                disabled={creatingGame}
                 onChange={(event) => {
                   const nextType = event.target.value as PresetType;
                   setNewGameType(nextType);
@@ -760,7 +1117,6 @@ function Dashboard() {
               >
                 <option value="soccer">Soccer</option>
                 <option value="church">Church</option>
-                <option value="custom">Custom</option>
               </select>
             </label>
             <label className="field">
@@ -768,67 +1124,181 @@ function Dashboard() {
               <input
                 ref={newGameNameRef}
                 value={newGameName}
+                disabled={creatingGame}
                 onChange={(event) => setNewGameName(event.target.value)}
                 placeholder={PRESET_NAME_PLACEHOLDERS[newGameType]}
               />
             </label>
             <div className="control-row prompt-actions">
-              <button className="button" type="button" onClick={closeNewGameDialog}>Cancel</button>
-              <button className="button primary" type="submit">Create game</button>
+              <button className="button" type="button" onClick={closeNewGameDialog} disabled={creatingGame}>Cancel</button>
+              <button className="button primary" type="submit" disabled={creatingGame}>{creatingGame ? "Creating..." : "Create game"}</button>
             </div>
           </form>
-        </div>
+        </ModalLayer>
       ) : null}
     </>
   );
 }
 
-function TeamsLibrary() {
+export function TeamsLibrary() {
   const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TeamLibraryEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const selectedTeamIdRef = useRef<string | null>(null);
+  const [saveStatuses, setSaveStatuses] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
+  const draftRef = useRef<TeamLibraryEntry | null>(null);
+  const teamsRef = useRef<TeamLibraryEntry[]>([]);
+  const selectedIdRef = useRef<string | null>(null);
   const teamSaveRevisionRef = useRef(0);
   const latestTeamSaveRevisionRef = useRef<Record<string, number>>({});
+  const serverTeamRevisionRef = useRef<Record<string, number>>({});
+  const conflictedTeamIdsRef = useRef(new Set<string>());
+  const teamSaveQueueRef = useRef<KeyedSerialTaskQueue | null>(null);
+  if (!teamSaveQueueRef.current) teamSaveQueueRef.current = new KeyedSerialTaskQueue();
+  const teamsMountedRef = useRef(true);
+  const loadGenerationRef = useRef(0);
+  const pendingTeamIdsRef = useRef(new Set<string>());
+  const teamSaveDebouncerRef = useRef<KeyedDebouncer | null>(null);
+  if (!teamSaveDebouncerRef.current) teamSaveDebouncerRef.current = new KeyedDebouncer(500);
   const prompt = usePromptDialog();
+  const allowNextNavigationRef = useRef(false);
 
-  const load = useCallback(async () => {
-    const [teamsResponse, mediaResponse] = await Promise.all([teamApi.list(), mediaApi.list()]);
+  const hasPendingTeamSave = useCallback(() => pendingTeamIdsRef.current.size > 0, []);
+  useUnsavedNavigationBlocker(
+    hasPendingTeamSave,
+    allowNextNavigationRef,
+    "Team changes are still saving. Leave this page anyway?"
+  );
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const generation = loadGenerationRef.current + 1;
+    loadGenerationRef.current = generation;
+    const [teamsResult, mediaResult] = await Promise.allSettled([teamApi.list(signal), mediaApi.list(signal)]);
+    if (signal?.aborted || generation !== loadGenerationRef.current) return;
+    if (teamsResult.status === "rejected") throw teamsResult.reason;
+    const teamsResponse = teamsResult.value;
+    teamSaveDebouncerRef.current?.clear();
+    for (const pendingTeamId of pendingTeamIdsRef.current) {
+      const invalidationRevision = teamSaveRevisionRef.current + 1;
+      teamSaveRevisionRef.current = invalidationRevision;
+      latestTeamSaveRevisionRef.current[pendingTeamId] = invalidationRevision;
+    }
+    serverTeamRevisionRef.current = Object.fromEntries(teamsResponse.teams.map((team) => [team.id, team.revision]));
+    conflictedTeamIdsRef.current.clear();
+    pendingTeamIdsRef.current.clear();
+    teamsRef.current = teamsResponse.teams;
     setTeams(teamsResponse.teams);
-    setMedia(mediaResponse.media);
-    setSelectedId((current) => current ?? teamsResponse.teams[0]?.id ?? null);
+    setMedia(mediaResult.status === "fulfilled" ? mediaResult.value.media : []);
+    const selected = teamsResponse.teams.find((team) => team.id === selectedIdRef.current)
+      ?? teamsResponse.teams[0]
+      ?? null;
+    const nextDraft = selected ? structuredClone(selected) : null;
+    selectedIdRef.current = selected?.id ?? null;
+    draftRef.current = nextDraft;
+    setSelectedId(selectedIdRef.current);
+    setDraft(nextDraft);
+    setSaveStatuses({});
+    const recoveredCount = teamsResponse.teams.filter((team) => team.dataRecovered).length;
+    if (recoveredCount > 0) {
+      setError(`${recoveredCount} stored team ${recoveredCount === 1 ? "record was" : "records were"} corrupt and loaded with safe defaults. Review and resave ${recoveredCount === 1 ? "it" : "them"}.`);
+    } else if (mediaResult.status === "rejected") {
+      setError("Teams loaded, but the media library could not be loaded.");
+    } else {
+      setError(null);
+    }
   }, []);
 
   useEffect(() => {
-    void load().catch((err) => setError(err.message));
+    const controller = new AbortController();
+    void load(controller.signal).catch((err) => {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load teams");
+    });
+    return () => controller.abort();
   }, [load]);
 
   useEffect(() => {
-    selectedTeamIdRef.current = selectedId;
     setDraft((current) => {
-      if (!selectedId) return null;
+      if (!selectedId) {
+        draftRef.current = null;
+        return null;
+      }
       if (current?.id === selectedId) return current;
       const selected = teams.find((team) => team.id === selectedId) || null;
-      return selected ? structuredClone(selected) : null;
+      const next = selected ? structuredClone(selected) : null;
+      draftRef.current = next;
+      return next;
     });
   }, [selectedId, teams]);
 
-  const debouncedSaveTeam = useDebouncedCallback((team: TeamLibraryEntry, revision: number) => {
-    setSaveStatus("saving");
-    void teamApi.patch(team.id, team).then((response) => {
-      if (latestTeamSaveRevisionRef.current[response.team.id] !== revision) return;
-      setTeams((current) => current.map((item) => (item.id === response.team.id ? response.team : item)));
-      setDraft((current) => (current?.id === response.team.id ? { ...current, updatedAt: response.team.updatedAt } : current));
-      if (selectedTeamIdRef.current === response.team.id) setSaveStatus("saved");
-    }).catch((err) => {
-      if (latestTeamSaveRevisionRef.current[team.id] !== revision) return;
-      setSaveStatus("error");
+  useEffect(() => {
+    const debouncer = teamSaveDebouncerRef.current;
+    teamsMountedRef.current = true;
+    return () => {
+      teamsMountedRef.current = false;
+      debouncer?.flush();
+    };
+  }, []);
+
+  useEffect(() => {
+    function beforeUnload(event: BeforeUnloadEvent) {
+      if (!hasPendingTeamSave()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    function programmaticNavigation(event: Event) {
+      if (!hasPendingTeamSave()) return;
+      if (!window.confirm("Team changes are still saving. Leave this page anyway?")) event.preventDefault();
+    }
+    function allowNavigation() {
+      if (hasPendingTeamSave()) allowNextNavigationRef.current = true;
+    }
+    window.addEventListener("beforeunload", beforeUnload);
+    window.addEventListener(PROGRAMMATIC_NAVIGATION_EVENT, programmaticNavigation);
+    window.addEventListener(ALLOW_PROGRAMMATIC_NAVIGATION_EVENT, allowNavigation);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      window.removeEventListener(PROGRAMMATIC_NAVIGATION_EVENT, programmaticNavigation);
+      window.removeEventListener(ALLOW_PROGRAMMATIC_NAVIGATION_EVENT, allowNavigation);
+    };
+  }, [hasPendingTeamSave]);
+
+  async function persistTeam(team: TeamLibraryEntry, revision: number) {
+    if (conflictedTeamIdsRef.current.has(team.id) || latestTeamSaveRevisionRef.current[team.id] !== revision) return;
+    if (teamsMountedRef.current) setSaveStatuses((current) => ({ ...current, [team.id]: "saving" }));
+    try {
+      const expectedRevision = serverTeamRevisionRef.current[team.id] ?? team.revision;
+      const response = await teamApi.patch(team.id, { ...team, revision: expectedRevision });
+      serverTeamRevisionRef.current[team.id] = response.team.revision;
+      if (!teamsMountedRef.current || latestTeamSaveRevisionRef.current[response.team.id] !== revision) return;
+      pendingTeamIdsRef.current.delete(response.team.id);
+      teamsRef.current = teamsRef.current.map((item) => (item.id === response.team.id ? response.team : item));
+      setTeams(teamsRef.current);
+      setDraft((current) => {
+        if (current?.id !== response.team.id) return current;
+        const next = structuredClone(response.team);
+        draftRef.current = next;
+        return next;
+      });
+      setSaveStatuses((current) => ({ ...current, [response.team.id]: "saved" }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        conflictedTeamIdsRef.current.add(team.id);
+        if (teamsMountedRef.current) {
+          setSaveStatuses((current) => ({ ...current, [team.id]: "error" }));
+          setError("This team changed in another tab. Reload the page before continuing so you do not overwrite newer changes.");
+        }
+        return;
+      }
+      if (!teamsMountedRef.current || latestTeamSaveRevisionRef.current[team.id] !== revision) return;
+      setSaveStatuses((current) => ({ ...current, [team.id]: "error" }));
       setError(err instanceof Error ? err.message : "Could not autosave team");
-    });
-  }, 500);
+    }
+  }
+
+  function enqueueTeamSave(team: TeamLibraryEntry, revision: number) {
+    void teamSaveQueueRef.current?.run(team.id, () => persistTeam(team, revision));
+  }
 
   async function createTeam() {
     const name = await prompt({
@@ -847,36 +1317,90 @@ function TeamsLibrary() {
         shortName: makeAbbreviation(displayName),
         abbreviation: makeAbbreviation(displayName)
       });
-      setTeams((current) => [response.team, ...current]);
+      loadGenerationRef.current += 1;
+      teamsRef.current = [response.team, ...teamsRef.current];
+      serverTeamRevisionRef.current[response.team.id] = response.team.revision;
+      const nextDraft = structuredClone(response.team);
+      selectedIdRef.current = response.team.id;
+      draftRef.current = nextDraft;
+      setTeams(teamsRef.current);
       setSelectedId(response.team.id);
+      setDraft(nextDraft);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create team");
     }
   }
 
-  function updateDraft(patch: Partial<SoccerState["home"]>) {
+  function updateDraft(teamId: string, patch: Partial<SoccerState["home"]>) {
+    if (conflictedTeamIdsRef.current.has(teamId)) {
+      setError("This team changed in another tab. Reload the page before continuing so you do not overwrite newer changes.");
+      return;
+    }
     setError(null);
-    setDraft((current) => {
-      if (!current) return current;
-      const next = mergeTeamPatch(current, patch);
-      const revision = teamSaveRevisionRef.current + 1;
-      teamSaveRevisionRef.current = revision;
-      latestTeamSaveRevisionRef.current[next.id] = revision;
-      setSaveStatus("saving");
-      debouncedSaveTeam(next, revision);
-      return next;
-    });
+    const current = draftRef.current?.id === teamId
+      ? draftRef.current
+      : teamsRef.current.find((team) => team.id === teamId);
+    if (!current) return;
+    const next = mergeTeamPatch(current, patch);
+    draftRef.current = draftRef.current?.id === teamId ? next : draftRef.current;
+    teamsRef.current = teamsRef.current.map((team) => (team.id === teamId ? next : team));
+    setDraft((selected) => (selected?.id === teamId ? next : selected));
+    setTeams(teamsRef.current);
+    const revision = teamSaveRevisionRef.current + 1;
+    teamSaveRevisionRef.current = revision;
+    latestTeamSaveRevisionRef.current[teamId] = revision;
+    pendingTeamIdsRef.current.add(teamId);
+    setSaveStatuses((statuses) => ({ ...statuses, [teamId]: "saving" }));
+    teamSaveDebouncerRef.current?.schedule(teamId, () => enqueueTeamSave(next, revision));
   }
 
   async function deleteTeam(id: string) {
+    const target = teamsRef.current.find((team) => team.id === id);
+    if (!target) {
+      setError("Could not delete a team that is no longer in the loaded library.");
+      return;
+    }
+    if (!window.confirm(`Delete ${target?.fullName || "this team"}?`)) return;
+    const pendingSnapshot = pendingTeamIdsRef.current.has(id)
+      ? structuredClone(draftRef.current?.id === id ? draftRef.current : target ?? null)
+      : null;
     setError(null);
     try {
-      await teamApi.remove(id);
-      const remaining = teams.filter((team) => team.id !== id);
+      teamSaveDebouncerRef.current?.cancel(id);
+      conflictedTeamIdsRef.current.add(id);
+      latestTeamSaveRevisionRef.current[id] = teamSaveRevisionRef.current + 1;
+      teamSaveRevisionRef.current += 1;
+      await teamSaveQueueRef.current!.run(id, () => teamApi.remove(
+        id,
+        serverTeamRevisionRef.current[id] ?? target.revision
+      ));
+      pendingTeamIdsRef.current.delete(id);
+      conflictedTeamIdsRef.current.delete(id);
+      const remaining = teamsRef.current.filter((team) => team.id !== id);
+      delete serverTeamRevisionRef.current[id];
+      teamsRef.current = remaining;
+      selectedIdRef.current = remaining[0]?.id ?? null;
       setTeams(remaining);
-      setSelectedId(remaining[0]?.id ?? null);
+      setSelectedId(selectedIdRef.current);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete team");
+      if (err instanceof ApiError && err.status === 409) {
+        conflictedTeamIdsRef.current.add(id);
+        if (pendingSnapshot) pendingTeamIdsRef.current.add(id);
+        setSaveStatuses((statuses) => ({ ...statuses, [id]: "error" }));
+        setError("This team changed in another tab before it could be deleted. Reload teams and review the latest version.");
+      } else if (pendingSnapshot) {
+        conflictedTeamIdsRef.current.delete(id);
+        const retryRevision = teamSaveRevisionRef.current + 1;
+        teamSaveRevisionRef.current = retryRevision;
+        latestTeamSaveRevisionRef.current[id] = retryRevision;
+        pendingTeamIdsRef.current.add(id);
+        setSaveStatuses((statuses) => ({ ...statuses, [id]: "saving" }));
+        teamSaveDebouncerRef.current?.schedule(id, () => enqueueTeamSave(pendingSnapshot, retryRevision));
+        setError(err instanceof Error ? err.message : "Could not delete team");
+      } else {
+        conflictedTeamIdsRef.current.delete(id);
+        setError(err instanceof Error ? err.message : "Could not delete team");
+      }
     }
   }
 
@@ -885,7 +1409,7 @@ function TeamsLibrary() {
       <div className="page-title">
         <h1>Teams</h1>
       </div>
-      {error ? <div className="error">{error}</div> : null}
+      {error ? <div className="error" role="alert"><span>{error}</span><button className="button" type="button" onClick={() => void load().catch((err) => setError(err instanceof Error ? err.message : "Could not reload teams"))}>Reload teams</button></div> : null}
       <div className={`team-library-layout ${draft ? "" : "empty"}`}>
         <section className="team-list">
           <button
@@ -911,7 +1435,7 @@ function TeamsLibrary() {
                 "--team-secondary": team.secondaryColor
               } as React.CSSProperties}
               onClick={() => {
-                setSaveStatus("idle");
+                selectedIdRef.current = team.id;
                 setSelectedId(team.id);
               }}
             >
@@ -924,17 +1448,21 @@ function TeamsLibrary() {
           ))}
         </section>
         {draft ? (
-          <section className="panel team-editor-panel">
+          <section
+            className="panel team-editor-panel"
+            inert={conflictedTeamIdsRef.current.has(draft.id)}
+            aria-disabled={conflictedTeamIdsRef.current.has(draft.id)}
+          >
             <div className="panel-heading">
               <div>
                 <h2>{titleCaseFirst(draft.fullName)}</h2>
               </div>
               <div className="control-row">
-                <button className="button danger" onClick={() => void deleteTeam(draft.id)}><Trash2 size={17} /> Delete</button>
+                <button className="button danger" disabled={conflictedTeamIdsRef.current.has(draft.id)} onClick={() => void deleteTeam(draft.id)}><Trash2 size={17} /> Delete</button>
               </div>
             </div>
-            <TeamFields team={draft} media={media} onChange={updateDraft} />
-            <p className="muted autosave-status">{saveStatusLabel(saveStatus, draft.updatedAt)}</p>
+            <TeamFields key={draft.id} team={draft} media={media} onChange={(patch) => updateDraft(draft.id, patch)} />
+            <p className="muted autosave-status" role="status">{saveStatusLabel(saveStatuses[draft.id] ?? "idle", draft.updatedAt)}</p>
           </section>
         ) : null}
       </div>
@@ -942,8 +1470,10 @@ function TeamsLibrary() {
   );
 }
 
-function PresetEditor() {
+export function PresetEditor() {
   const { presetId } = useParams();
+  const navigate = useNavigate();
+  const prompt = usePromptDialog();
   const [preset, setPreset] = useState<PresetSummary | null>(null);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
@@ -955,12 +1485,71 @@ function PresetEditor() {
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [showConnectionWarning, setShowConnectionWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [presetDeleted, setPresetDeleted] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [mutationBusy, setMutationBusy] = useState(false);
+  const [revisionConflict, setRevisionConflict] = useState(false);
+  const [autosaveFailed, setAutosaveFailed] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [actionKey, setActionKey] = useState<string | null>(null);
+  const [debugEvents, setDebugEvents] = useState<PresetEvent[] | null>(null);
   const [history, setHistory] = useState<PresetState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [pendingSoccerTextUpdate, setPendingSoccerTextUpdate] = useState<{ state: SoccerState; fields: SoccerTextAnimationField[] } | null>(null);
-  const latestPresetSaveRevisionRef = useRef(0);
+  const pendingSoccerTextUpdateRef = useRef<{ state: SoccerState; fields: SoccerTextAnimationField[] } | null>(null);
+  const presetRef = useRef<PresetSummary | null>(null);
+  const bufferedSocketPresetRef = useRef<{ generation: number; preset: PresetSummary } | null>(null);
+  const presetLoadControllerRef = useRef<AbortController | null>(null);
+  const historyRef = useRef<PresetState[]>([]);
+  const historyIndexRef = useRef(-1);
+  const routeGenerationRef = useRef(0);
+  const localSaveSequenceRef = useRef(0);
+  const latestSaveSequenceByPresetRef = useRef<Record<string, number>>({});
+  const serverRevisionByPresetRef = useRef<Record<string, number>>({});
   const hasPendingPresetSaveRef = useRef(false);
-  const socketRef = useRef<Socket | null>(null);
+  const autosaveFailedRef = useRef(false);
+  const mutationBusyRef = useRef(false);
+  const allowNextNavigationRef = useRef(false);
+  const mutationQueueRef = useRef<DebouncedSerialMutationQueue | null>(null);
+  if (!mutationQueueRef.current) mutationQueueRef.current = new DebouncedSerialMutationQueue(180);
+
+  const replacePreset = useCallback((next: PresetSummary | null) => {
+    presetRef.current = next;
+    setPreset(next);
+  }, []);
+
+  const resetHistory = useCallback((state: PresetState) => {
+    const next = [structuredClone(state)];
+    historyRef.current = next;
+    historyIndexRef.current = 0;
+    setHistory(next);
+    setHistoryIndex(0);
+  }, []);
+
+  const requireSavedState = useCallback(() => {
+    if (!autosaveFailedRef.current) return true;
+    setError("Unsaved game changes must be saved before running this operation. Retry the save or make another edit first.");
+    return false;
+  }, []);
+
+  const hasUnsavedWork = useCallback(() => Boolean(
+    pendingSoccerTextUpdateRef.current || hasPendingPresetSaveRef.current || autosaveFailedRef.current || mutationBusyRef.current
+  ), []);
+  useUnsavedNavigationBlocker(
+    hasUnsavedWork,
+    allowNextNavigationRef,
+    "This game still has unsaved or staged changes. Leave without waiting for them?"
+  );
+
+  const appendHistory = useCallback((state: PresetState) => {
+    const trimmed = historyRef.current.slice(0, historyIndexRef.current + 1);
+    const next = [...trimmed, structuredClone(state)].slice(-60);
+    const nextIndex = next.length - 1;
+    historyRef.current = next;
+    historyIndexRef.current = nextIndex;
+    setHistory(next);
+    setHistoryIndex(nextIndex);
+  }, []);
 
   const selectedElement = useMemo(() => {
     if (!preset) return undefined;
@@ -969,19 +1558,103 @@ function PresetEditor() {
     return undefined;
   }, [preset]);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
     if (!presetId) return;
-    const [presetResponse, mediaResponse, teamsResponse] = await Promise.all([presetApi.get(presetId), mediaApi.list(), teamApi.list()]);
-    setPreset(presetResponse.preset);
-    setHistory([presetResponse.preset.state]);
-    setHistoryIndex(0);
-    setMedia(mediaResponse.media);
-    setTeams(teamsResponse.teams);
-  }, [presetId]);
+    const requestedPresetId = presetId;
+    const generation = routeGenerationRef.current + 1;
+    routeGenerationRef.current = generation;
+    const controller = new AbortController();
+    presetLoadControllerRef.current = controller;
+    mutationBusyRef.current = false;
+    setMutationBusy(false);
+    setRevisionConflict(false);
+    setAutosaveFailed(false);
+    autosaveFailedRef.current = false;
+    setNotice(null);
+    setActionKey(null);
+    setDebugEvents(null);
+    setError(null);
+    setPresetDeleted(false);
+    replacePreset(null);
+    setMedia([]);
+    setTeams([]);
+    setPendingSoccerTextUpdate(null);
+    pendingSoccerTextUpdateRef.current = null;
+    bufferedSocketPresetRef.current = null;
+    setConnection("connecting");
+    hasPendingPresetSaveRef.current = false;
+    void mutationQueueRef.current?.flush();
+
+    async function loadPreset() {
+      const optionalResults = Promise.allSettled([
+        mediaApi.list(controller.signal),
+        teamApi.list(controller.signal)
+      ]);
+      const presetResult = await presetApi.get(requestedPresetId, controller.signal);
+      if (controller.signal.aborted || routeGenerationRef.current !== generation) return;
+
+      const fetchedPreset = presetResult.preset;
+      const buffered = bufferedSocketPresetRef.current?.generation === generation
+        ? bufferedSocketPresetRef.current.preset
+        : null;
+      const fetchedRevision = getPresetRevision(fetchedPreset) ?? -1;
+      const bufferedRevision = buffered ? (getPresetRevision(buffered) ?? Number.MAX_SAFE_INTEGER) : -1;
+      const loadedPreset = buffered && bufferedRevision >= fetchedRevision ? buffered : fetchedPreset;
+      bufferedSocketPresetRef.current = null;
+      replacePreset(loadedPreset);
+      resetHistory(loadedPreset.state);
+      const serverRevision = getPresetRevision(loadedPreset);
+      if (serverRevision !== undefined) serverRevisionByPresetRef.current[loadedPreset.id] = serverRevision;
+      const [mediaResult, teamsResult] = await optionalResults;
+      if (controller.signal.aborted || routeGenerationRef.current !== generation) return;
+      if (mediaResult.status === "fulfilled") setMedia(mediaResult.value.media);
+      if (teamsResult.status === "fulfilled") setTeams(teamsResult.value.teams);
+
+      const optionalFailures = [
+        mediaResult.status === "rejected" ? "media" : null,
+        teamsResult.status === "rejected" ? "teams" : null
+      ].filter(Boolean);
+      if (optionalFailures.length > 0) setError(`Game loaded, but ${optionalFailures.join(" and ")} could not be loaded.`);
+    }
+
+    void loadPreset().catch((err) => {
+      if (controller.signal.aborted || routeGenerationRef.current !== generation) return;
+      setError(err instanceof Error ? err.message : "Could not load game");
+    });
+
+    return () => {
+      controller.abort();
+      if (presetLoadControllerRef.current === controller) presetLoadControllerRef.current = null;
+      if (routeGenerationRef.current === generation) routeGenerationRef.current += 1;
+      setPendingSoccerTextUpdate(null);
+      pendingSoccerTextUpdateRef.current = null;
+      bufferedSocketPresetRef.current = null;
+      void mutationQueueRef.current?.flush();
+    };
+  }, [presetId, reloadKey, replacePreset, resetHistory]);
 
   useEffect(() => {
-    void load().catch((err) => setError(err.message));
-  }, [load]);
+    function beforeUnload(event: BeforeUnloadEvent) {
+      if (!hasUnsavedWork()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    function programmaticNavigation(event: Event) {
+      if (!hasUnsavedWork()) return;
+      if (!window.confirm("This game still has unsaved or staged changes. Leave without waiting for them?")) event.preventDefault();
+    }
+    function allowNavigation() {
+      if (hasUnsavedWork()) allowNextNavigationRef.current = true;
+    }
+    window.addEventListener("beforeunload", beforeUnload);
+    window.addEventListener(PROGRAMMATIC_NAVIGATION_EVENT, programmaticNavigation);
+    window.addEventListener(ALLOW_PROGRAMMATIC_NAVIGATION_EVENT, allowNavigation);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      window.removeEventListener(PROGRAMMATIC_NAVIGATION_EVENT, programmaticNavigation);
+      window.removeEventListener(ALLOW_PROGRAMMATIC_NAVIGATION_EVENT, allowNavigation);
+    };
+  }, [hasUnsavedWork]);
 
   useEffect(() => {
     if (!preset) return;
@@ -997,31 +1670,121 @@ function PresetEditor() {
 
   useEffect(() => {
     if (!presetId) return;
+    const requestedPresetId = presetId;
+    const generation = routeGenerationRef.current;
     const socket = io(WS_URL, {
       withCredentials: true,
       transports: ["websocket", "polling"],
       auth: { role: "admin", presetId, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
       query: { role: "admin", presetId, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION }
     });
-    socketRef.current = socket;
-    socket.on("connect", () => setConnection("connected"));
-    socket.on("disconnect", () => setConnection("disconnected"));
-    socket.on("connect_error", () => setConnection("disconnected"));
-    socket.on("preset:update", (payload: PresetSummary) => {
-      setPreset((current) => {
-        if (hasPendingPresetSaveRef.current && current?.id === payload.id) {
-          return { ...payload, state: current.state };
-        }
-        return payload;
-      });
+    function enterDeletedState(explicitPayload?: PresetDeletedEvent) {
+      if (routeGenerationRef.current !== generation) return;
+      const current = presetRef.current;
+      const sidebarPayload = explicitPayload ?? (current && current.id === requestedPresetId
+        ? { id: current.id, publicId: current.publicId, revision: current.revision }
+        : null);
+
+      // Invalidate any HTTP/autosave completion already in flight before
+      // clearing the editor. Those requests may still settle, but they can no
+      // longer resurrect the deleted record in this route's state.
+      routeGenerationRef.current += 1;
+      presetLoadControllerRef.current?.abort();
+      presetLoadControllerRef.current = null;
+      bufferedSocketPresetRef.current = null;
+      pendingSoccerTextUpdateRef.current = null;
+      hasPendingPresetSaveRef.current = false;
+      autosaveFailedRef.current = false;
+      mutationBusyRef.current = false;
+      delete serverRevisionByPresetRef.current[requestedPresetId];
+      replacePreset(null);
+      historyRef.current = [];
+      historyIndexRef.current = -1;
+      setHistory([]);
+      setHistoryIndex(-1);
+      setPendingSoccerTextUpdate(null);
+      setAutosaveFailed(false);
+      setMutationBusy(false);
+      setRevisionConflict(false);
+      setActionKey(null);
+      setDebugEvents(null);
+      setNotice(null);
+      setError(null);
+      setPresetDeleted(true);
+      setConnection("disconnected");
+      if (sidebarPayload) dispatchPresetDeleted(sidebarPayload);
+      socket.disconnect();
+    }
+    socket.on("connect", () => {
+      if (routeGenerationRef.current === generation) setConnection("connected");
     });
-    socket.on("overlay:clients", (payload: { count: number }) => {
-      setPreset((current) => (current ? { ...current, overlayClientCount: payload.count } : current));
+    socket.on("disconnect", () => {
+      if (routeGenerationRef.current === generation) setConnection("disconnected");
+    });
+    socket.on("connect_error", () => {
+      if (routeGenerationRef.current === generation) setConnection("disconnected");
+    });
+    socket.on("preset:update", (payload: unknown) => {
+      if (routeGenerationRef.current !== generation) return;
+      if (!isPreset(payload)) {
+        setError("Ignored a malformed realtime game update.");
+        return;
+      }
+      if (payload.id !== requestedPresetId) return;
+      const current = presetRef.current;
+      if (!current) {
+        const buffered = bufferedSocketPresetRef.current;
+        const bufferedRevision = buffered ? (getPresetRevision(buffered.preset) ?? -1) : -1;
+        const incomingRevision = getPresetRevision(payload) ?? Number.MAX_SAFE_INTEGER;
+        if (!buffered || buffered.generation !== generation || incomingRevision >= bufferedRevision) {
+          bufferedSocketPresetRef.current = { generation, preset: payload };
+        }
+        return;
+      }
+      if (current.id !== payload.id) return;
+      if (hasPendingPresetSaveRef.current || mutationBusyRef.current) {
+        replacePreset({ ...payload, state: current.state });
+        return;
+      }
+      const serverRevision = getPresetRevision(payload);
+      const knownRevision = serverRevisionByPresetRef.current[payload.id];
+      if (serverRevision !== undefined && knownRevision !== undefined && serverRevision <= knownRevision) {
+        replacePreset({ ...current, overlayClientCount: payload.overlayClientCount });
+        return;
+      }
+      if (serverRevision !== undefined) serverRevisionByPresetRef.current[payload.id] = serverRevision;
+      replacePreset(payload);
+      resetHistory(payload.state);
+    });
+    socket.on("preset:deleted", (payload: unknown) => {
+      if (routeGenerationRef.current !== generation) return;
+      if (!isPresetDeletedEvent(payload)) {
+        setError("Ignored a malformed realtime game deletion event.");
+        return;
+      }
+      if (payload.id !== presetId) return;
+      enterDeletedState(payload);
+    });
+    socket.on("error:message", (payload: unknown) => {
+      if (routeGenerationRef.current !== generation || !isRealtimeErrorMessage(payload)) return;
+      // The backend uses this exact role-specific message only when an
+      // authenticated subscription resolves to no row. Other errors can be
+      // transient, auth-related, or version-related and must retain last-known
+      // state rather than being mistaken for deletion.
+      if (payload.error === "Preset not found") enterDeletedState();
+    });
+    socket.on("overlay:clients", (payload: unknown) => {
+      if (routeGenerationRef.current !== generation) return;
+      const count = payload && typeof payload === "object" ? (payload as { count?: unknown }).count : undefined;
+      if (!Number.isSafeInteger(count) || Number(count) < 0) return;
+      const current = presetRef.current;
+      if (!current || current.id !== presetId) return;
+      replacePreset({ ...current, overlayClientCount: Number(count) });
     });
     return () => {
       socket.disconnect();
     };
-  }, [presetId]);
+  }, [presetId, reloadKey, replacePreset, resetHistory]);
 
   useEffect(() => {
     if (connection !== "disconnected") {
@@ -1032,67 +1795,206 @@ function PresetEditor() {
     return () => window.clearTimeout(timeout);
   }, [connection]);
 
-  const debouncedPersist = useDebouncedCallback((nextState: PresetState, revision: number) => {
-    if (!presetId) return;
-    void presetApi.patch(presetId, { state: nextState }).then((response) => {
-      if (latestPresetSaveRevisionRef.current !== revision) return;
-      hasPendingPresetSaveRef.current = false;
-      setPreset((current) => (current?.id === response.preset.id ? { ...response.preset, state: current.state } : response.preset));
-    }).catch((err) => {
-      if (latestPresetSaveRevisionRef.current !== revision) return;
-      hasPendingPresetSaveRef.current = false;
-      setError(err.message);
-    });
-  }, 180);
-
   const commitState = useCallback((nextState: PresetState, persist = true) => {
-    setPreset((current) => (current ? { ...current, state: nextState } : current));
-    setHistory((current) => {
-      const trimmed = current.slice(0, historyIndex + 1);
-      return [...trimmed, structuredClone(nextState)].slice(-60);
-    });
-    setHistoryIndex((index) => Math.min(index + 1, 59));
+    const current = presetRef.current;
+    if (!current || mutationBusyRef.current || revisionConflict) return;
+    const resourceId = current.id;
+    const generation = routeGenerationRef.current;
+    replacePreset({ ...current, state: nextState });
+    appendHistory(nextState);
     if (persist) {
-      const revision = latestPresetSaveRevisionRef.current + 1;
-      latestPresetSaveRevisionRef.current = revision;
+      autosaveFailedRef.current = false;
+      setAutosaveFailed(false);
+      const sequence = localSaveSequenceRef.current + 1;
+      localSaveSequenceRef.current = sequence;
+      latestSaveSequenceByPresetRef.current[resourceId] = sequence;
       hasPendingPresetSaveRef.current = true;
-      debouncedPersist(nextState, revision);
+      mutationQueueRef.current?.schedule(resourceId, async () => {
+        try {
+          const response = await presetApi.patch(resourceId, {
+            state: nextState,
+            expectedRevision: serverRevisionByPresetRef.current[resourceId]
+          });
+          if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+          const serverRevision = getPresetRevision(response.preset);
+          if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
+          if (latestSaveSequenceByPresetRef.current[resourceId] === sequence) hasPendingPresetSaveRef.current = false;
+          const latest = presetRef.current;
+          if (latest) replacePreset({ ...response.preset, state: latest.state });
+          autosaveFailedRef.current = false;
+          setAutosaveFailed(false);
+        } catch (err) {
+          if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+          if (latestSaveSequenceByPresetRef.current[resourceId] === sequence) hasPendingPresetSaveRef.current = false;
+          if (err instanceof ApiError && err.status === 409) {
+            mutationBusyRef.current = true;
+            setMutationBusy(true);
+            setRevisionConflict(true);
+            setError("This game changed in another tab. Reload the latest version before continuing.");
+          } else {
+            autosaveFailedRef.current = true;
+            setAutosaveFailed(true);
+            setError(err instanceof Error ? err.message : "Could not autosave game");
+          }
+          throw err;
+        }
+      });
     }
-  }, [debouncedPersist, historyIndex]);
+  }, [appendHistory, replacePreset, revisionConflict]);
 
-  const restoreHistory = useCallback((direction: "undo" | "redo") => {
-    if (!preset) return;
-    const nextIndex = direction === "redo" ? Math.min(history.length - 1, historyIndex + 1) : Math.max(0, historyIndex - 1);
-    const nextState = history[nextIndex];
-    if (!nextState || nextIndex === historyIndex) return;
+  const restoreHistory = useCallback(async (direction: "undo" | "redo") => {
+    const current = presetRef.current;
+    if (!current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
+    const resourceId = current.id;
+    const generation = routeGenerationRef.current;
+    const nextIndex = direction === "redo"
+      ? Math.min(historyRef.current.length - 1, historyIndexRef.current + 1)
+      : Math.max(0, historyIndexRef.current - 1);
+    const nextState = historyRef.current[nextIndex];
+    if (!nextState || nextIndex === historyIndexRef.current) return;
+    const previousIndex = historyIndexRef.current;
+    const previousState = structuredClone(current.state);
+    pendingSoccerTextUpdateRef.current = null;
+    setPendingSoccerTextUpdate(null);
+    mutationBusyRef.current = true;
+    setMutationBusy(true);
+    historyIndexRef.current = nextIndex;
     setHistoryIndex(nextIndex);
-    setPreset({ ...preset, state: structuredClone(nextState) });
-    void presetApi.patch(preset.id, { state: nextState });
-  }, [history, historyIndex, preset]);
+    replacePreset({ ...current, state: structuredClone(nextState) });
+    hasPendingPresetSaveRef.current = true;
+    let conflict = false;
+    try {
+      const response = await mutationQueueRef.current!.run(() => presetApi.patch(resourceId, {
+        state: nextState,
+        expectedRevision: serverRevisionByPresetRef.current[resourceId]
+      }));
+      if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+      const serverRevision = getPresetRevision(response.preset);
+      if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
+      replacePreset(response.preset);
+    } catch (err) {
+      if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+      historyIndexRef.current = previousIndex;
+      setHistoryIndex(previousIndex);
+      const latest = presetRef.current;
+      if (latest) replacePreset({ ...latest, state: previousState });
+      if (err instanceof ApiError && err.status === 409) {
+        conflict = true;
+        setRevisionConflict(true);
+        setError("This game changed in another tab. Reload the latest version before continuing.");
+      } else {
+        setError(err instanceof Error ? err.message : "Could not restore game history");
+      }
+    } finally {
+      if (routeGenerationRef.current === generation && presetRef.current?.id === resourceId) {
+        hasPendingPresetSaveRef.current = false;
+        if (!conflict) {
+          mutationBusyRef.current = false;
+          setMutationBusy(false);
+        }
+      }
+    }
+  }, [replacePreset, requireSavedState, revisionConflict]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!(event.metaKey || event.ctrlKey)) return;
-      if (event.key.toLowerCase() !== "z" || !preset) return;
+      if (event.key.toLowerCase() !== "z" || !presetRef.current) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
       event.preventDefault();
-      restoreHistory(event.shiftKey ? "redo" : "undo");
+      void restoreHistory(event.shiftKey ? "redo" : "undo");
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [preset, restoreHistory]);
+  }, [restoreHistory]);
+
+  useEffect(() => {
+    if (!draggedSoccerTab) return;
+    const clearDrag = () => {
+      draggedSoccerTabRef.current = null;
+      setDraggedSoccerTab(null);
+    };
+    window.addEventListener("pointerup", clearDrag);
+    window.addEventListener("mouseup", clearDrag);
+    window.addEventListener("dragend", clearDrag);
+    window.addEventListener("blur", clearDrag);
+    return () => {
+      window.removeEventListener("pointerup", clearDrag);
+      window.removeEventListener("mouseup", clearDrag);
+      window.removeEventListener("dragend", clearDrag);
+      window.removeEventListener("blur", clearDrag);
+    };
+  }, [draggedSoccerTab]);
 
   async function runAction(action: string, payload: Record<string, unknown> = {}) {
-    if (!preset) return;
-    const response = await presetApi.action(preset.id, action, payload);
-    setPreset(response.preset);
-    setHistory((current) => {
-      const trimmed = current.slice(0, historyIndex + 1);
-      return [...trimmed, structuredClone(response.preset.state)].slice(-60);
-    });
-    setHistoryIndex((index) => Math.min(index + 1, 59));
+    if (!presetRef.current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
+    if (pendingSoccerTextUpdateRef.current) applyPendingSoccerTextUpdate();
+    const current = presetRef.current;
+    if (!current) return;
+    const resourceId = current.id;
+    const generation = routeGenerationRef.current;
+    mutationBusyRef.current = true;
+    setMutationBusy(true);
+    hasPendingPresetSaveRef.current = true;
+    setError(null);
+    let conflict = false;
+    try {
+      const response = await mutationQueueRef.current!.run(() => presetApi.action(
+        resourceId,
+        action,
+        payload,
+        serverRevisionByPresetRef.current[resourceId]
+      ));
+      if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+      const serverRevision = getPresetRevision(response.preset);
+      if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
+      replacePreset(response.preset);
+      appendHistory(response.preset.state);
+    } catch (err) {
+      if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+      if (err instanceof ApiError && err.status === 409) {
+        conflict = true;
+        setRevisionConflict(true);
+        setError("This game changed in another tab. Reload the latest version before continuing.");
+      } else {
+        setError(err instanceof Error ? err.message : "Game action failed");
+      }
+    } finally {
+      if (routeGenerationRef.current === generation && presetRef.current?.id === resourceId) {
+        hasPendingPresetSaveRef.current = false;
+        if (!conflict) {
+          mutationBusyRef.current = false;
+          setMutationBusy(false);
+        }
+      }
+    }
   }
 
-  if (!preset) return <div className="live-game-page">Loading game...</div>;
+  if (presetDeleted) {
+    return (
+      <div className="live-game-page">
+        <div className="error" role="alert">
+          <h1>Game deleted</h1>
+          <p>This game was deleted in another session. Its editor and output have been closed.</p>
+          <Link className="button" to="/dash">Return to games</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!preset) {
+    return (
+      <div className="live-game-page">
+        {error ? (
+          <div className="error" role="alert">
+            <p>Could not load game: {error}</p>
+            <button className="button" type="button" onClick={() => setReloadKey((value) => value + 1)}>Retry</button>
+          </div>
+        ) : "Loading game..."}
+      </div>
+    );
+  }
   const overlayUrl = `${window.location.origin}/overlay/${preset.publicId}`;
   const soccerState = preset.type === "soccer" && isSoccerState(preset.state) ? preset.state : null;
   const tabs = soccerState ? soccerTabOrder : ["slides", "style"];
@@ -1118,13 +2020,14 @@ function PresetEditor() {
     clearSoccerTabDrag();
   }
   const tabButtons = (
-    <div className="tabs">
+    <div className="tabs" role="group" aria-label="Editor sections">
       {tabs.map((item) => (
         <button
           key={item}
           className={`tab ${tab === item ? "active" : ""} ${draggedSoccerTab === item ? "dragging" : ""}`}
           data-soccer-tab={soccerState ? item : undefined}
           type="button"
+          aria-pressed={tab === item}
           draggable={Boolean(soccerState)}
           onClick={() => setTab(item)}
           onPointerDown={(event) => {
@@ -1183,12 +2086,17 @@ function PresetEditor() {
 
   function commitSoccerMatchState(nextState: SoccerState, changedFields: SoccerTextAnimationField[]) {
     const visibleFields = uniqueSoccerTextFields(changedFields.filter((field) => soccerTextFieldIsVisible(field, soccerState?.soccerPackage.activeOverlay ?? null, soccerState)));
-    if (visibleFields.length > 0 || pendingSoccerTextUpdate) {
+    if (visibleFields.length > 0 || pendingSoccerTextUpdateRef.current) {
       commitState(nextState, false);
       setPendingSoccerTextUpdate((current) => ({
         state: nextState,
         fields: uniqueSoccerTextFields([...(current?.fields ?? []), ...visibleFields])
       }));
+      const current = pendingSoccerTextUpdateRef.current;
+      pendingSoccerTextUpdateRef.current = {
+        state: nextState,
+        fields: uniqueSoccerTextFields([...(current?.fields ?? []), ...visibleFields])
+      };
       return;
     }
     commitState(nextState);
@@ -1200,17 +2108,19 @@ function PresetEditor() {
   }
 
   function applyPendingSoccerTextUpdate() {
-    if (!pendingSoccerTextUpdate) return;
+    const pendingUpdate = pendingSoccerTextUpdateRef.current;
+    if (!pendingUpdate) return;
     const nextState: SoccerState = {
-      ...pendingSoccerTextUpdate.state,
+      ...pendingUpdate.state,
       soccerPackage: {
-        ...pendingSoccerTextUpdate.state.soccerPackage,
+        ...pendingUpdate.state.soccerPackage,
         textAnimation: {
           id: Date.now(),
-          fields: pendingSoccerTextUpdate.fields
+          fields: pendingUpdate.fields
         }
       }
     };
+    pendingSoccerTextUpdateRef.current = null;
     setPendingSoccerTextUpdate(null);
     commitState(nextState);
   }
@@ -1222,6 +2132,100 @@ function PresetEditor() {
     } catch {
       setError("Could not copy output URL.");
     }
+  }
+
+  async function duplicatePreset() {
+    const current = presetRef.current;
+    if (!current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
+    const generation = routeGenerationRef.current;
+    if (pendingSoccerTextUpdateRef.current) applyPendingSoccerTextUpdate();
+    mutationBusyRef.current = true;
+    setMutationBusy(true);
+    setError(null);
+    try {
+      const response = await mutationQueueRef.current!.run(() => presetApi.duplicate(current.id));
+      if (routeGenerationRef.current !== generation || presetRef.current?.id !== current.id) return;
+      allowNextNavigationRef.current = true;
+      navigate(`/dash/presets/${response.preset.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not duplicate game");
+    } finally {
+      mutationBusyRef.current = false;
+      setMutationBusy(false);
+    }
+  }
+
+  async function sharePreset() {
+    const current = presetRef.current;
+    if (!current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
+    const email = (await prompt({
+      title: "Share game",
+      label: "Recipient account email",
+      placeholder: "operator@example.com",
+      inputType: "email",
+      submitLabel: "Share copy"
+    }))?.trim();
+    if (!email) return;
+    if (!requireSavedState()) return;
+    if (pendingSoccerTextUpdateRef.current) applyPendingSoccerTextUpdate();
+    mutationBusyRef.current = true;
+    setMutationBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await mutationQueueRef.current!.run(() => presetApi.share(current.id, email));
+      setNotice(`A copy was shared with ${email}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not share game");
+    } finally {
+      mutationBusyRef.current = false;
+      setMutationBusy(false);
+    }
+  }
+
+  async function rotateActionKey() {
+    const current = presetRef.current;
+    if (!current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
+    if (!window.confirm("Rotate the action key? Existing Stream Deck and automation keys will stop working immediately.")) return;
+    if (pendingSoccerTextUpdateRef.current) applyPendingSoccerTextUpdate();
+    mutationBusyRef.current = true;
+    setMutationBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await mutationQueueRef.current!.run(() => presetApi.actionKey(current.id));
+      if (response.preset) {
+        const revision = getPresetRevision(response.preset);
+        if (revision !== undefined) serverRevisionByPresetRef.current[current.id] = revision;
+        replacePreset(response.preset);
+      }
+      setActionKey(response.actionKey);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rotate action key");
+    } finally {
+      mutationBusyRef.current = false;
+      setMutationBusy(false);
+    }
+  }
+
+  async function loadDebugEvents() {
+    const current = presetRef.current;
+    if (!current) return;
+    setError(null);
+    try {
+      const response = await mutationQueueRef.current!.run(() => presetApi.events(current.id));
+      if (presetRef.current?.id === current.id) setDebugEvents(response.events);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load event log");
+    }
+  }
+
+  function retryCurrentSave() {
+    const current = presetRef.current;
+    if (!current || revisionConflict) return;
+    setError(null);
+    setAutosaveFailed(false);
+    commitState(structuredClone(current.state));
   }
 
   return (
@@ -1237,13 +2241,41 @@ function PresetEditor() {
         <div className="status-row">
           <span className={`status-pill ${connection === "connected" ? "ok" : "warn"}`}>{connection}</span>
           <span className="status-pill ok">{preset.overlayClientCount || 0} overlay clients</span>
+          <button className="button" type="button" disabled={mutationBusy || autosaveFailed || historyIndex <= 0} onClick={() => void restoreHistory("undo")}>Undo</button>
+          <button className="button" type="button" disabled={mutationBusy || autosaveFailed || historyIndex >= history.length - 1} onClick={() => void restoreHistory("redo")}>Redo</button>
         </div>
       </div>
 
-      {showConnectionWarning ? <div className="error">Backend or overlay WebSocket is disconnected. The overlay will keep showing its last known state.</div> : null}
-      {error ? <div className="error">{error}</div> : null}
+      <div className="control-row editor-tools" aria-label="Game tools">
+        <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Test output</a>
+        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void duplicatePreset()}><Copy size={15} /> Duplicate</button>
+        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void sharePreset()}><Share2 size={15} /> Share</button>
+        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void rotateActionKey()}><KeyRound size={15} /> Rotate action key</button>
+        <button className="button" type="button" onClick={() => debugEvents ? setDebugEvents(null) : void loadDebugEvents()}><Bug size={15} /> {debugEvents ? "Hide events" : "Event log"}</button>
+        <button className="button danger" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void runAction("clear")}><ShieldAlert size={15} /> Panic clear</button>
+      </div>
 
-      <div className={`editor-layout ${isSoccerEditor ? "live-editor-layout" : ""}`}>
+      {showConnectionWarning ? <div className="error" role="alert">Backend or overlay WebSocket is disconnected. The overlay will keep showing its last known state.</div> : null}
+      {preset.stateRecovered ? <div className="error" role="alert">Stored state was corrupt and a safe default was loaded. Review this game before going live, then save to replace the damaged state.</div> : null}
+      {notice ? <div className="notice" role="status">{notice}</div> : null}
+      {error ? (
+        <div className="error" role="alert">
+          <span>{error}</span>
+          {revisionConflict ? <button className="button" type="button" onClick={() => setReloadKey((value) => value + 1)}>Reload latest</button> : null}
+          {autosaveFailed && !revisionConflict ? <button className="button" type="button" onClick={retryCurrentSave}>Retry save</button> : null}
+        </div>
+      ) : null}
+      {actionKey ? (
+        <div className="notice action-key-notice" role="status">
+          <span><strong>New action key:</strong> <code>{actionKey}</code>. Copy it now; it will not be shown again.</span>
+          <button className="button" type="button" onClick={() => void navigator.clipboard.writeText(actionKey).then(() => setNotice("Action key copied.")).catch(() => setError("Could not copy action key."))}><Copy size={14} /> Copy key</button>
+          <button className="button" type="button" onClick={() => setActionKey(null)}>Dismiss</button>
+        </div>
+      ) : null}
+      {debugEvents ? <PresetEventLog events={debugEvents} onRefresh={() => void loadDebugEvents()} /> : null}
+      <span className="visually-hidden" role="status">{mutationBusy ? "Saving game" : "Game controls ready"}</span>
+
+      <div className={`editor-layout ${isSoccerEditor ? "live-editor-layout" : ""}`} inert={mutationBusy} aria-busy={mutationBusy}>
         {soccerState ? (
           <>
             <SoccerLabOverlayControls state={soccerState} updatePackage={updateSoccerPackage} runAction={runAction} />
@@ -1252,7 +2284,9 @@ function PresetEditor() {
               {pendingSoccerTextUpdate ? <SoccerPreviewUpdatePrompt onApply={applyPendingSoccerTextUpdate} /> : null}
             </section>
             <SoccerBottomControlPanel
+              key={preset.id}
               state={soccerState}
+              media={media}
               teams={teams}
               activeTab={tab}
               tabButtons={tabButtons}
@@ -1275,11 +2309,11 @@ function PresetEditor() {
           </section>
           <aside className="inspector">
             {tabButtons}
-            {soccerState ? (
-              <SoccerControls state={soccerState} media={media} teams={teams} tab={tab} commitState={commitState} />
-            ) : null}
             {preset.type === "church" && isChurchState(preset.state) ? (
-              <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} />
+              <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} runAction={runAction} />
+            ) : null}
+            {preset.type === "custom" ? (
+              <div className="notice" role="status">Custom presets are read-only in this release. Existing output data is preserved.</div>
             ) : null}
             {selectedElement ? <ElementInspector state={preset.state} element={selectedElement} commitState={commitState} /> : null}
           </aside>
@@ -1301,6 +2335,43 @@ function OutputPreviewFrame({ src, title, surface }: { src: string; title: strin
       />
     </div>
   );
+}
+
+function PresetEventLog({ events, onRefresh }: { events: PresetEvent[]; onRefresh: () => void }) {
+  return (
+    <section className="panel event-log-panel" aria-label="Preset event log">
+      <div className="panel-heading">
+        <div>
+          <h2>Event log</h2>
+          <p className="muted">Latest {events.length} persisted game events.</p>
+        </div>
+        <button className="button" type="button" onClick={onRefresh}>Refresh</button>
+      </div>
+      {events.length ? (
+        <ol className="event-log-list">
+          {events.map((event) => (
+            <li key={event.id}>
+              <span><strong>{event.type}</strong><time dateTime={event.created_at}>{formatEventTime(event.created_at)}</time></span>
+              <code>{formatEventPayload(event.payload_json)}</code>
+            </li>
+          ))}
+        </ol>
+      ) : <p className="muted">No events have been recorded for this game.</p>}
+    </section>
+  );
+}
+
+function formatEventPayload(payload: string): string {
+  try {
+    return JSON.stringify(JSON.parse(payload) as unknown);
+  } catch {
+    return payload;
+  }
+}
+
+function formatEventTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 function previewOverlaySrc(src: string): string {
@@ -1443,6 +2514,7 @@ function SoccerControls({
 
 function SoccerBottomControlPanel({
   state,
+  media,
   teams,
   activeTab,
   tabButtons,
@@ -1456,6 +2528,7 @@ function SoccerBottomControlPanel({
   runAction
 }: {
   state: SoccerState;
+  media: MediaItem[];
   teams: TeamLibraryEntry[];
   activeTab: string;
   tabButtons: React.ReactNode;
@@ -1480,11 +2553,15 @@ function SoccerBottomControlPanel({
         </div>
       ) : null}
       {activeTab === "setup" ? (
-        <SoccerPackageSetupPanel state={state} updatePackage={updatePackage} previewSurface={previewSurface} setPreviewSurface={setPreviewSurface} />
+        <div className="setup-control-stack">
+          <SoccerControls state={state} media={media} teams={teams} tab="setup" commitState={commitState} />
+          <SoccerPackageSetupPanel state={state} updatePackage={updatePackage} previewSurface={previewSurface} setPreviewSurface={setPreviewSurface} />
+        </div>
       ) : null}
       {activeTab === "live" ? (
         <div className="live-control-stack">
           <SoccerScoreClockPanel state={state} updateClock={updateClock} runAction={runAction} />
+          <SoccerOperationsPanel state={state} commitState={commitState} runAction={runAction} />
           <SoccerCountdownPanel state={state} updatePackage={updatePackage} runAction={runAction} />
         </div>
       ) : null}
@@ -1675,6 +2752,54 @@ function SoccerTextBugPanel({ state, updatePackage }: { state: SoccerState; upda
   );
 }
 
+export function SyncedTimeInput({
+  seconds,
+  disabled = false,
+  onCommit
+}: {
+  seconds: number;
+  disabled?: boolean;
+  onCommit: (seconds: number) => void;
+}) {
+  const formatted = formatClock(seconds);
+  const [draft, setDraft] = useState(formatted);
+  const [invalid, setInvalid] = useState(false);
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      setDraft(formatted);
+      setInvalid(false);
+    }
+  }, [formatted]);
+
+  return (
+    <input
+      value={draft}
+      disabled={disabled}
+      inputMode="numeric"
+      aria-invalid={invalid || undefined}
+      title={invalid ? "Enter seconds or a time in M:SS format" : undefined}
+      onFocus={() => { focusedRef.current = true; }}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        setInvalid(false);
+      }}
+      onBlur={() => {
+        focusedRef.current = false;
+        const parsed = tryParseClockTime(draft);
+        if (parsed === null) {
+          setInvalid(true);
+          return;
+        }
+        setInvalid(false);
+        setDraft(formatClock(parsed));
+        onCommit(parsed);
+      }}
+    />
+  );
+}
+
 function SoccerCountdownPanel({
   state,
   updatePackage,
@@ -1723,8 +2848,7 @@ function SoccerCountdownPanel({
         <div className="two-col">
           <label className="field">
             <span>Custom length</span>
-            <input defaultValue={formatClock(state.soccerPackage.countdown.resetSeconds)} onBlur={(event) => {
-              const seconds = parseClockTime(event.target.value);
+            <SyncedTimeInput seconds={state.soccerPackage.countdown.resetSeconds} onCommit={(seconds) => {
               updateCountdown({ seconds, resetSeconds: seconds, running: false, startedAtMs: null });
             }} />
           </label>
@@ -1760,8 +2884,6 @@ function SoccerScoreClockPanel({
   updateClock: (patch: Partial<SoccerState["clock"]>) => void;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
-  const clockValue = formatClock(computeClockSeconds(state.clock));
-
   return (
     <div className="score-clock-panel">
       <section className="score-clock-section">
@@ -1788,7 +2910,7 @@ function SoccerScoreClockPanel({
         <div className="form-grid">
           <label className="field">
             <span>Manual time</span>
-            <input defaultValue={clockValue} onBlur={(event) => updateClock(setClockSeconds(state.clock, parseClockTime(event.target.value)))} />
+            <SyncedTimeInput seconds={computeClockSeconds(state.clock)} onCommit={(seconds) => updateClock(setClockSeconds(state.clock, seconds))} />
           </label>
           <div className="two-col">
             <label className="field">
@@ -1811,7 +2933,7 @@ function SoccerScoreClockPanel({
               </label>
               <label className="field">
                 <span>Stop at</span>
-                <input defaultValue={formatClock(state.clock.stopAtSeconds)} disabled={!state.clock.stopAtEnabled} onBlur={(event) => updateClock({ stopAtSeconds: parseClockTime(event.target.value) })} />
+                <SyncedTimeInput seconds={state.clock.stopAtSeconds} disabled={!state.clock.stopAtEnabled} onCommit={(seconds) => updateClock({ stopAtSeconds: seconds })} />
               </label>
             </div>
           </div>
@@ -1844,6 +2966,113 @@ function ScoreControls({ label, score, plus, minus }: { label: string; score: nu
         <button className="button primary" type="button" onClick={plus} aria-label={`Add point to ${label}`}><Plus size={16} /> 1</button>
         <button className="button" type="button" onClick={minus} aria-label={`Subtract point from ${label}`}>−1</button>
       </div>
+    </div>
+  );
+}
+
+type SoccerStatKey = keyof SoccerState["stats"];
+
+function SoccerOperationsPanel({
+  state,
+  commitState,
+  runAction
+}: {
+  state: SoccerState;
+  commitState: (state: PresetState) => void;
+  runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
+}) {
+  const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
+  const [team, setTeam] = useState<"home" | "away">("home");
+
+  function updateStat(stat: SoccerStatKey, side: "home" | "away", delta: number) {
+    commitState({
+      ...state,
+      stats: {
+        ...state.stats,
+        [stat]: {
+          ...state.stats[stat],
+          [side]: Math.max(0, state.stats[stat][side] + delta)
+        }
+      }
+    });
+  }
+
+  function toggleStatBug() {
+    commitState({
+      ...state,
+      elements: {
+        ...state.elements,
+        statBug: { ...state.elements.statBug, visible: !state.elements.statBug.visible }
+      }
+    });
+  }
+
+  function trigger(action: string, overrides: Record<string, unknown> = {}) {
+    void runAction(action, {
+      team,
+      ...(title.trim() ? { title: title.trim() } : {}),
+      ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}),
+      ...overrides
+    });
+  }
+
+  return (
+    <section className="control-section soccer-operations-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Stats & temporary graphics</h2>
+          <p className="muted">A second trigger of the same graphic takes it off air.</p>
+        </div>
+        <button className="button" type="button" aria-pressed={state.elements.statBug.visible} onClick={toggleStatBug}>
+          {state.elements.statBug.visible ? "Hide stats" : "Show stats"}
+        </button>
+      </div>
+      <div className="soccer-stat-editor" aria-label="Match statistics">
+        {(["shots", "fouls", "cards"] as SoccerStatKey[]).map((stat) => (
+          <div className="soccer-stat-row" key={stat}>
+            <strong>{stat[0].toUpperCase() + stat.slice(1)}</strong>
+            <StatStepper label={`${state.home.abbreviation} ${stat}`} value={state.stats[stat].home} decrement={() => updateStat(stat, "home", -1)} increment={() => updateStat(stat, "home", 1)} />
+            <StatStepper label={`${state.away.abbreviation} ${stat}`} value={state.stats[stat].away} decrement={() => updateStat(stat, "away", -1)} increment={() => updateStat(stat, "away", 1)} />
+          </div>
+        ))}
+      </div>
+      <div className="form-grid temporary-graphic-fields">
+        <div className="two-col">
+          <label className="field"><span>Graphic title (optional)</span><input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} /></label>
+          <label className="field"><span>Subtitle / player (optional)</span><input value={subtitle} maxLength={500} onChange={(event) => setSubtitle(event.target.value)} /></label>
+        </div>
+        <label className="field">
+          <span>Team</span>
+          <select value={team} onChange={(event) => setTeam(event.target.value as "home" | "away")}>
+            <option value="home">{state.home.shortName || "Home"}</option>
+            <option value="away">{state.away.shortName || "Away"}</option>
+          </select>
+        </label>
+        <div className="control-row temporary-graphic-actions">
+          <button className="button primary" type="button" onClick={() => trigger("trigger-goal")}>Goal</button>
+          <button className="button" type="button" onClick={() => trigger("trigger-yellow-card")}>Yellow card</button>
+          <button className="button" type="button" onClick={() => trigger("trigger-red-card")}>Red card</button>
+          <button className="button" type="button" onClick={() => trigger("trigger-substitution")}>Substitution</button>
+          <button className="button" type="button" onClick={() => trigger("trigger-lineups")}>Lineup</button>
+          <button className="button" type="button" onClick={() => trigger("trigger-sponsor")}>Sponsor</button>
+          <button className="button" type="button" onClick={() => trigger("trigger-lower-third")}>Lower third</button>
+          <button className="button" type="button" onClick={() => trigger("trigger-halftime")}>Halftime</button>
+          <button className="button" type="button" onClick={() => trigger("trigger-full-time")}>Full time</button>
+          <button className="button danger" type="button" onClick={() => void runAction("clear")}>Clear graphics</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StatStepper({ label, value, decrement, increment }: { label: string; value: number; decrement: () => void; increment: () => void }) {
+  return (
+    <div className="stat-stepper">
+      <span>{label}</span>
+      <button className="button" type="button" aria-label={`Subtract one from ${label}`} disabled={value <= 0} onClick={decrement}>−</button>
+      <strong>{value}</strong>
+      <button className="button" type="button" aria-label={`Add one to ${label}`} onClick={increment}>+</button>
     </div>
   );
 }
@@ -1925,27 +3154,22 @@ function SoccerLabOverlayControls({
         {labOverlayOrder.map((overlay) => (
           <div
             key={overlay}
-            role="button"
-            tabIndex={0}
             className={`overlay-control-card ${selected === overlay ? "selected" : ""} ${state.soccerPackage.activeOverlay === overlay ? "active" : ""}`}
-            onClick={() => updatePackage({ selectedOverlay: overlay })}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                updatePackage({ selectedOverlay: overlay });
-              }
-            }}
           >
-            <strong>{labOverlayLabels[overlay]}</strong>
+            <button
+              className="overlay-card-select"
+              type="button"
+              aria-pressed={selected === overlay}
+              onClick={() => updatePackage({ selectedOverlay: overlay })}
+            >
+              <strong>{labOverlayLabels[overlay]}</strong>
+            </button>
             <button
               className={`overlay-card-action ${state.soccerPackage.activeOverlay === overlay ? "is-active" : ""}`}
               type="button"
               aria-label={state.soccerPackage.activeOverlay === overlay ? `Stop ${labOverlayLabels[overlay]}` : `Play ${labOverlayLabels[overlay]}`}
               title={state.soccerPackage.activeOverlay === overlay ? "Stop overlay" : "Play overlay"}
-              onClick={(event) => {
-                event.stopPropagation();
-                takeOverlay(overlay);
-              }}
+              onClick={() => takeOverlay(overlay)}
             >
               {state.soccerPackage.activeOverlay === overlay ? <Square size={12} fill="currentColor" strokeWidth={0} /> : <Play size={12} fill="currentColor" strokeWidth={0} />}
             </button>
@@ -2019,7 +3243,7 @@ function TeamAssignmentCard({
   );
 }
 
-function TeamFields({
+export function TeamFields({
   team,
   media,
   onChange
@@ -2033,9 +3257,27 @@ function TeamFields({
   const [logoError, setLogoError] = useState<string | null>(null);
   const latestTeamRef = useRef(team);
   const colorsEditedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const uploadGenerationRef = useRef(0);
+  const uploadAbortRef = useRef<AbortController | null>(null);
   const teamIdentity = (team as Partial<TeamLibraryEntry>).id ?? null;
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      uploadGenerationRef.current += 1;
+      uploadAbortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (latestTeamRef.current !== team && uploadAbortRef.current) {
+      uploadAbortRef.current.abort();
+      uploadAbortRef.current = null;
+      uploadGenerationRef.current += 1;
+      setUploadingLogo(false);
+    }
     latestTeamRef.current = team;
   }, [team]);
 
@@ -2046,31 +3288,41 @@ function TeamFields({
   async function uploadLogo(files: FileList | File[]) {
     const file = Array.from(files)[0];
     if (!file) return;
+    const uploadGeneration = uploadGenerationRef.current + 1;
+    uploadGenerationRef.current = uploadGeneration;
+    const uploadTeam = latestTeamRef.current;
+    uploadAbortRef.current?.abort();
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
     setUploadingLogo(true);
     setLogoError(null);
     try {
-      const shouldExtractColors = !colorsEditedRef.current && shouldAutofillTeamColors(latestTeamRef.current);
+      const shouldExtractColors = !colorsEditedRef.current && shouldAutofillTeamColors(uploadTeam);
       const [response, extractedColors] = await Promise.all([
-        mediaApi.upload(file),
+        mediaApi.upload(file, controller.signal),
         shouldExtractColors ? extractLogoColors(file).catch(() => null) : Promise.resolve(null)
       ]);
       const patch: Partial<SoccerState["home"]> = { logoMediaId: response.media.id, logoUrl: response.media.url };
-      if (extractedColors && !colorsEditedRef.current && shouldAutofillTeamColors(latestTeamRef.current)) {
+      if (!mountedRef.current || uploadGenerationRef.current !== uploadGeneration || latestTeamRef.current !== uploadTeam) return;
+      if (extractedColors && !colorsEditedRef.current && shouldAutofillTeamColors(uploadTeam)) {
         patch.primaryColor = extractedColors.primaryColor;
         patch.secondaryColor = extractedColors.secondaryColor;
       }
       onChange(patch);
     } catch (err) {
-      setLogoError(err instanceof Error ? err.message : "Logo upload failed");
+      if (mountedRef.current && uploadGenerationRef.current === uploadGeneration && !controller.signal.aborted) {
+        setLogoError(err instanceof Error ? err.message : "Logo upload failed");
+      }
     } finally {
-      setUploadingLogo(false);
+      if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
+      if (mountedRef.current && uploadGenerationRef.current === uploadGeneration) setUploadingLogo(false);
     }
   }
 
   return (
     <div className="form-grid">
       <div className="two-col">
-        <label className="field"><span>Team name</span><input value={titleCaseFirst(team.fullName)} onChange={(e) => onChange({ fullName: titleCaseFirst(e.target.value) })} /></label>
+        <label className="field"><span>Team name</span><input value={team.fullName} onChange={(e) => onChange({ fullName: e.target.value })} /></label>
         <label className="field"><span>Abbreviation</span><input value={team.abbreviation} onChange={(e) => onChange({ abbreviation: e.target.value.toUpperCase().slice(0, 5), shortName: e.target.value.toUpperCase().slice(0, 5) })} /></label>
       </div>
       <div className="record-color-row">
@@ -2103,12 +3355,18 @@ function TeamFields({
           <input
             type="file"
             accept="image/png,image/jpeg,image/svg+xml,image/webp"
-            hidden
-            onChange={(event) => event.target.files && void uploadLogo(event.target.files)}
+            className="visually-hidden-file-input"
+            aria-label="Upload team logo"
+            onChange={(event) => {
+              const files = event.currentTarget.files ? Array.from(event.currentTarget.files) : [];
+              event.currentTarget.value = "";
+              if (files.length > 0) void uploadLogo(files);
+            }}
           />
         </label>
-        {logoError ? <p className="field-error">{logoError}</p> : null}
+        {logoError ? <p className="field-error" role="alert">{logoError}</p> : null}
         <select
+          aria-label="Choose existing logo from media library"
           value={team.logoMediaId || ""}
           onChange={(event) => {
             const selected = media.find((item) => item.id === event.target.value);
@@ -2203,18 +3461,23 @@ function StylePanel({ state, commitState }: { state: SoccerState | ChurchState; 
   );
 }
 
-function ChurchControls({
+export function ChurchControls({
   state,
   media,
   tab,
-  commitState
+  commitState,
+  runAction
 }: {
   state: ChurchState;
   media: MediaItem[];
   tab: string;
   commitState: (state: PresetState) => void;
+  runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
   const selected = state.slides.find((slide) => slide.id === state.selectedSlideId) || state.slides[0];
+  const [countdownSeconds, setCountdownSeconds] = useState(5 * 60);
+  const lowerThirdActive = state.activeGraphics.some((graphic) => graphic.kind === "church-lower-third" || graphic.kind === "lower-third");
+  const countdownActive = state.activeGraphics.some((graphic) => graphic.kind === "countdown");
 
   function updateSlide(slide: ChurchSlide) {
     commitState({ ...state, slides: state.slides.map((item) => (item.id === slide.id ? slide : item)), selectedSlideId: slide.id });
@@ -2222,7 +3485,7 @@ function ChurchControls({
 
   function addSlide(type: "text" | "image") {
     const slide: ChurchSlide = {
-      id: `slide_${Date.now()}`,
+      id: makeId("slide"),
       title: type === "text" ? "Text slide" : "Image slide",
       type,
       text: type === "text" ? "New slide" : "",
@@ -2234,44 +3497,93 @@ function ChurchControls({
     commitState({ ...state, slides: [...state.slides, slide], selectedSlideId: slide.id });
   }
 
+  function setElementVisible(element: keyof ChurchState["elements"], visible: boolean) {
+    commitState({
+      ...state,
+      elements: {
+        ...state.elements,
+        [element]: { ...state.elements[element], visible }
+      }
+    });
+  }
+
   if (tab === "style") return <StylePanel state={state} commitState={commitState} />;
 
   return (
-    <div className="panel">
-      <h2>Slides</h2>
-      <div className="control-row">
-        <button className="button" onClick={() => addSlide("text")}><Plus size={17} /> Text</button>
-        <button className="button" onClick={() => addSlide("image")}><Image size={17} /> Image</button>
+    <>
+      <div className="panel">
+        <h2>Output</h2>
+        <div className="form-grid">
+          <label className="control-row">
+            <input type="checkbox" checked={state.elements.fullscreenSlide.visible} onChange={(event) => setElementVisible("fullscreenSlide", event.target.checked)} />
+            <span>Show full-screen slide</span>
+          </label>
+          <label className="control-row">
+            <input type="checkbox" checked={state.elements.lowerThird.visible} onChange={(event) => setElementVisible("lowerThird", event.target.checked)} />
+            <span>Enable lower third</span>
+          </label>
+          <button
+            className="button"
+            type="button"
+            disabled={!selected || !state.elements.lowerThird.visible}
+            onClick={() => void runAction("trigger-lower-third", { title: selected?.title, subtitle: selected?.text })}
+          >
+            {lowerThirdActive ? "Hide lower third" : "Show selected lower third"}
+          </button>
+          <label className="control-row">
+            <input type="checkbox" checked={state.elements.countdown.visible} onChange={(event) => setElementVisible("countdown", event.target.checked)} />
+            <span>Enable countdown</span>
+          </label>
+          <label className="field">
+            <span>Countdown length</span>
+            <SyncedTimeInput seconds={countdownSeconds} onCommit={(seconds) => setCountdownSeconds(Math.min(3_600, Math.max(1, seconds)))} />
+          </label>
+          <button
+            className="button"
+            type="button"
+            disabled={!state.elements.countdown.visible}
+            onClick={() => void runAction("trigger-countdown", { title: "Service begins in", durationSeconds: countdownSeconds })}
+          >
+            {countdownActive ? "Stop countdown" : "Start countdown"}
+          </button>
+        </div>
       </div>
-      <div className="form-grid">
-        <label className="field">
-          <span>Selected slide</span>
-          <select value={selected?.id || ""} onChange={(e) => commitState({ ...state, selectedSlideId: e.target.value })}>
-            {state.slides.map((slide) => <option key={slide.id} value={slide.id}>{slide.title}</option>)}
-          </select>
-        </label>
-        {selected ? (
-          <>
-            <label className="field"><span>Title</span><input value={selected.title} onChange={(e) => updateSlide({ ...selected, title: e.target.value })} /></label>
-            <label className="field"><span>Text</span><textarea value={selected.text} onChange={(e) => updateSlide({ ...selected, text: e.target.value })} /></label>
-            <label className="field">
-              <span>Image/background</span>
-              <select value={selected.mediaId || ""} onChange={(e) => {
-                const item = media.find((candidate) => candidate.id === e.target.value);
-                updateSlide({ ...selected, mediaId: item?.id, mediaUrl: item?.url, type: item ? "image" : selected.type });
-              }}>
-                <option value="">None</option>
-                {media.map((item) => <option key={item.id} value={item.id}>{item.originalFilename}</option>)}
-              </select>
-            </label>
-            <div className="two-col">
-              <label className="field"><span>Background</span><input type="color" value={selected.backgroundColor} onChange={(e) => updateSlide({ ...selected, backgroundColor: e.target.value })} /></label>
-              <label className="field"><span>Text color</span><input type="color" value={selected.textColor} onChange={(e) => updateSlide({ ...selected, textColor: e.target.value })} /></label>
-            </div>
-          </>
-        ) : null}
+      <div className="panel">
+        <h2>Slides</h2>
+        <div className="control-row">
+          <button className="button" type="button" onClick={() => addSlide("text")}><Plus size={17} /> Text</button>
+          <button className="button" type="button" onClick={() => addSlide("image")}><Image size={17} /> Image</button>
+        </div>
+        <div className="form-grid">
+          <label className="field">
+            <span>Selected slide</span>
+            <select value={selected?.id || ""} onChange={(e) => commitState({ ...state, selectedSlideId: e.target.value })}>
+              {state.slides.map((slide) => <option key={slide.id} value={slide.id}>{slide.title}</option>)}
+            </select>
+          </label>
+          {selected ? (
+            <>
+              <label className="field"><span>Title</span><input value={selected.title} onChange={(e) => updateSlide({ ...selected, title: e.target.value })} /></label>
+              <label className="field"><span>Text</span><textarea value={selected.text} onChange={(e) => updateSlide({ ...selected, text: e.target.value })} /></label>
+              <label className="field">
+                <span>Image/background</span>
+                <select value={selected.mediaId || ""} onChange={(e) => {
+                  const item = media.find((candidate) => candidate.id === e.target.value);
+                  updateSlide({ ...selected, mediaId: item?.id, mediaUrl: item?.url, type: item ? "image" : selected.type });
+                }}>
+                  <option value="">None</option>
+                  {media.map((item) => <option key={item.id} value={item.id}>{item.originalFilename}</option>)}
+                </select>
+              </label>
+              <div className="two-col">
+                <label className="field"><span>Background</span><input type="color" value={selected.backgroundColor} onChange={(e) => updateSlide({ ...selected, backgroundColor: e.target.value })} /></label>
+                <label className="field"><span>Text color</span><input type="color" value={selected.textColor} onChange={(e) => updateSlide({ ...selected, textColor: e.target.value })} /></label>
+              </div>
+            </>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -2595,32 +3907,87 @@ function teamLibraryToSoccerTeam(team: TeamLibraryEntry): SoccerState["home"] {
   return soccerTeam;
 }
 
-function MediaLibrary() {
+export function MediaLibrary() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
+  const uploadingRef = useRef(false);
+  const mediaMutationsRef = useRef(new Set<string>());
+  const loadGenerationRef = useRef(0);
+  const componentAbortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
-    const response = await mediaApi.list();
-    setMedia(response.media);
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const generation = loadGenerationRef.current + 1;
+    loadGenerationRef.current = generation;
+    const response = await mediaApi.list(signal);
+    if (!signal?.aborted && loadGenerationRef.current === generation) setMedia(response.media);
   }, []);
 
   useEffect(() => {
-    void load().catch((err) => setError(err.message));
+    const controller = new AbortController();
+    componentAbortRef.current = controller;
+    void load(controller.signal).catch((err) => {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load media");
+    });
+    return () => {
+      controller.abort();
+      if (componentAbortRef.current === controller) componentAbortRef.current = null;
+    };
   }, [load]);
 
   async function uploadFiles(files: FileList | File[]) {
+    if (uploadingRef.current) return;
     setError(null);
+    const selectedFiles = Array.from(files);
+    if (selectedFiles.length === 0) return;
+    if (selectedFiles.length > 20) {
+      setError("Choose at most 20 files per upload batch.");
+      return;
+    }
+    const controller = componentAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    uploadingRef.current = true;
+    setUploading(true);
     try {
-      for (const file of Array.from(files)) await mediaApi.upload(file);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      const results: PromiseSettledResult<{ media: MediaItem }>[] = [];
+      for (let index = 0; index < selectedFiles.length; index += 2) {
+        results.push(...await Promise.allSettled(selectedFiles.slice(index, index + 2).map((file) => mediaApi.upload(file, controller.signal))));
+      }
+      if (controller.signal.aborted) return;
+      await load(controller.signal).catch((err) => setError(err instanceof Error ? err.message : "Could not refresh media"));
+      if (controller.signal.aborted) return;
+      const failures = results.filter((result) => result.status === "rejected");
+      if (failures.length > 0) setError(`${failures.length} of ${selectedFiles.length} uploads failed. Successful uploads were kept.`);
+    } finally {
+      uploadingRef.current = false;
+      if (!controller.signal.aborted) setUploading(false);
     }
   }
 
   async function remove(id: string) {
-    await mediaApi.remove(id);
-    await load();
+    if (mediaMutationsRef.current.has(id)) return;
+    if (!window.confirm("Delete this media item? Existing graphics that use it may lose their image.")) return;
+    const controller = componentAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    mediaMutationsRef.current.add(id);
+    setDeletingIds((current) => new Set(current).add(id));
+    setError(null);
+    try {
+      await mediaApi.remove(id, controller.signal);
+      await load(controller.signal);
+    } catch (err) {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not delete media");
+    } finally {
+      mediaMutationsRef.current.delete(id);
+      if (!controller.signal.aborted) {
+        setDeletingIds((current) => {
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+      }
+    }
   }
 
   return (
@@ -2630,28 +3997,42 @@ function MediaLibrary() {
           <h1>Media</h1>
         </div>
       </div>
-      {error ? <div className="error">{error}</div> : null}
+      {error ? <div className="error" role="alert">{error}</div> : null}
       <label
-        className="dropzone"
-        onDragOver={(event) => event.preventDefault()}
+        className={`dropzone ${uploading ? "disabled" : ""}`}
+        aria-disabled={uploading}
+        onDragOver={(event) => { if (!uploadingRef.current) event.preventDefault(); }}
         onDrop={(event) => {
           event.preventDefault();
+          if (uploadingRef.current) return;
           void uploadFiles(event.dataTransfer.files);
         }}
       >
         <Upload size={28} />
-        <strong>Drop images here</strong>
-        <span className="muted">PNG, JPG, SVG, or WebP</span>
-        <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" multiple hidden onChange={(event) => event.target.files && void uploadFiles(event.target.files)} />
+        <strong>{uploading ? "Uploading images..." : "Drop images here"}</strong>
+        <span className="muted">{uploading ? "Wait for this batch to finish" : "PNG, JPG, SVG, or WebP"}</span>
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+          multiple
+          disabled={uploading}
+          className="visually-hidden-file-input"
+          aria-label="Upload media files"
+          onChange={(event) => {
+            const files = event.currentTarget.files ? Array.from(event.currentTarget.files) : [];
+            event.currentTarget.value = "";
+            if (files.length > 0) void uploadFiles(files);
+          }}
+        />
       </label>
       <section className="media-grid" style={{ marginTop: 18 }}>
         {media.map((item) => (
           <article className="media-card" key={item.id}>
-            <div className="media-thumb"><img src={mediaApi.mediaUrl(item.url)} alt="" /></div>
+            <div className="media-thumb"><img src={mediaApi.mediaUrl(item.url)} alt={item.originalFilename} loading="lazy" decoding="async" /></div>
             <footer>
               <strong>{item.originalFilename}</strong>
               <span className="muted">{item.width || "?"} × {item.height || "?"}</span>
-              <button className="button danger" onClick={() => void remove(item.id)}><Trash2 size={16} /> Delete</button>
+              <button className="button danger" type="button" disabled={deletingIds.has(item.id)} onClick={() => void remove(item.id)}><Trash2 size={16} /> {deletingIds.has(item.id) ? "Deleting..." : "Delete"}</button>
             </footer>
           </article>
         ))}
@@ -2660,7 +4041,7 @@ function MediaLibrary() {
   );
 }
 
-function OverlayPage({ test }: { test: boolean }) {
+export function OverlayPage({ test }: { test: boolean }) {
   const { overlayId } = useParams();
   const [searchParams] = useSearchParams();
   const [overlay, setOverlay] = useState<PresetSummary | null>(null);
@@ -2679,17 +4060,64 @@ function OverlayPage({ test }: { test: boolean }) {
 
   useEffect(() => {
     if (!overlayId) return;
-    void overlayApi.get(overlayId).then((response) => setOverlay(response.overlay)).catch((err) => setError(err.message));
+    const requestedOverlayId = overlayId;
+    const controller = new AbortController();
+    let active = true;
+    let deleted = false;
+    let socketHasUpdated = false;
+    let latestRevision = -1;
+    setOverlay(null);
+    setError(null);
+    setConnection("connecting");
+
+    void overlayApi.get(requestedOverlayId, controller.signal).then((response) => {
+      if (!active || deleted || controller.signal.aborted || response.overlay.publicId !== requestedOverlayId) return;
+      const responseRevision = getPresetRevision(response.overlay) ?? -1;
+      if (socketHasUpdated && responseRevision < latestRevision) return;
+      if (socketHasUpdated && responseRevision === -1) return;
+      latestRevision = Math.max(latestRevision, responseRevision);
+      setOverlay(response.overlay);
+    }).catch((err) => {
+      if (!active || controller.signal.aborted) return;
+      setError(err instanceof Error ? err.message : "Could not load overlay");
+    });
     const socket = io(WS_URL, {
       transports: ["websocket", "polling"],
       auth: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
       query: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION }
     });
-    socket.on("connect", () => setConnection("connected"));
-    socket.on("disconnect", () => setConnection("disconnected"));
-    socket.on("connect_error", () => setConnection("disconnected"));
-    socket.on("state:update", (payload: PresetSummary) => setOverlay(payload));
+    function enterDeletedState() {
+      if (!active || deleted) return;
+      deleted = true;
+      controller.abort();
+      setOverlay(null);
+      setError("This overlay was deleted and is no longer available.");
+      setConnection("disconnected");
+      socket.disconnect();
+    }
+    socket.on("connect", () => { if (active) setConnection("connected"); });
+    socket.on("disconnect", () => { if (active) setConnection("disconnected"); });
+    socket.on("connect_error", () => { if (active) setConnection("disconnected"); });
+    socket.on("state:update", (payload: unknown) => {
+      if (!active || deleted || !isPreset(payload) || payload.publicId !== requestedOverlayId) return;
+      const incomingRevision = getPresetRevision(payload);
+      if (incomingRevision === undefined) return;
+      if (incomingRevision < latestRevision) return;
+      socketHasUpdated = true;
+      latestRevision = incomingRevision;
+      setOverlay(payload);
+    });
+    socket.on("preset:deleted", (payload: unknown) => {
+      if (!active || deleted || !isPresetDeletedEvent(payload) || payload.publicId !== requestedOverlayId) return;
+      enterDeletedState();
+    });
+    socket.on("error:message", (payload: unknown) => {
+      if (!active || deleted || !isRealtimeErrorMessage(payload)) return;
+      if (payload.error === "Overlay not found") enterDeletedState();
+    });
     return () => {
+      active = false;
+      controller.abort();
       socket.disconnect();
     };
   }, [client, overlayId]);
@@ -2702,9 +4130,9 @@ function OverlayPage({ test }: { test: boolean }) {
             <h1>Overlay test</h1>
             <p className="muted">{overlayId} · {connection}</p>
           </div>
-          <Link className="button" to={overlay ? `/overlay/${overlay.publicId}` : "#"} target="_blank">OBS route</Link>
+          <Link className="button" to={overlay ? `/overlay/${overlay.publicId}` : "#"} target="_blank" rel="noreferrer">OBS route</Link>
         </div>
-        {error ? <div className="error">{error}</div> : null}
+        {error ? <div className="error" role="alert">{error}</div> : null}
         <div className="overlay-test-frame">
           {overlay ? <OverlayRenderer type={overlay.type} state={overlay.state} safeArea /> : null}
         </div>
@@ -2736,4 +4164,44 @@ function isSoccerState(state: PresetState): state is SoccerState {
 
 function isChurchState(state: PresetState): state is ChurchState {
   return "slides" in state;
+}
+
+function getPresetRevision(preset: PresetSummary): number | undefined {
+  const revision = (preset as PresetSummary & { revision?: unknown }).revision;
+  return typeof revision === "number" && Number.isInteger(revision) && revision >= 0 ? revision : undefined;
+}
+
+function dispatchPresetDeleted(payload: PresetDeletedEvent): void {
+  window.dispatchEvent(new CustomEvent(PRESET_DELETED_UI_EVENT, { detail: payload }));
+}
+
+function requestProgrammaticNavigation(): boolean {
+  return window.dispatchEvent(new Event(PROGRAMMATIC_NAVIGATION_EVENT, { cancelable: true }));
+}
+
+function allowProgrammaticNavigation(): void {
+  window.dispatchEvent(new Event(ALLOW_PROGRAMMATIC_NAVIGATION_EVENT));
+}
+
+function useUnsavedNavigationBlocker(
+  hasUnsavedWork: () => boolean,
+  allowNextNavigationRef: React.MutableRefObject<boolean>,
+  message: string
+) {
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => {
+    if (currentLocation.pathname === nextLocation.pathname && currentLocation.search === nextLocation.search && currentLocation.hash === nextLocation.hash) {
+      return false;
+    }
+    if (allowNextNavigationRef.current) {
+      allowNextNavigationRef.current = false;
+      return false;
+    }
+    return hasUnsavedWork();
+  });
+
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    if (window.confirm(message)) blocker.proceed();
+    else blocker.reset();
+  }, [blocker, message]);
 }

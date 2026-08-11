@@ -3,8 +3,6 @@
    Maximum whitespace. Helvetica/Inter. Swiss red accent.
    ============================================================ */
 
-@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;700;800;900&display=swap");
-
 :root {
   color-scheme: light;
   --sw-bg: #ffffff;
@@ -42,7 +40,7 @@
 }
 
 :root[data-theme="dark"] .button.primary {
-  color: #fff;
+  color: var(--sw-on-red);
 }
 
 :root[data-theme="dark"] .button.primary:hover {
@@ -144,7 +142,7 @@ body {
 
 .button.primary {
   background: var(--sw-red);
-  color: #fff;
+  color: var(--sw-on-red);
   border-color: var(--sw-red);
   font-weight: 700;
 }
@@ -163,7 +161,7 @@ body {
 .button.dark:hover {
   background: var(--sw-red);
   border-color: var(--sw-red);
-  color: #fff;
+  color: var(--sw-on-red);
 }
 
 .button.danger {
@@ -174,7 +172,7 @@ body {
 
 .button.danger:hover {
   background: var(--sw-red);
-  color: #fff;
+  color: var(--sw-on-red);
 }
 
 .button.ghost {
@@ -636,7 +634,7 @@ body {
 
 .sidebar-preset-menu button.danger:hover {
   background: var(--sw-red);
-  color: #fff;
+  color: var(--sw-on-red);
 }
 
 .sidebar-account {
@@ -951,7 +949,7 @@ body {
   justify-self: center;
   border: 10px solid var(--sw-bg);
   background: var(--sw-red) !important;
-  color: var(--sw-bg);
+  color: var(--sw-on-red);
   box-sizing: border-box;
   text-decoration: none;
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
@@ -1020,6 +1018,13 @@ body {
 
 .logo-upload-target:hover {
   border-color: var(--sw-red);
+}
+
+.field .visually-hidden-file-input {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
 }
 
 .logo-upload-target small,
@@ -1182,16 +1187,22 @@ a:not(.button):not(.brand):not(.sidebar a):hover {
   }
 
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     overflow-x: hidden;
   }
 
   .sidebar {
     position: relative;
+    width: 100%;
+    min-width: 0;
     height: auto;
     border-right: 0;
     border-bottom: 1px solid var(--sw-ink);
     padding: 24px 18px;
+  }
+
+  .sidebar-nav-wrap {
+    padding-top: 0;
   }
 
   .sidebar nav {
@@ -1219,7 +1230,16 @@ a:not(.button):not(.brand):not(.sidebar a):hover {
   }
 
   .topbar .brand {
-    font-size: 28px;
+    font-size: 20px;
+  }
+
+  .topbar {
+    padding-inline: 14px;
+  }
+
+  .topbar .nav-actions {
+    min-width: 0;
+    gap: 6px;
   }
 }
 
@@ -1230,4 +1250,15 @@ html.overlay-route-root .overlay-page,
 html.overlay-route-root .overlay-viewport,
 html.overlay-route-root .overlay-stage {
   background: transparent !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

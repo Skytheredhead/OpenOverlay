@@ -9,6 +9,7 @@ User=skylarenns
 Group=skylarenns
 WorkingDirectory=/home/skylarenns/Documents/GitHub/OpenOverlay/apps/backend
 EnvironmentFile=/etc/openoverlaybackend.env
+Environment=PATH=/usr/bin:/bin
 Environment=SELF_UPDATE_ENABLED=true
 Environment=SELF_UPDATE_REPO_DIR=/home/skylarenns/Documents/GitHub/OpenOverlay
 Environment=SELF_UPDATE_REMOTE=origin
@@ -22,6 +23,7 @@ Restart=always
 RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

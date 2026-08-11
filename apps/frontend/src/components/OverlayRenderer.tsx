@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import {
+  clockIsAtStop,
   formatSoccerClock,
   type ActiveGraphic,
   type ChurchState,
@@ -12,11 +13,12 @@ import {
   type SoccerPackageColorBank,
   type SoccerState,
   type SoccerTextAnimationState,
-  type SoccerTextAnimationField
+  type SoccerTextAnimationField,
+  normalizeChurchState
 } from "@openoverlay/shared";
 import { mediaApi } from "../lib/api";
-import scorebugLabCss from "../styles/scorebug-lab.css?raw";
-import scorebugOpenOverlayLabCss from "../styles/scorebug-openoverlay-lab.css?raw";
+import scorebugLabCssUrl from "../styles/scorebug-lab.css?url";
+import scorebugOpenOverlayLabCssUrl from "../styles/scorebug-openoverlay-lab.css?url";
 
 interface OverlayRendererProps {
   type: PresetType;
@@ -47,11 +49,19 @@ export function OverlayRenderer({ type, state, transparent = true, safeArea = fa
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: BASE_WIDTH, height: BASE_HEIGHT });
   const [now, setNow] = useState(Date.now());
+  const soccerNeedsClockTick = type === "soccer" && isSoccerState(state) && (
+    (state.clock.running && !clockIsAtStop(state.clock, now)) ||
+    (state.soccerPackage.countdown.running && packageCountdownSeconds(state.soccerPackage.countdown, now) > 0)
+  );
+  const needsClockTick = state.activeGraphics.some((graphic) => graphic.expiresAtMs !== null && graphic.expiresAtMs > now) ||
+    soccerNeedsClockTick;
 
   useEffect(() => {
+    if (!needsClockTick) return;
+    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [needsClockTick]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -85,11 +95,12 @@ export function OverlayRenderer({ type, state, transparent = true, safeArea = fa
         {type === "church" && isChurchState(state) ? (
           <ChurchOverlay state={state} now={now} interactive={interactive} onDragStart={onDragStart} />
         ) : null}
-        {type !== "soccer" ? state.activeGraphics
+        {state.activeGraphics
           .filter((graphic) => graphic.expiresAtMs === null || graphic.expiresAtMs > now)
+          .filter((graphic) => !(type === "church" && isChurchManagedGraphic(graphic)))
           .map((graphic) => (
           <TemporaryGraphic key={graphic.id} graphic={graphic} />
-        )) : null}
+        ))}
       </div>
     </div>
   );
@@ -264,11 +275,12 @@ function SoccerOverlay({
     return () => window.clearTimeout(timeout);
   }, [soccer.textAnimation]);
 
-  const labCss = soccer.overlayPackage === "rounded" ? scorebugLabCss : scorebugOpenOverlayLabCss;
+  const labCssUrl = soccer.overlayPackage === "rounded" ? scorebugLabCssUrl : scorebugOpenOverlayLabCssUrl;
   return (
-    <Positioned element={state.elements.fullscreen} interactive={interactive} onDragStart={onDragStart}>
-      <LabFrame css={labCss}>
-        <div
+    <>
+      <Positioned element={state.elements.fullscreen} interactive={interactive} onDragStart={onDragStart}>
+        <LabFrame cssUrl={labCssUrl}>
+          <div
           id="stage"
           className={[
             "broadcast-frame",
@@ -297,10 +309,24 @@ function SoccerOverlay({
               {renderSoccerLabOverlay(renderedActiveOverlay, enteringOverlay === renderedActiveOverlay ? "entering" : "live", state, now, countdownSeconds, activeTextAnimation?.fields ?? [])}
             </div>
           ) : null}
-        </div>
-      </LabFrame>
-    </Positioned>
+          </div>
+        </LabFrame>
+      </Positioned>
+      {state.elements.statBug.visible ? (
+        <Positioned element={state.elements.statBug} interactive={interactive} onDragStart={onDragStart}>
+          <div className={`statbug variant-${state.elements.statBug.variant}`}>
+            <StatLine label="Shots" home={state.stats.shots.home} away={state.stats.shots.away} />
+            <StatLine label="Fouls" home={state.stats.fouls.home} away={state.stats.fouls.away} />
+            <StatLine label="Cards" home={state.stats.cards.home} away={state.stats.cards.away} />
+          </div>
+        </Positioned>
+      ) : null}
+    </>
   );
+}
+
+function StatLine({ label, home, away }: { label: string; home: number; away: number }) {
+  return <div className="stat-line"><span>{label}</span><strong>{home}</strong><em>{away}</em></div>;
 }
 
 function soccerPackageColorVars(packageName: SoccerState["soccerPackage"]["overlayPackage"], colors: SoccerPackageColorBank): React.CSSProperties {
@@ -372,20 +398,22 @@ function scoreUpdateClass(fields: TextAnimationFields, field: SoccerTextAnimatio
   return fields.includes(field) ? "score-increased score-updated" : "";
 }
 
-function LabFrame({ css, children }: { css: string; children: React.ReactNode }) {
+function LabFrame({ cssUrl, children }: { cssUrl: string; children: React.ReactNode }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [body, setBody] = useState<HTMLElement | null>(null);
+  const frameDocument = `<!doctype html><html><head><meta charset="utf-8" /><link rel="stylesheet" href="${escapeHtmlAttribute(cssUrl)}" /><style>${labHostCss}</style></head><body></body></html>`;
 
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
+    setBody(null);
     const updateBody = () => {
       if (frame.contentDocument?.body) setBody(frame.contentDocument.body);
     };
     updateBody();
     frame.addEventListener("load", updateBody);
     return () => frame.removeEventListener("load", updateBody);
-  }, []);
+  }, [cssUrl]);
 
   return (
     <div className="lab-frame-host">
@@ -394,20 +422,17 @@ function LabFrame({ css, children }: { css: string; children: React.ReactNode })
         className="lab-frame"
         title="Soccer overlay package"
         scrolling="no"
-        srcDoc="<!doctype html><html><head><meta charset=&quot;utf-8&quot; /></head><body></body></html>"
+        srcDoc={frameDocument}
       />
       {body
-        ? createPortal(
-            <>
-              <style>{css}</style>
-              <style>{labHostCss}</style>
-              {children}
-            </>,
-            body
-          )
+        ? createPortal(children, body)
         : null}
     </div>
   );
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 const labHostCss = `
@@ -473,22 +498,51 @@ function ChurchOverlay({
   interactive?: boolean;
   onDragStart?: (elementId: string, event: PointerEvent<HTMLElement>) => void;
 }) {
-  const slide = state.slides.find((item) => item.id === state.selectedSlideId) || state.slides[0];
+  const church = normalizeChurchState(state);
+  const slide = church.slides.find((item) => item.id === church.selectedSlideId) || church.slides[0];
+  const lowerThird = [...church.activeGraphics].reverse().find((graphic) =>
+    (graphic.kind === "church-lower-third" || graphic.kind === "lower-third") &&
+    (graphic.expiresAtMs === null || graphic.expiresAtMs > now)
+  );
+  const countdown = [...church.activeGraphics].reverse().find((graphic) =>
+    graphic.kind === "countdown" && (graphic.expiresAtMs === null || graphic.expiresAtMs > now)
+  );
+  const countdownSeconds = countdown
+    ? countdown.expiresAtMs === null
+      ? Math.max(0, Math.ceil(countdown.durationMs / 1000))
+      : Math.max(0, Math.ceil((countdown.expiresAtMs - now) / 1000))
+    : 0;
   return (
     <>
-      {slide && state.elements.fullscreenSlide.visible ? (
-        <Positioned element={state.elements.fullscreenSlide} interactive={interactive} onDragStart={onDragStart}>
-          <div className={`church-slide variant-${slide.variant}`} style={{ background: slide.backgroundColor, color: slide.textColor }}>
+      {slide && church.elements.fullscreenSlide.visible ? (
+        <Positioned element={church.elements.fullscreenSlide} interactive={interactive} onDragStart={onDragStart}>
+          <div className={`church-slide variant-${slide.variant}`} style={{ background: slide.backgroundColor, color: slide.textColor, fontFamily: church.style.font }}>
             {slide.mediaUrl ? <img src={mediaApi.mediaUrl(slide.mediaUrl)} alt="" /> : null}
             <div className="church-slide-text">{slide.text}</div>
           </div>
         </Positioned>
       ) : null}
-      {state.elements.countdown.visible ? (
-        <Positioned element={state.elements.countdown} interactive={interactive} onDragStart={onDragStart}>
-          <div className={`countdown-element variant-${state.elements.countdown.variant}`}>
-            <span>Countdown</span>
-            <strong>{new Date(now).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</strong>
+      {lowerThird && church.elements.lowerThird.visible ? (
+        <Positioned element={church.elements.lowerThird} interactive={interactive} onDragStart={onDragStart}>
+          <article
+            className={`church-lower-third variant-${church.elements.lowerThird.variant}`}
+            style={{ "--church-accent": church.style.accentColor, fontFamily: church.style.font } as React.CSSProperties}
+          >
+            <h2>{lowerThird.title}</h2>
+            {lowerThird.subtitle ? <p>{lowerThird.subtitle}</p> : null}
+          </article>
+        </Positioned>
+      ) : null}
+      {countdown && church.elements.countdown.visible ? (
+        <Positioned element={church.elements.countdown} interactive={interactive} onDragStart={onDragStart}>
+          <div
+            className={`countdown-element variant-${church.elements.countdown.variant}`}
+            style={{ "--church-accent": church.style.accentColor, fontFamily: church.style.font } as React.CSSProperties}
+            role="timer"
+            aria-label={`${countdown.title}: ${formatPackageTime(countdownSeconds)}`}
+          >
+            <span>{countdown.title}</span>
+            <strong>{formatPackageTime(countdownSeconds)}</strong>
           </div>
         </Positioned>
       ) : null}
@@ -794,6 +848,10 @@ function TemporaryGraphic({ graphic }: { graphic: ActiveGraphic }) {
       {showLineups ? <small>Starting XI</small> : null}
     </section>
   );
+}
+
+function isChurchManagedGraphic(graphic: ActiveGraphic): boolean {
+  return graphic.kind === "countdown" || graphic.kind === "church-lower-third" || graphic.kind === "lower-third";
 }
 
 function placementStyle(placement: Placement): React.CSSProperties {

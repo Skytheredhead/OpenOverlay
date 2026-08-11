@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;700;800;900&display=swap");
-
 :root {
   color-scheme: dark;
   --ink: #f8fafc;
@@ -29,7 +27,7 @@
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   min-height: 100vh;
   background: #090d13;
   color: var(--ink);

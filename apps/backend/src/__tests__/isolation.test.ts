@@ -42,7 +42,11 @@ describe("user isolation", () => {
     await signup(recipient, "recipient@example.com");
 
     const created = await server.agent.post("/api/presets").send({ name: "Share Me", type: "soccer" }).expect(201);
-    await server.agent.post(`/api/presets/${created.body.preset.id}/share`).send({ email: "recipient@example.com" }).expect(201);
+    const share = await server.agent.post(`/api/presets/${created.body.preset.id}/share`).send({ email: "recipient@example.com" }).expect(201);
+    expect(share.body).toEqual({ ok: true, mediaReferencesRemoved: false });
+    expect(share.body).not.toHaveProperty("preset");
+    expect(share.body).not.toHaveProperty("id");
+    expect(share.body).not.toHaveProperty("publicId");
 
     const recipientList = await recipient.get("/api/presets").expect(200);
     expect(recipientList.body.presets).toHaveLength(1);
@@ -91,15 +95,14 @@ describe("user isolation", () => {
         abbreviation: "ROV",
         rosterText: "10 Mira Stone\n11 Avery Vale",
         coach: "Coach Nova",
-        schoolName: "Codex High",
-        logoMediaId: "media-1",
-        logoUrl: "/api/media/file/logo"
+        schoolName: "Codex High"
       })
       .expect(201);
 
     const updated = await server.agent
       .patch(`/api/teams/${created.body.team.id}`)
       .send({
+        expectedRevision: created.body.team.revision,
         shortName: "",
         abbreviation: "",
         rosterText: "",

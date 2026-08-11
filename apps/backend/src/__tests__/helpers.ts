@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { createBackendApp } from "../app.js";
+import type { AppConfig } from "../config.js";
 
-export function makeTestServer() {
+export function makeTestServer(overrides: Partial<AppConfig> = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openoverlay-test-"));
   const backend = createBackendApp({
     env: "test",
@@ -12,10 +13,13 @@ export function makeTestServer() {
     uploadDir: path.join(dir, "uploads"),
     logFile: path.join(dir, "backend.log"),
     jwtSecret: "test-secret",
-    corsOrigins: ["http://localhost:5173"]
+    corsOrigins: ["http://localhost:5173"],
+    storageMinimumFreeBytes: 0,
+    ...overrides
   });
   return {
     dir,
+    backend,
     app: backend.app,
     agent: request.agent(backend.app),
     request: request(backend.app),

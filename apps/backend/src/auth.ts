@@ -5,19 +5,62 @@ import type { AppContext, AuthUser } from "./types.js";
 
 const SESSION_COOKIE = "openoverlay_session";
 export const SESSION_TTL_SECONDS = 90 * 24 * 60 * 60;
+export const DUMMY_PASSWORD_HASH = "$2b$12$Z/ol5FhQtDfWEbV5DJzv8e0ysi5A1CcxldBtpJ4lqnvyqCBbn7R4K";
 
-interface SessionPayload {
+export interface SessionPayload {
   sub: string;
   exp: number;
+  ver: number;
 }
 
-interface FailedLoginBucket {
-  attempts: number;
-  firstAt: number;
-  blockedUntil: number;
+interface RateBucket {
+  count: number;
+  resetAt: number;
 }
 
-const failedLogins = new Map<string, FailedLoginBucket>();
+export class RateLimitError extends Error {
+  constructor(message: string, public readonly retryAfterSeconds: number) {
+    super(message);
+    this.name = "RateLimitError";
+  }
+}
+
+export class AuthRateLimiter {
+  private readonly loginByIdentity = new Map<string, RateBucket>();
+  private readonly loginByIp = new Map<string, RateBucket>();
+  private readonly signupByIp = new Map<string, RateBucket>();
+  private readonly uploadByIdentity = new Map<string, RateBucket>();
+  private readonly writeByIdentity = new Map<string, RateBucket>();
+  private readonly writeByIp = new Map<string, RateBucket>();
+  private readonly actionByPreset = new Map<string, RateBucket>();
+
+  reserveLogin(email: string, ip: string, now = Date.now()): void {
+    consumeRate(this.loginByIp, ip, 60, 15 * 60_000, now, "Too many login attempts");
+    consumeRate(this.loginByIdentity, `${email}:${ip}`, 5, 15 * 60_000, now, "Too many failed attempts");
+  }
+
+  recordSuccessfulLogin(email: string, ip: string): void {
+    this.loginByIdentity.delete(`${email}:${ip}`);
+  }
+
+  reserveSignup(ip: string, now = Date.now()): void {
+    consumeRate(this.signupByIp, ip, 5, 60 * 60_000, now, "Too many signup attempts");
+  }
+
+  reserveUpload(userId: string, ip: string, now = Date.now()): void {
+    consumeRate(this.uploadByIdentity, `${userId}:${ip}`, 60, 10 * 60_000, now, "Too many upload attempts");
+  }
+
+  reserveWrite(userId: string, ip: string, now = Date.now()): void {
+    consumeRate(this.writeByIp, ip, 1_200, 10 * 60_000, now, "Too many write requests");
+    consumeRate(this.writeByIdentity, userId, 600, 10 * 60_000, now, "Too many write requests");
+  }
+
+  reserveAction(presetId: string, ip: string, now = Date.now()): void {
+    consumeRate(this.writeByIp, ip, 1_200, 10 * 60_000, now, "Too many action requests");
+    consumeRate(this.actionByPreset, presetId, 600, 10 * 60_000, now, "Too many action requests");
+  }
+}
 
 export function sessionCookieName(): string {
   return SESSION_COOKIE;
@@ -31,10 +74,11 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
   return bcrypt.compare(password, hash);
 }
 
-export function createSessionToken(userId: string, secret: string, nowSeconds = Math.floor(Date.now() / 1000)): string {
+export function createSessionToken(userId: string, secret: string, nowSeconds = Math.floor(Date.now() / 1000), sessionVersion = 1): string {
   const payload: SessionPayload = {
     sub: userId,
-    exp: nowSeconds + SESSION_TTL_SECONDS
+    exp: nowSeconds + SESSION_TTL_SECONDS,
+    ver: sessionVersion
   };
   const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   const signature = sign(body, secret);
@@ -42,22 +86,25 @@ export function createSessionToken(userId: string, secret: string, nowSeconds = 
 }
 
 export function verifySessionToken(token: string | undefined, secret: string, nowSeconds = Math.floor(Date.now() / 1000)): SessionPayload | null {
-  if (!token || !token.includes(".")) return null;
-  const [body, signature] = token.split(".");
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [body, signature] = parts;
   if (!body || !signature) return null;
   const expected = sign(body, secret);
   if (!safeEqual(signature, expected)) return null;
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as SessionPayload;
-    if (!payload.sub || payload.exp < nowSeconds) return null;
+    if (typeof payload.sub !== "string" || !payload.sub || typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp <= nowSeconds ||
+      !Number.isSafeInteger(payload.ver) || payload.ver < 1) return null;
     return payload;
   } catch {
     return null;
   }
 }
 
-export function setSessionCookie(res: Response, ctx: AppContext, userId: string): void {
-  const token = createSessionToken(userId, ctx.config.jwtSecret);
+export function setSessionCookie(res: Response, ctx: AppContext, userId: string, sessionVersion: number): void {
+  const token = createSessionToken(userId, ctx.config.jwtSecret, Math.floor(Date.now() / 1000), sessionVersion);
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: ctx.config.env === "production",
@@ -82,23 +129,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
-  const token =
-    req.cookies?.[SESSION_COOKIE] ||
-    req.header("authorization")?.replace(/^Bearer\s+/i, "") ||
-    req.header("x-openoverlay-session");
-  const payload = verifySessionToken(token, ctx.config.jwtSecret);
-  if (!payload) {
-    res.status(401).json({ error: "Authentication required" });
-    return;
-  }
-
-  const user = ctx.db.findUserById(payload.sub);
+  const user = authenticatedUser(req, ctx);
   if (!user) {
     res.status(401).json({ error: "Authentication required" });
     return;
   }
 
-  req.user = { id: user.id, email: user.email };
+  req.user = user;
   next();
 }
 
@@ -109,45 +146,27 @@ export function serializeUser(user: AuthUser) {
 export function validateEmail(email: unknown): string | null {
   if (typeof email !== "string") return null;
   const normalized = email.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return null;
+  if (normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return null;
   return normalized;
 }
 
 export function validatePassword(password: unknown): string | null {
-  if (typeof password !== "string" || password.length < 8 || password.length > 200) return null;
+  if (typeof password !== "string" || password.length < 8 || Buffer.byteLength(password, "utf8") > 72) return null;
   return password;
 }
 
-export function assertLoginAllowed(email: string, ip: string): void {
-  const key = `${email}:${ip}`;
-  const bucket = failedLogins.get(key);
-  const now = Date.now();
-  if (!bucket) return;
-  if (bucket.blockedUntil > now) {
-    const seconds = Math.ceil((bucket.blockedUntil - now) / 1000);
-    throw new Error(`Too many failed attempts. Try again in ${seconds} seconds.`);
+export function authenticatedUser(req: Request, ctx: AppContext, headerOnly = false): AuthUser | null {
+  const authorization = req.header("authorization");
+  const bearer = authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1];
+  const headerToken = req.header("x-openoverlay-session");
+  const tokens = headerOnly ? [bearer, headerToken] : [bearer, headerToken, req.cookies?.[SESSION_COOKIE] as string | undefined];
+  for (const token of tokens) {
+    const payload = verifySessionToken(token, ctx.config.jwtSecret);
+    if (!payload) continue;
+    const user = ctx.db.findUserById(payload.sub);
+    if (user && user.session_version === payload.ver) return { id: user.id, email: user.email };
   }
-  if (now - bucket.firstAt > 15 * 60 * 1000) {
-    failedLogins.delete(key);
-  }
-}
-
-export function recordFailedLogin(email: string, ip: string): void {
-  const key = `${email}:${ip}`;
-  const now = Date.now();
-  const existing = failedLogins.get(key);
-  if (!existing || now - existing.firstAt > 15 * 60 * 1000) {
-    failedLogins.set(key, { attempts: 1, firstAt: now, blockedUntil: 0 });
-    return;
-  }
-  existing.attempts += 1;
-  if (existing.attempts >= 5) {
-    existing.blockedUntil = now + 10 * 60 * 1000;
-  }
-}
-
-export function recordSuccessfulLogin(email: string, ip: string): void {
-  failedLogins.delete(`${email}:${ip}`);
+  return null;
 }
 
 export function generateActionKey(): string {
@@ -172,4 +191,31 @@ function safeEqual(a: string, b: string): boolean {
   const right = Buffer.from(b);
   if (left.byteLength !== right.byteLength) return false;
   return timingSafeEqual(left, right);
+}
+
+function consumeRate(
+  buckets: Map<string, RateBucket>,
+  key: string,
+  limit: number,
+  windowMs: number,
+  now: number,
+  message: string
+): void {
+  pruneBuckets(buckets, now);
+  const current = buckets.get(key);
+  if (current && current.resetAt > now && current.count >= limit) {
+    throw new RateLimitError(message, Math.max(1, Math.ceil((current.resetAt - now) / 1000)));
+  }
+  const bucket = !current || current.resetAt <= now ? { count: 0, resetAt: now + windowMs } : current;
+  bucket.count += 1;
+  buckets.delete(key);
+  buckets.set(key, bucket);
+  if (buckets.size > 10_000) buckets.delete(buckets.keys().next().value as string);
+}
+
+function pruneBuckets(buckets: Map<string, RateBucket>, now: number): void {
+  if (buckets.size < 100) return;
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key);
+  }
 }

@@ -57,6 +57,8 @@ Backend:
 - `PORT`, default `8734`
 - `DATABASE_PATH`
 - `UPLOAD_DIR`
+- `MEDIA_GLOBAL_MAX_BYTES`, default `10737418240` (10 GiB across all users)
+- `STORAGE_MINIMUM_FREE_BYTES`, default `1073741824` (1 GiB reserved on database and upload volumes)
 - `LOG_FILE`
 - `JWT_SECRET`
 - `CORS_ORIGINS`
@@ -69,6 +71,14 @@ Backend:
 - `SELF_UPDATE_BRANCH`, default `main`
 - `GATEWAY_BACKEND_PORTS`, default `8735,8736`
 - `GATEWAY_RELEASE_DIR`
+- `GATEWAY_SLOT_STARTUP_TIMEOUT_MS`, default `15000`
+- `GATEWAY_HEALTH_CHECK_INTERVAL_MS`, default `10000`
+- `GATEWAY_HEALTH_CHECK_TIMEOUT_MS`, default `2000`
+- `GATEWAY_HEALTH_FAILURE_THRESHOLD`, default `3`
+- `GATEWAY_PROXY_TIMEOUT_MS`, default `60000`
+- `REALTIME_MAX_CONNECTIONS`, default `512`
+- `REALTIME_MAX_CONNECTIONS_PER_IP`, default `64`
+- `REALTIME_MAX_PAYLOAD_BYTES`, default `65536`
 
 Frontend:
 
@@ -162,7 +172,7 @@ The script:
 - Runs `npm ci` and `npm run build`
 - Creates `/etc/openoverlaybackend.env` with generated secrets if missing
 - Creates/enables/restarts `Openoverlaybackend.service`, which runs the local gateway on port `8734`
-- Verifies `curl http://127.0.0.1:8734/health`
+- Verifies local and public health, gateway identity, and the exact deployed commit
 - Attempts Cloudflare Tunnel setup if `cloudflared` is authenticated
 
 Manual service checks:
@@ -174,9 +184,9 @@ sudo journalctl -u Openoverlaybackend --no-pager -n 100
 tail -n 100 /var/log/openoverlay/backend.log
 ```
 
-The frontend publishes `/build-info.json` and the backend includes build metadata in `/health`. The app warns when those deployed commits differ, and `npm run check:deployments` can be used to verify production from the command line. Override the checked URLs with `FRONTEND_URL=` and `BACKEND_URL=` when needed.
+The frontend publishes `/build-info.json`, the backend includes build metadata in `/health`, and the gateway publishes its own and its active child's identity at `/_openoverlay/gateway`. The app warns when the frontend and backend commits differ. `npm run check:deployments` verifies that the frontend, gateway process, and active backend all report the same commit. Override the checked URLs with `FRONTEND_URL=` and `BACKEND_URL=` when needed.
 
-The backend systemd deployment also enables a gateway-managed self-updater. Once a minute, the gateway fetches `origin/main`; when a fast-forward update is available and the server checkout is clean, it pulls, runs `npm ci`, rebuilds `@openoverlay/shared` and `@openoverlay/backend`, starts a candidate backend on an internal slot port, verifies `/health`, then promotes it for new HTTP/WebSocket traffic. The previous backend drains existing WebSocket clients and is stopped after the count reaches zero. Only one active slot and one draining slot are allowed, so further updates wait instead of spawning unbounded backend processes.
+The backend systemd deployment also enables a gateway-managed self-updater. Once a minute, the gateway fetches `origin/main`; when a fast-forward update is available and the server checkout is clean, it pulls, runs `npm ci --include=dev`, audits dependencies, rebuilds and tests the shared/backend workspaces, starts a candidate backend on an internal slot port, verifies its health and exact commit, then promotes it. Existing WebSocket clients are disconnected so they reconnect to the promoted backend. The gateway then restarts under systemd so gateway-only changes also take effect; expect a brief connection interruption during this restart.
 
 ## Cloudflare Tunnel
 
@@ -261,8 +271,8 @@ CORS errors:
 Cloudflare tunnel down:
 
 ```bash
-sudo systemctl status cloudflared
-sudo journalctl -u cloudflared --no-pager -n 100
+sudo systemctl status cloudflared-openoverlay-api
+sudo journalctl -u cloudflared-openoverlay-api --no-pager -n 100
 cloudflared tunnel list
 ```
 

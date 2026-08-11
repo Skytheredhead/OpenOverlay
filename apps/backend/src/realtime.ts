@@ -1,22 +1,59 @@
-import type { Server as HttpServer } from "node:http";
+import type { IncomingMessage, Server as HttpServer } from "node:http";
+import { isIP } from "node:net";
 import cookie from "cookie";
 import { Server, type Socket } from "socket.io";
-import { parsePresetState, type PresetRow } from "./db.js";
+import { type PresetRow } from "./db.js";
 import { verifySessionToken, sessionCookieName } from "./auth.js";
-import { materializeState } from "./state.js";
+import { materializeState, readStoredPresetState } from "./state.js";
 import type { AppContext } from "./types.js";
 import { OPENOVERLAY_API_VERSION, OPENOVERLAY_REALTIME_VERSION, OPENOVERLAY_SUPPORTED_API_VERSIONS, OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS } from "@openoverlay/shared";
 
 export interface RealtimeHub {
   io: Server;
   broadcastPreset(row: PresetRow): void;
+  broadcastPresetDeleted(row: PresetRow): void;
   broadcastConnectionCount(row: PresetRow): void;
+  disconnectUser(userId: string): void;
   getOverlayClientCount(publicId: string): number;
+  getConnectionCount(): number;
+  getConnectionCountForIp(ip: string): number;
 }
+
+interface OverlayConnectionRequest {
+  role: "overlay";
+  overlayId: string;
+  client: "overlay" | "preview";
+  apiVersion?: string;
+  realtimeVersion?: string;
+}
+
+interface AdminConnectionRequest {
+  role: "admin";
+  presetId: string;
+  apiVersion?: string;
+  realtimeVersion?: string;
+}
+
+type RealtimeConnectionRequest = OverlayConnectionRequest | AdminConnectionRequest;
 
 export function attachRealtime(server: HttpServer, ctx: AppContext): RealtimeHub {
   const overlayClients = new Map<string, Set<string>>();
+  const connectionsByIp = new Map<string, number>();
+  const lastLimitLogAt = new Map<"total" | "ip", number>();
+  let connectionCount = 0;
   const io = new Server(server, {
+    maxHttpBufferSize: ctx.config.realtimeMaxPayloadBytes,
+    allowRequest(request, callback) {
+      const ip = clientIp(request);
+      const overTotalLimit = connectionCount >= ctx.config.realtimeMaxConnections;
+      const overIpLimit = (connectionsByIp.get(ip) || 0) >= ctx.config.realtimeMaxConnectionsPerIp;
+      if (overTotalLimit || overIpLimit) {
+        logConnectionRejection(ctx, lastLimitLogAt, overTotalLimit ? "total" : "ip");
+        callback("Realtime connection limit reached", false);
+        return;
+      }
+      callback(null, true);
+    },
     cors: {
       origin(origin, callback) {
         if (!origin || ctx.config.corsOrigins.includes(origin)) {
@@ -32,20 +69,76 @@ export function attachRealtime(server: HttpServer, ctx: AppContext): RealtimeHub
   const hub: RealtimeHub = {
     io,
     broadcastPreset(row) {
-      const state = materializeState(parsePresetState(row));
-      io.to(`overlay:${row.public_id}`).emit("state:update", publicPayload(row, state));
-      io.to(`admin:${row.id}`).emit("preset:update", privatePayload(row, state, hub.getOverlayClientCount(row.public_id)));
+      const stored = readStoredPresetState(row);
+      const state = materializeState(stored.state);
+      if (stored.recovered) ctx.logger.warn("preset_state_recovered", { presetId: row.id, source: "realtime" });
+      io.to(`overlay:${row.public_id}`).emit("state:update", publicPayload(row, state, stored.recovered));
+      io.to(`admin:${row.id}`).emit("preset:update", privatePayload(row, state, hub.getOverlayClientCount(row.public_id), stored.recovered));
+    },
+    broadcastPresetDeleted(row) {
+      const payload = { id: row.id, publicId: row.public_id, revision: row.revision };
+      io.to(`overlay:${row.public_id}`).emit("preset:deleted", payload);
+      io.to(`admin:${row.id}`).emit("preset:deleted", payload);
+      io.in(`overlay:${row.public_id}`).disconnectSockets(true);
+      io.in(`admin:${row.id}`).disconnectSockets(true);
     },
     broadcastConnectionCount(row) {
       io.to(`admin:${row.id}`).emit("overlay:clients", { presetId: row.id, publicId: row.public_id, count: hub.getOverlayClientCount(row.public_id) });
     },
+    disconnectUser(userId) {
+      io.in(`user:${userId}`).disconnectSockets(true);
+    },
     getOverlayClientCount(publicId) {
       return overlayClients.get(publicId)?.size || 0;
+    },
+    getConnectionCount() {
+      return connectionCount;
+    },
+    getConnectionCountForIp(ip) {
+      return connectionsByIp.get(normalizeIp(ip)) || 0;
     }
   };
 
+  // Count Engine.IO connections rather than only fully initialized Socket.IO
+  // namespaces. This also bounds clients that open a transport and never send a
+  // valid Socket.IO CONNECT packet.
+  io.engine.on("connection", (connection) => {
+    const ip = clientIp(connection.request);
+    const ipCount = connectionsByIp.get(ip) || 0;
+    if (connectionCount >= ctx.config.realtimeMaxConnections || ipCount >= ctx.config.realtimeMaxConnectionsPerIp) {
+      logConnectionRejection(ctx, lastLimitLogAt, connectionCount >= ctx.config.realtimeMaxConnections ? "total" : "ip");
+      connection.close(true);
+      return;
+    }
+
+    connectionCount += 1;
+    connectionsByIp.set(ip, ipCount + 1);
+    let released = false;
+    connection.once("close", () => {
+      if (released) return;
+      released = true;
+      connectionCount = Math.max(0, connectionCount - 1);
+      const remaining = (connectionsByIp.get(ip) || 1) - 1;
+      if (remaining <= 0) connectionsByIp.delete(ip);
+      else connectionsByIp.set(ip, remaining);
+    });
+  });
+
+  io.use((socket, next) => {
+    try {
+      socket.data.realtimeRequest = parseRealtimeRequest(socket);
+      next();
+    } catch {
+      next(new Error("Invalid realtime connection parameters"));
+    }
+  });
+
   io.on("connection", (socket) => {
-    void handleSocket(socket, ctx, hub, overlayClients);
+    void handleSocket(socket, ctx, hub, overlayClients).catch((error: unknown) => {
+      ctx.logger.error("realtime_connection_failed", { socketId: socket.id, error: error instanceof Error ? error.message : String(error) });
+      if (socket.connected) socket.emit("error:message", { error: "Realtime connection failed" });
+      socket.disconnect(true);
+    });
   });
 
   return hub;
@@ -57,12 +150,12 @@ async function handleSocket(
   hub: RealtimeHub,
   overlayClients: Map<string, Set<string>>
 ): Promise<void> {
-  const overlayId = stringQuery(socket, "overlayId");
-  const presetId = stringQuery(socket, "presetId");
-  const role = stringQuery(socket, "role");
-  const client = stringQuery(socket, "client");
-  const apiVersion = stringQuery(socket, "apiVersion");
-  const realtimeVersion = stringQuery(socket, "realtimeVersion");
+  const request = socket.data.realtimeRequest as RealtimeConnectionRequest | undefined;
+  if (!request) {
+    socket.disconnect(true);
+    return;
+  }
+  const { apiVersion, realtimeVersion } = request;
 
   if ((apiVersion && !OPENOVERLAY_SUPPORTED_API_VERSIONS.includes(apiVersion as typeof OPENOVERLAY_API_VERSION)) ||
     (realtimeVersion && !OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS.includes(realtimeVersion as typeof OPENOVERLAY_REALTIME_VERSION))) {
@@ -71,46 +164,63 @@ async function handleSocket(
     return;
   }
 
-  if (overlayId && role === "overlay") {
-    const row = ctx.db.getPresetByPublicId(overlayId);
+  if (request.role === "overlay") {
+    const row = ctx.db.getPresetByPublicId(request.overlayId);
     if (!row) {
       socket.emit("error:message", { error: "Overlay not found" });
       socket.disconnect(true);
       return;
     }
-    socket.join(`overlay:${row.public_id}`);
-    const countsAsOverlayClient = client !== "preview";
+    await socket.join(`overlay:${row.public_id}`);
+    const countsAsOverlayClient = request.client !== "preview";
     const set = overlayClients.get(row.public_id) || new Set<string>();
     if (countsAsOverlayClient) {
       set.add(socket.id);
       overlayClients.set(row.public_id, set);
-    }
-    socket.emit("state:update", publicPayload(row, materializeState(parsePresetState(row))));
-    if (countsAsOverlayClient) {
-      hub.broadcastConnectionCount(row);
-      socket.on("disconnect", () => {
+      let released = false;
+      socket.once("disconnect", () => {
+        if (released) return;
+        released = true;
         set.delete(socket.id);
+        if (set.size === 0) overlayClients.delete(row.public_id);
         hub.broadcastConnectionCount(row);
       });
+    }
+    const stored = readStoredPresetState(row);
+    socket.emit("state:update", publicPayload(row, materializeState(stored.state), stored.recovered));
+    if (countsAsOverlayClient) {
+      hub.broadcastConnectionCount(row);
     }
     return;
   }
 
-  if (presetId && role === "admin") {
+  if (request.role === "admin") {
     const user = authenticateSocket(socket, ctx);
     if (!user) {
       socket.emit("error:message", { error: "Authentication required" });
       socket.disconnect(true);
       return;
     }
-    const row = ctx.db.getPresetForUser(presetId, user.id);
+    // Join the revocation room before yielding to any further async work. If
+    // logout wins before the join, the generation recheck below rejects this
+    // socket; if logout wins after the join, disconnectUser catches it.
+    await socket.join(`user:${user.id}`);
+    const currentUser = authenticateSocket(socket, ctx);
+    if (!socket.connected || !currentUser || currentUser.id !== user.id) {
+      if (socket.connected) socket.emit("error:message", { error: "Authentication required" });
+      socket.disconnect(true);
+      return;
+    }
+    const row = ctx.db.getPresetForUser(request.presetId, currentUser.id);
     if (!row) {
       socket.emit("error:message", { error: "Preset not found" });
       socket.disconnect(true);
       return;
     }
-    socket.join(`admin:${row.id}`);
-    socket.emit("preset:update", privatePayload(row, materializeState(parsePresetState(row)), hub.getOverlayClientCount(row.public_id)));
+    await socket.join(`admin:${row.id}`);
+    if (!socket.connected) return;
+    const stored = readStoredPresetState(row);
+    socket.emit("preset:update", privatePayload(row, materializeState(stored.state), hub.getOverlayClientCount(row.public_id), stored.recovered));
     socket.emit("overlay:clients", { presetId: row.id, publicId: row.public_id, count: hub.getOverlayClientCount(row.public_id) });
     return;
   }
@@ -121,32 +231,107 @@ async function handleSocket(
 function authenticateSocket(socket: Socket, ctx: AppContext) {
   const rawCookie = socket.request.headers.cookie || "";
   const cookies = cookie.parse(rawCookie);
-  const token = cookies[sessionCookieName()] || socket.handshake.auth?.token;
-  const payload = verifySessionToken(token, ctx.config.jwtSecret);
-  if (!payload) return null;
-  const user = ctx.db.findUserById(payload.sub);
-  return user ? { id: user.id, email: user.email } : null;
+  const handshakeToken = typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token : undefined;
+  for (const token of [handshakeToken, cookies[sessionCookieName()]]) {
+    const payload = verifySessionToken(token, ctx.config.jwtSecret);
+    if (!payload) continue;
+    const user = ctx.db.findUserById(payload.sub);
+    if (user && user.session_version === payload.ver) return { id: user.id, email: user.email };
+  }
+  return null;
 }
 
-function stringQuery(socket: Socket, key: string): string | undefined {
-  const value = socket.handshake.query[key] || socket.handshake.auth?.[key];
-  return typeof value === "string" && value ? value : undefined;
+function parseRealtimeRequest(socket: Socket): RealtimeConnectionRequest {
+  if (!isRecord(socket.handshake.auth)) throw new Error("Invalid auth payload");
+  const role = stringParameter(socket, "role", 16);
+  const overlayId = stringParameter(socket, "overlayId", 200);
+  const presetId = stringParameter(socket, "presetId", 200);
+  const client = stringParameter(socket, "client", 16);
+  const apiVersion = stringParameter(socket, "apiVersion", 32);
+  const realtimeVersion = stringParameter(socket, "realtimeVersion", 32);
+  // The token is read separately by authenticateSocket, but validate its shape
+  // here so non-string or oversized values never reach session verification.
+  stringParameter(socket, "token", 4_096);
+
+  if (role === "overlay" && overlayId && !presetId && (client === undefined || client === "overlay" || client === "preview")) {
+    return { role, overlayId, client: client || "overlay", apiVersion, realtimeVersion };
+  }
+  if (role === "admin" && presetId && !overlayId && client === undefined) {
+    return { role, presetId, apiVersion, realtimeVersion };
+  }
+  throw new Error("Invalid realtime connection shape");
 }
 
-function publicPayload(row: PresetRow, state: unknown) {
+function stringParameter(socket: Socket, key: string, maxLength: number): string | undefined {
+  const queryHasKey = Object.hasOwn(socket.handshake.query, key);
+  const auth = isRecord(socket.handshake.auth) ? socket.handshake.auth : {};
+  const authHasKey = Object.hasOwn(auth, key);
+  const queryValue = queryHasKey ? socket.handshake.query[key] : undefined;
+  const authValue = authHasKey ? auth[key] : undefined;
+
+  if ((queryHasKey && typeof queryValue !== "string") || (authHasKey && typeof authValue !== "string")) {
+    throw new Error(`Invalid ${key}`);
+  }
+  if (queryHasKey && authHasKey && queryValue !== authValue) throw new Error(`Conflicting ${key}`);
+  const value = (queryHasKey ? queryValue : authValue) as string | undefined;
+  if (value === undefined) return undefined;
+  if (!value || value !== value.trim() || value.length > maxLength || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new Error(`Invalid ${key}`);
+  }
+  return value;
+}
+
+function clientIp(request: IncomingMessage): string {
+  const directIp = normalizeIp(request.socket.remoteAddress || "unknown");
+  if (!isLoopback(directIp)) return directIp;
+
+  const cloudflareIp = firstHeaderValue(request.headers["cf-connecting-ip"]);
+  const forwardedIp = firstHeaderValue(request.headers["x-forwarded-for"])?.split(",", 1)[0]?.trim();
+  for (const candidate of [cloudflareIp, forwardedIp]) {
+    if (candidate && isIP(candidate)) return normalizeIp(candidate);
+  }
+  return directIp;
+}
+
+function firstHeaderValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizeIp(ip: string): string {
+  return ip.startsWith("::ffff:") ? ip.slice(7) : ip;
+}
+
+function isLoopback(ip: string): boolean {
+  return ip === "127.0.0.1" || ip === "::1";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function logConnectionRejection(ctx: AppContext, lastLogAt: Map<"total" | "ip", number>, scope: "total" | "ip"): void {
+  const now = Date.now();
+  if (now - (lastLogAt.get(scope) || 0) < 10_000) return;
+  lastLogAt.set(scope, now);
+  ctx.logger.warn("realtime_connection_rejected", { scope });
+}
+
+function publicPayload(row: PresetRow, state: unknown, recovered = false) {
   return {
     id: row.id,
     publicId: row.public_id,
     name: row.name,
     type: row.type,
+    revision: row.revision,
+    stateRecovered: recovered || undefined,
     state,
     updatedAt: row.updated_at
   };
 }
 
-function privatePayload(row: PresetRow, state: unknown, overlayClientCount: number) {
+function privatePayload(row: PresetRow, state: unknown, overlayClientCount: number, recovered = false) {
   return {
-    ...publicPayload(row, state),
+    ...publicPayload(row, state, recovered),
     overlayClientCount
   };
 }

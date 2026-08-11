@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeClockSeconds, createDefaultSoccerState, defaultClock, normalizeSoccerState, pauseClock, resetClock, setClockSeconds, startClock } from "./index.js";
+import { computeClockSeconds, createDefaultSoccerState, defaultClock, formatClock, normalizeSoccerState, parseClockTime, pauseClock, resetClock, setClockSeconds, startClock, tryParseClockTime } from "./index.js";
 
 describe("soccer clock", () => {
   it("counts up and respects stop-at when enabled", () => {
@@ -49,5 +49,29 @@ describe("soccer clock", () => {
     expect(normalized.home.imageCrop).toEqual({ x: 0, y: 0, zoom: 1 });
     expect(normalized.soccerPackage.overlayPackage).toBe("classic");
     expect(normalized.soccerPackage.activeOverlay).toBe("full-matchup");
+  });
+
+  it("strictly parses clock input without accepting junk or ambiguous overflow", () => {
+    expect(tryParseClockTime("0")).toBe(0);
+    expect(tryParseClockTime("00:00")).toBe(0);
+    expect(parseClockTime("90:00")).toBe(5_400);
+    expect(parseClockTime("1:2")).toBe(62);
+    expect(parseClockTime("75")).toBe(75);
+    for (const invalid of ["", " ", "1abc", "1:60", "1:2:3", "-1", "1.5", ":30", "1:", "1000001"]) {
+      expect(tryParseClockTime(invalid)).toBeNull();
+      expect(parseClockTime(invalid)).toBe(0);
+    }
+  });
+
+  it("round-trips formatted clock values across deterministic boundary samples", () => {
+    let seed = 0x5eed1234;
+    const samples = [0, 1, 59, 60, 61, 3_599, 5_400, 35_999, 1_000_000];
+    for (let index = 0; index < 1_000; index += 1) {
+      seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0;
+      samples.push(seed % 1_000_001);
+    }
+    for (const seconds of samples) expect(parseClockTime(formatClock(seconds))).toBe(seconds);
+    expect(formatClock(Number.NaN)).toBe("00:00");
+    expect(formatClock(Number.POSITIVE_INFINITY)).toBe("00:00");
   });
 });

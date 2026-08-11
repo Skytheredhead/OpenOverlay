@@ -1,5 +1,6 @@
 import http from "node:http";
 import { createBackendApp } from "./app.js";
+import { closeBackendServer } from "./lifecycle.js";
 import { attachRealtime } from "./realtime.js";
 
 const backend = createBackendApp();
@@ -14,13 +15,25 @@ server.listen(backend.ctx.config.port, backend.ctx.config.host, () => {
   });
 });
 
+let shuttingDown = false;
 const shutdown = (signal: string) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   backend.ctx.logger.info("openoverlay_backend_shutdown", { signal });
-  server.close(() => {
-    backend.close();
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 10_000).unref();
+  const forceExitTimer = setTimeout(() => process.exit(1), 10_000);
+  forceExitTimer.unref();
+  void (async () => {
+    try {
+      await closeBackendServer(server, backend.ctx.realtime);
+      backend.close();
+      await backend.ctx.logger.flush?.();
+      clearTimeout(forceExitTimer);
+      process.exit(0);
+    } catch (error) {
+      console.error(error);
+      process.exit(1);
+    }
+  })();
 };
 
 process.on("SIGINT", () => shutdown("SIGINT"));

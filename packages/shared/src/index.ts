@@ -129,8 +129,10 @@ export interface SoccerTeam {
 
 export interface TeamLibraryEntry extends SoccerTeam {
   id: string;
+  revision: number;
   createdAt: string;
   updatedAt: string;
+  dataRecovered?: boolean;
 }
 
 export interface SoccerClockState {
@@ -282,10 +284,14 @@ export interface PresetSummary {
   publicId: string;
   name: string;
   type: PresetType;
+  revision: number;
   updatedAt: string;
   overlayClientCount?: number;
+  stateRecovered?: boolean;
   state: PresetState;
 }
+
+export type PresetListItem = Omit<PresetSummary, "state" | "stateRecovered">;
 
 export const RESOLUTIONS: Record<ResolutionKey, { width: number; height: number }> = {
   "1280x720": { width: 1280, height: 720 },
@@ -335,20 +341,32 @@ export function defaultElement(id: string, preset: PositionPreset, width: number
 }
 
 export function parseRoster(text: string): RosterEntry[] {
+  const occurrences = new Map<string, number>();
   return text
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
       const match = line.match(/^#?(\d{1,3})\s+(.+)$/);
+      const occurrence = occurrences.get(line) ?? 0;
+      occurrences.set(line, occurrence + 1);
       return {
-        id: makeId("roster"),
+        id: `roster_${stableTextId(`${line}\0${occurrence}`)}`,
         line,
         number: match?.[1],
         name: match?.[2]?.trim() || line,
         starter: false
       };
     });
+}
+
+function stableTextId(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36).padStart(7, "0");
 }
 
 export const defaultTeamColors = {
@@ -564,6 +582,31 @@ export function normalizeSoccerState(state: SoccerState): SoccerState {
   };
 }
 
+export function normalizeChurchState(state: ChurchState): ChurchState {
+  const fullscreen = state.elements.fullscreenSlide;
+  const placement = fullscreen.placement;
+  const hasLegacyFullscreenOffset =
+    placement.preset === "custom" &&
+    placement.x === 0 &&
+    placement.y === 42 &&
+    placement.width === 1920 &&
+    placement.height === 1080 &&
+    placement.scale === 1;
+
+  if (!hasLegacyFullscreenOffset) return state;
+
+  return {
+    ...state,
+    elements: {
+      ...state.elements,
+      fullscreenSlide: {
+        ...fullscreen,
+        placement: { ...placement, y: 0 }
+      }
+    }
+  };
+}
+
 export function createDefaultChurchState(name = "Church Sunday"): ChurchState {
   const titleSlide: ChurchSlide = {
     id: makeId("slide"),
@@ -588,7 +631,10 @@ export function createDefaultChurchState(name = "Church Sunday"): ChurchState {
     elements: {
       lowerThird: defaultElement("churchLowerThird", "bottom-left", 780, 130, "glass"),
       countdown: defaultElement("churchCountdown", "bottom-right", 430, 120, "clean"),
-      fullscreenSlide: defaultElement("churchFullscreen", "custom", 1920, 1080, "glass")
+      fullscreenSlide: {
+        ...defaultElement("churchFullscreen", "custom", 1920, 1080, "glass"),
+        placement: { x: 0, y: 0, width: 1920, height: 1080, scale: 1, preset: "custom" }
+      }
     },
     activeGraphics: []
   };
@@ -692,28 +738,48 @@ export function resetClock(clock: SoccerClockState): SoccerClockState {
 }
 
 export function setClockSeconds(clock: SoccerClockState, seconds: number): SoccerClockState {
+  const nextSeconds = Number.isFinite(seconds) ? Math.max(0, Math.min(1_000_000, Math.floor(seconds))) : 0;
   return {
     ...clock,
     running: false,
-    baseSeconds: Math.max(0, Math.floor(seconds)),
-    resetSeconds: Math.max(0, Math.floor(seconds)),
+    baseSeconds: nextSeconds,
+    resetSeconds: nextSeconds,
     startedAtMs: null
   };
 }
 
 export function parseClockTime(input: string): number {
-  const parts = input.trim().split(":").map((part) => Number.parseInt(part, 10));
-  if (parts.some((part) => Number.isNaN(part) || part < 0)) return 0;
-  if (parts.length === 1) return parts[0];
-  const [minutes, seconds] = parts;
-  return minutes * 60 + Math.min(seconds, 59);
+  return tryParseClockTime(input) ?? 0;
+}
+
+/**
+ * Parses user-entered clock text without conflating invalid input with a
+ * legitimate zero-second value. `parseClockTime` retains its historical
+ * zero fallback for callers that need backwards compatibility.
+ */
+export function tryParseClockTime(input: string): number | null {
+  const trimmed = input.trim();
+  const secondsOnly = /^(\d+)$/.exec(trimmed);
+  if (secondsOnly) return nullableClockSeconds(Number(secondsOnly[1]));
+  const clock = /^(\d+):([0-5]?\d)$/.exec(trimmed);
+  if (!clock) return null;
+  const total = Number(clock[1]) * 60 + Number(clock[2]);
+  return nullableClockSeconds(total);
 }
 
 export function formatClock(seconds: number): string {
-  const clamped = Math.max(0, Math.floor(seconds));
+  const clamped = safeClockSeconds(seconds);
   const minutes = Math.floor(clamped / 60);
   const remainder = clamped % 60;
-  return `${minutes}:${remainder.toString().padStart(2, "0")}`;
+  return `${minutes.toString().padStart(2, "0")}:${remainder.toString().padStart(2, "0")}`;
+}
+
+function safeClockSeconds(value: number): number {
+  return nullableClockSeconds(value) ?? 0;
+}
+
+function nullableClockSeconds(value: number): number | null {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000 ? value : null;
 }
 
 export function formatSoccerClock(clock: SoccerClockState, nowMs = Date.now()): string {

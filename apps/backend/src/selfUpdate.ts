@@ -17,8 +17,9 @@ export interface SelfUpdater {
 
 export interface PromotionController {
   canPromote(): boolean;
-  startCandidate(): Promise<unknown>;
+  startCandidate(expectedCommit?: string): Promise<unknown>;
   promoteCandidate(): void;
+  restartGateway(): Promise<void>;
   status(): unknown;
 }
 
@@ -68,31 +69,47 @@ export function createSelfUpdater(config: AppConfig, logger: Logger, promotions:
     const previousCommit = activeCommit || localCommit;
     if (localCommit === remoteCommit && activeCommit === remoteCommit) return;
 
+    const branch = (await runner("git", ["branch", "--show-current"], repoDir)).stdout.trim();
+    if (branch !== config.selfUpdateBranch) {
+      logger.warn("self_update_skipped_wrong_branch", { branch, expectedBranch: config.selfUpdateBranch, localCommit, remoteCommit });
+      return;
+    }
+
+    if (!(await isCleanWorkingTree(runner, repoDir))) {
+      logger.warn("self_update_skipped_dirty_worktree", { repoDir, localCommit, remoteCommit });
+      return;
+    }
+
     if (localCommit !== remoteCommit) {
-      const branch = (await runner("git", ["branch", "--show-current"], repoDir)).stdout.trim();
-      if (branch !== config.selfUpdateBranch) {
-        logger.warn("self_update_skipped_wrong_branch", { branch, expectedBranch: config.selfUpdateBranch, localCommit, remoteCommit });
-        return;
-      }
-
-      if (!(await isCleanWorkingTree(runner, repoDir))) {
-        logger.warn("self_update_skipped_dirty_worktree", { repoDir, localCommit, remoteCommit });
-        return;
-      }
-
       logger.info("self_update_detected", { localCommit, remoteCommit, branch: config.selfUpdateBranch });
       await runner("git", ["pull", "--ff-only", config.selfUpdateRemote, config.selfUpdateBranch], repoDir);
-      await runner("npm", ["ci"], repoDir);
-      await runner("npm", ["run", "build", "--workspace", "@openoverlay/shared"], repoDir);
-      await runner("npm", ["run", "build", "--workspace", "@openoverlay/backend"], repoDir);
-      localCommit = remoteCommit;
     } else {
       logger.info("self_update_retrying_unpromoted_commit", { activeCommit, targetCommit: remoteCommit });
     }
 
-    const candidate = await promotions.startCandidate();
+    // The gateway runs with NODE_ENV=production, which makes npm omit dev
+    // dependencies by default. Builds and verification need TypeScript and
+    // Vitest, so explicitly include them in the updater install.
+    await runner("npm", ["ci", "--include=dev"], repoDir);
+    await runner("npm", ["audit", "--audit-level=high"], repoDir);
+    await runner("npm", ["run", "build", "--workspace", "@openoverlay/shared"], repoDir);
+    await runner("npm", ["run", "build", "--workspace", "@openoverlay/backend"], repoDir);
+    await runner("npm", ["run", "test", "--workspace", "@openoverlay/backend"], repoDir);
+    localCommit = (await runner("git", ["rev-parse", "HEAD"], repoDir)).stdout.trim();
+    if (localCommit !== remoteCommit) {
+      throw new Error(`Repository moved during self-update build: expected ${remoteCommit}, found ${localCommit || "unknown"}`);
+    }
+    if (!(await isCleanWorkingTree(runner, repoDir))) {
+      throw new Error("Repository changed during self-update build; refusing to promote an unverified worktree");
+    }
+
+    const candidate = await promotions.startCandidate(remoteCommit);
     promotions.promoteCandidate();
     logger.info("self_update_applied", { previousCommit, currentCommit: remoteCommit, candidate });
+    // The gateway and updater live in this long-running process. Restart it
+    // after validating/promoting the child so gateway-only changes cannot stay
+    // silently stale while /health reports the new child commit.
+    await promotions.restartGateway();
   };
 
   return {
@@ -117,9 +134,8 @@ export function createSelfUpdater(config: AppConfig, logger: Logger, promotions:
 
 async function isCleanWorkingTree(runner: CommandRunner, repoDir: string): Promise<boolean> {
   try {
-    await runner("git", ["diff", "--quiet"], repoDir);
-    await runner("git", ["diff", "--cached", "--quiet"], repoDir);
-    return true;
+    const status = await runner("git", ["status", "--porcelain", "--untracked-files=normal"], repoDir);
+    return status.stdout.trim() === "";
   } catch {
     return false;
   }

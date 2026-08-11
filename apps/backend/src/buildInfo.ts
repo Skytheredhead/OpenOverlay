@@ -14,7 +14,8 @@ let cachedBuildInfo: BuildInfo | null = null;
 export function getBuildInfo(): BuildInfo {
   if (cachedBuildInfo) return cachedBuildInfo;
 
-  const commit = gitCommit() || firstNonEmpty(process.env.OPENOVERLAY_GIT_SHA, process.env.GIT_COMMIT_SHA, process.env.VERCEL_GIT_COMMIT_SHA);
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const commit = resolveBuildCommit(moduleDir);
   const version = firstNonEmpty(process.env.OPENOVERLAY_VERSION, process.env.npm_package_version) || packageVersion();
 
   cachedBuildInfo = {
@@ -23,6 +24,24 @@ export function getBuildInfo(): BuildInfo {
     commitShort: commit ? commit.slice(0, 7) : null
   };
   return cachedBuildInfo;
+}
+
+export function resolveBuildCommit(
+  moduleDir: string,
+  environment: NodeJS.ProcessEnv = process.env,
+  gitCommitReader: () => string | null = gitCommit
+): string | null {
+  return artifactCommit(moduleDir) ||
+    firstNonEmpty(environment.OPENOVERLAY_GIT_SHA, environment.GIT_COMMIT_SHA, environment.VERCEL_GIT_COMMIT_SHA) ||
+    (path.basename(moduleDir) === "src" ? gitCommitReader() : null);
+}
+
+function artifactCommit(moduleDir: string): string | null {
+  try {
+    return firstNonEmpty(fs.readFileSync(path.join(moduleDir, ".openoverlay-build-commit"), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 function firstNonEmpty(...values: Array<string | undefined>): string | null {

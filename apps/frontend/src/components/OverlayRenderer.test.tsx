@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createDefaultChurchState, createDefaultSoccerState } from "@openoverlay/shared";
 import { OverlayRenderer } from "./OverlayRenderer";
 
@@ -13,6 +13,45 @@ async function frameText(container: HTMLElement) {
 }
 
 describe("OverlayRenderer", () => {
+  it("does not start a clock interval for a static soccer scene", () => {
+    const intervalSpy = vi.spyOn(window, "setInterval");
+    const state = createDefaultSoccerState("Static Match");
+    state.clock.running = false;
+    state.soccerPackage.countdown.running = false;
+
+    const { unmount } = render(<OverlayRenderer type="soccer" state={state} />);
+
+    expect(intervalSpy).not.toHaveBeenCalled();
+    unmount();
+    intervalSpy.mockRestore();
+  });
+
+  it("does not keep ticking after locally displayed soccer clocks have reached their stop", () => {
+    const intervalSpy = vi.spyOn(window, "setInterval");
+    const now = Date.now();
+    const state = createDefaultSoccerState("Finished Timers");
+    state.clock = {
+      ...state.clock,
+      running: true,
+      baseSeconds: 0,
+      startedAtMs: now - 60_000,
+      stopAtEnabled: true,
+      stopAtSeconds: 10
+    };
+    state.soccerPackage.countdown = {
+      ...state.soccerPackage.countdown,
+      seconds: 5,
+      running: true,
+      startedAtMs: now - 60_000
+    };
+
+    const { unmount } = render(<OverlayRenderer type="soccer" state={state} />);
+
+    expect(intervalSpy).not.toHaveBeenCalled();
+    unmount();
+    intervalSpy.mockRestore();
+  });
+
   it("renders the Classic soccer matchup package", async () => {
     const state = createDefaultSoccerState("Test Match");
     state.score.home = 3;
@@ -31,6 +70,39 @@ describe("OverlayRenderer", () => {
     const { container } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
     await expect(frameText(container)).resolves.toContain("OOU");
     await expect(frameText(container)).resolves.toContain("SKY");
+  });
+
+  it("renders a non-expired soccer temporary graphic", () => {
+    const state = createDefaultSoccerState("Test Match");
+    state.activeGraphics.push({
+      id: "goal-1",
+      kind: "goal",
+      title: "Goal by #10",
+      label: "Goal",
+      team: "home",
+      variant: "broadcast",
+      placement: { x: 120, y: 760, width: 720, height: 160, scale: 1, preset: "custom" },
+      startedAtMs: Date.now(),
+      durationMs: 0,
+      expiresAtMs: null
+    });
+
+    render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+
+    expect(screen.getByRole("heading", { name: "Goal by #10" })).toBeInTheDocument();
+  });
+
+  it("renders soccer stats only while the stat bug is visible", () => {
+    const state = createDefaultSoccerState("Test Match");
+    state.stats.shots = { home: 7, away: 4 };
+    const { container, rerender } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={state} /></div>);
+
+    expect(container.querySelector(".statbug")?.textContent).toContain("Shots74");
+
+    const hidden = structuredClone(state);
+    hidden.elements.statBug.visible = false;
+    rerender(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="soccer" state={hidden} /></div>);
+    expect(container.querySelector(".statbug")).not.toBeInTheDocument();
   });
 
   it("applies soccer package color bank variables to the stage", async () => {
@@ -193,9 +265,61 @@ describe("OverlayRenderer", () => {
     await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-layer-active .overlay-countdown.overlay-entering")).toBeTruthy(), { timeout: 2400 });
   });
 
-  it("renders a church slide", () => {
+  it("renders a church slide at the full stage origin without a phantom wall-clock countdown", () => {
+    const intervalSpy = vi.spyOn(window, "setInterval");
     const state = createDefaultChurchState("Sunday");
-    render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="church" state={state} /></div>);
+    const { container, unmount } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="church" state={state} /></div>);
     expect(screen.getByText(/Welcome/)).toBeInTheDocument();
+    const fullscreen = container.querySelector<HTMLElement>('[data-element-id="churchFullscreen"]');
+    expect(fullscreen?.style.left).toBe("0px");
+    expect(fullscreen?.style.top).toBe("0px");
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
+    expect(intervalSpy).not.toHaveBeenCalled();
+    unmount();
+    intervalSpy.mockRestore();
+  });
+
+  it("renders an active church lower third with selected copy and no generic duplicate", () => {
+    const state = createDefaultChurchState("Sunday");
+    state.activeGraphics.push({
+      id: "lower-1",
+      kind: "church-lower-third",
+      title: "Pastor Jordan",
+      subtitle: "Lead Pastor",
+      variant: "glass",
+      placement: state.elements.lowerThird.placement,
+      startedAtMs: Date.now(),
+      durationMs: 1_000,
+      expiresAtMs: null
+    });
+
+    const { container } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="church" state={state} /></div>);
+
+    expect(screen.getByRole("heading", { name: "Pastor Jordan" })).toBeInTheDocument();
+    expect(screen.getByText("Lead Pastor")).toBeInTheDocument();
+    expect(container.querySelectorAll(".church-lower-third")).toHaveLength(1);
+    expect(container.querySelector(".temporary-graphic")).not.toBeInTheDocument();
+  });
+
+  it("renders a church countdown as remaining duration rather than local time", () => {
+    const now = Date.now();
+    const state = createDefaultChurchState("Sunday");
+    state.activeGraphics.push({
+      id: "countdown-1",
+      kind: "countdown",
+      title: "Service begins in",
+      variant: "clean",
+      placement: state.elements.countdown.placement,
+      startedAtMs: now,
+      durationMs: 90_000,
+      expiresAtMs: now + 90_000
+    });
+
+    const { container } = render(<div style={{ width: 960, height: 540 }}><OverlayRenderer type="church" state={state} /></div>);
+
+    expect(screen.getByRole("timer")).toHaveTextContent("Service begins in");
+    expect(screen.getByRole("timer")).toHaveTextContent("01:30");
+    expect(container.querySelectorAll(".countdown-element")).toHaveLength(1);
+    expect(container.querySelector(".temporary-graphic")).not.toBeInTheDocument();
   });
 });
