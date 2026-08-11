@@ -25,7 +25,9 @@ export function makeTestServer(overrides: Partial<AppConfig> = {}) {
     request: request(backend.app),
     close() {
       backend.close();
-      fs.rmSync(dir, { recursive: true, force: true });
+      // File logging uses asynchronous appendFile calls. On slower CI filesystems,
+      // one can still be completing immediately after the backend is closed.
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 25 });
     }
   };
 }
