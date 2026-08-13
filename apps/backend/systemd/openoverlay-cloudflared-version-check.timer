@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly OpenOverlay cloudflared version report
+
+[Timer]
+OnCalendar=monthly
+Persistent=true
+RandomizedDelaySec=6h
+Unit=openoverlay-cloudflared-version-check.service
+
+[Install]
+WantedBy=timers.target

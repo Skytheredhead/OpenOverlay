@@ -144,7 +144,6 @@ describe("auth", () => {
     expect(() => loadConfig({ port: 8735, gatewayBackendPorts: [8735, 8736] })).toThrow(/must not match any GATEWAY_BACKEND_PORTS/);
     vi.stubEnv("OPENOVERLAY_SLOT_ID", "test-slot");
     expect(loadConfig({ port: 8735, gatewayBackendPorts: [8735, 8736] }).port).toBe(8735);
-    expect(() => loadConfig({ selfUpdateIntervalMs: 0 })).toThrow(/SELF_UPDATE_INTERVAL_MS must be a positive number/);
     expect(() => loadConfig({ realtimeMaxConnections: 1.5 })).toThrow(/REALTIME_MAX_CONNECTIONS must be a positive integer/);
     expect(() => loadConfig({ mediaGlobalMaxBytes: 0 })).toThrow(/MEDIA_GLOBAL_MAX_BYTES must be a positive integer/);
     expect(() => loadConfig({ storageMinimumFreeBytes: -1 })).toThrow(/STORAGE_MINIMUM_FREE_BYTES must be a non-negative integer/);
@@ -152,8 +151,6 @@ describe("auth", () => {
     expect(() => loadConfig({ corsOrigins: ["https://example.com", "https://example.com"] })).toThrow(/duplicates/);
     expect(() => loadConfig({ corsOrigins: ["https://example.com/path"] })).toThrow(/valid HTTP/);
     expect(() => loadConfig({ frontendUrl: "javascript:alert(1)" })).toThrow(/valid HTTP/);
-    vi.stubEnv("SELF_UPDATE_ENABLED", "yes");
-    expect(() => loadConfig()).toThrow(/SELF_UPDATE_ENABLED must be true, false, 1, or 0/);
   });
 
   it("bounds authenticated writes and action-key traffic", () => {

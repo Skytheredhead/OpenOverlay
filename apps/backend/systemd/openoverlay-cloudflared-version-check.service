@@ -1,0 +1,15 @@
+[Unit]
+Description=Report supported cloudflared updates for OpenOverlay
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/openoverlay/current/scripts/cloudflare-tunnel-maintenance.sh check-update
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/var/lib/apt /var/cache/apt /var/log
+

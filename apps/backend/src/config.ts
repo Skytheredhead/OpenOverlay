@@ -16,14 +16,9 @@ export interface AppConfig {
   corsOrigins: string[];
   cookieDomain?: string;
   frontendUrl: string;
-  selfUpdateEnabled: boolean;
-  selfUpdateIntervalMs: number;
-  selfUpdateRepoDir: string;
-  selfUpdateRemote: string;
-  selfUpdateBranch: string;
   gatewayBackendHost: string;
   gatewayBackendPorts: number[];
-  gatewayReleaseDir: string;
+  gatewayControlSocket: string;
   gatewaySlotStartupTimeoutMs: number;
   gatewayHealthCheckIntervalMs: number;
   gatewayHealthCheckTimeoutMs: number;
@@ -88,14 +83,9 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     corsOrigins,
     cookieDomain,
     frontendUrl,
-    selfUpdateEnabled: overrides.selfUpdateEnabled ?? parseBoolean(process.env.SELF_UPDATE_ENABLED, "SELF_UPDATE_ENABLED"),
-    selfUpdateIntervalMs: validatePositiveNumber(overrides.selfUpdateIntervalMs ?? parsePositiveNumber(process.env.SELF_UPDATE_INTERVAL_MS, 60_000, "SELF_UPDATE_INTERVAL_MS"), "SELF_UPDATE_INTERVAL_MS"),
-    selfUpdateRepoDir: path.resolve(overrides.selfUpdateRepoDir ?? process.env.SELF_UPDATE_REPO_DIR ?? path.join(cwd, "..", "..")),
-    selfUpdateRemote: overrides.selfUpdateRemote ?? process.env.SELF_UPDATE_REMOTE ?? "origin",
-    selfUpdateBranch: overrides.selfUpdateBranch ?? process.env.SELF_UPDATE_BRANCH ?? "main",
     gatewayBackendHost,
     gatewayBackendPorts,
-    gatewayReleaseDir: path.resolve(overrides.gatewayReleaseDir ?? process.env.GATEWAY_RELEASE_DIR ?? path.join(cwd, "..", "..", "releases")),
+    gatewayControlSocket: path.resolve(overrides.gatewayControlSocket ?? process.env.GATEWAY_CONTROL_SOCKET ?? "/run/openoverlay/gateway-control.sock"),
     gatewaySlotStartupTimeoutMs: validatePositiveNumber(overrides.gatewaySlotStartupTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_SLOT_STARTUP_TIMEOUT_MS, 15_000, "GATEWAY_SLOT_STARTUP_TIMEOUT_MS"), "GATEWAY_SLOT_STARTUP_TIMEOUT_MS"),
     gatewayHealthCheckIntervalMs: validatePositiveNumber(overrides.gatewayHealthCheckIntervalMs ?? parsePositiveNumber(process.env.GATEWAY_HEALTH_CHECK_INTERVAL_MS, 10_000, "GATEWAY_HEALTH_CHECK_INTERVAL_MS"), "GATEWAY_HEALTH_CHECK_INTERVAL_MS"),
     gatewayHealthCheckTimeoutMs: validatePositiveNumber(overrides.gatewayHealthCheckTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_HEALTH_CHECK_TIMEOUT_MS, 2_000, "GATEWAY_HEALTH_CHECK_TIMEOUT_MS"), "GATEWAY_HEALTH_CHECK_TIMEOUT_MS"),
@@ -111,13 +101,6 @@ function parseEnvironment(value: string | undefined): AppConfig["env"] {
   if (value === undefined || value === "") return "development";
   if (value === "development" || value === "test" || value === "production") return value;
   throw new Error(`Invalid NODE_ENV: ${value}`);
-}
-
-function parseBoolean(value: string | undefined, label: string): boolean {
-  if (value === undefined || value.trim() === "") return false;
-  if (value === "1" || value.toLowerCase() === "true") return true;
-  if (value === "0" || value.toLowerCase() === "false") return false;
-  throw new Error(`${label} must be true, false, 1, or 0`);
 }
 
 function parsePositiveNumber(value: string | undefined, fallback: number, label: string): number {

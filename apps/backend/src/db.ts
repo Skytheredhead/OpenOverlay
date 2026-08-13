@@ -68,6 +68,7 @@ export interface EventLogRow {
 const MAX_EVENT_LOGS_PER_PRESET = 1_000;
 const MAX_EVENT_PAYLOAD_BYTES = 4 * 1024;
 const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_READER_VERSION = 2;
 
 export class Database {
   private readonly db: DatabaseSync;
@@ -478,7 +479,7 @@ export class Database {
         );
       `);
       const appliedVersion = Number(this.get<{ version: number }>("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations")?.version || 0);
-      if (appliedVersion > CURRENT_SCHEMA_VERSION) {
+      if (appliedVersion > CURRENT_SCHEMA_VERSION && !this.isNewerSchemaReadable(appliedVersion)) {
         throw new Error(`Database schema version ${appliedVersion} is newer than supported version ${CURRENT_SCHEMA_VERSION}`);
       }
       if (appliedVersion < 1) this.applyInitialSchema();
@@ -488,6 +489,19 @@ export class Database {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  private isNewerSchemaReadable(appliedVersion: number): boolean {
+    const compatibilityTable = this.get<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_compatibility'"
+    );
+    if (!compatibilityTable) return false;
+    const compatibility = this.get<{ min_reader_version: number }>(
+      "SELECT min_reader_version FROM schema_compatibility WHERE schema_version = ?",
+      [appliedVersion]
+    );
+    return Number.isSafeInteger(compatibility?.min_reader_version) &&
+      Number(compatibility?.min_reader_version) <= CURRENT_READER_VERSION;
   }
 
   private applyInitialSchema(): void {

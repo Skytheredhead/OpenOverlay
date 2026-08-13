@@ -64,13 +64,8 @@ Backend:
 - `CORS_ORIGINS`
 - `FRONTEND_URL`
 - `COOKIE_DOMAIN`
-- `SELF_UPDATE_ENABLED`, default disabled
-- `SELF_UPDATE_INTERVAL_MS`, default `60000`
-- `SELF_UPDATE_REPO_DIR`, default repo root
-- `SELF_UPDATE_REMOTE`, default `origin`
-- `SELF_UPDATE_BRANCH`, default `main`
 - `GATEWAY_BACKEND_PORTS`, default `8735,8736`
-- `GATEWAY_RELEASE_DIR`
+- `GATEWAY_CONTROL_SOCKET`, default `/run/openoverlay/gateway-control.sock`
 - `GATEWAY_SLOT_STARTUP_TIMEOUT_MS`, default `15000`
 - `GATEWAY_HEALTH_CHECK_INTERVAL_MS`, default `10000`
 - `GATEWAY_HEALTH_CHECK_TIMEOUT_MS`, default `2000`

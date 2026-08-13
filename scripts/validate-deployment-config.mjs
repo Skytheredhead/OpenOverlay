@@ -55,6 +55,11 @@ for (const line of [
   "ExecStart=/usr/bin/node dist/gateway.js",
   "NoNewPrivileges=true",
   "PrivateTmp=true",
+  "PrivateDevices=true",
+  "ProtectSystem=strict",
+  "ProtectHome=true",
+  "ReadOnlyPaths=/opt/openoverlay",
+  "ReadWritePaths=/var/lib/openoverlay /var/log/openoverlay /run/openoverlay",
   "UMask=0077"
 ]) {
   if (!backendUnit.split(/\r?\n/).includes(line)) throw new Error(`${backendUnitFile} is missing required setting: ${line}`);
@@ -63,21 +68,38 @@ for (const line of [
 const backendDeployFile = "scripts/deploy-backend.sh";
 const backendDeploy = fs.readFileSync(backendDeployFile, "utf8");
 for (const fragment of [
-  'NODE_BIN="/usr/bin/node"',
-  'NPM_CLI="/usr/bin/npm"',
-  'sudo "${NODE_BIN}" scripts/validate-production-env.mjs',
-  "Environment=PATH=/usr/bin:/bin",
-  "ExecStart=${NODE_BIN} dist/gateway.js",
-  "UMask=0077"
+  "git archive --format=tar.gz",
+  "shasum -a 256",
+  "ClearAllForwardings=yes",
+  "RequestTTY=no"
 ]) {
   if (!backendDeploy.includes(fragment)) throw new Error(`${backendDeployFile} is missing required deployment invariant: ${fragment}`);
 }
-if (/^\s*(?:sudo\s+)?node\s/m.test(backendDeploy) || /^\s*npm\s/m.test(backendDeploy)) {
-  throw new Error(`${backendDeployFile} must use its validated absolute Node/npm commands`);
+for (const obsolete of ["SELF_UPDATE_ENABLED", "SELF_UPDATE_REPO_DIR", "GATEWAY_RELEASE_DIR"]) {
+  if (backendUnit.includes(obsolete)) throw new Error(`${backendUnitFile} still contains obsolete mutable updater setting: ${obsolete}`);
 }
 
-console.log(`${backendUnitFile}: Node path and systemd hardening validated`);
-console.log(`${backendDeployFile}: Node and production environment validation wiring validated`);
+const hostDeployFile = "scripts/openoverlay-deploy";
+const hostDeploy = fs.readFileSync(hostDeployFile, "utf8");
+for (const fragment of [
+  "/run/lock/openoverlay-deploy.lock",
+  "flock -n 9",
+  "MAX_ARCHIVE_BYTES=268435456",
+  "tar -tzf",
+  "restore-verify",
+  "assert_promotion_safe",
+  "atomic_link",
+  "wait_for_release"
+]) {
+  if (!hostDeploy.includes(fragment)) throw new Error(`${hostDeployFile} is missing required release invariant: ${fragment}`);
+}
+if (hostDeploy.includes("git pull") || hostDeploy.includes("git fetch")) {
+  throw new Error(`${hostDeployFile} must never mutate a Git checkout`);
+}
+
+console.log(`${backendUnitFile}: immutable release path and systemd hardening validated`);
+console.log(`${backendDeployFile}: exact-SHA archive streaming validated`);
+console.log(`${hostDeployFile}: immutable promotion, backup, and rollback wiring validated`);
 
 function headerValue(rule, name) {
   if (!rule || !Array.isArray(rule.headers)) return undefined;

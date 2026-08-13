@@ -1,15 +1,15 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { OPENOVERLAY_SUPPORTED_API_VERSIONS, OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS } from "@openoverlay/shared";
+import { getBuildInfo } from "./buildInfo.js";
 import { loadConfig, type AppConfig } from "./config.js";
 import { createLogger, type Logger } from "./logger.js";
-import { getBuildInfo } from "./buildInfo.js";
-import { createSelfUpdater, type PromotionController } from "./selfUpdate.js";
 
-type SlotState = "candidate" | "active" | "draining";
+type RealtimeClientKind = "overlay" | "preview" | "admin" | "unknown";
 
 interface SlotHealth {
   ok?: boolean;
@@ -27,36 +27,37 @@ interface SlotHealth {
 export interface BackendSlot {
   id: string;
   port: number;
-  state: SlotState;
   startedAt: string;
   health: SlotHealth;
   process?: ChildProcess;
-  sockets: Set<net.Socket>;
+  sockets: Map<net.Socket, RealtimeClientKind>;
 }
 
-export interface BackendGateway {
-  start(): Promise<void>;
-  stop(): Promise<void>;
-  status(): GatewayStatus;
-  promotionController(): PromotionController;
-}
-
-export interface GatewayStatus {
-  gatewayBuild: ReturnType<typeof getBuildInfo>;
-  activeSlot?: SlotSummary;
-  drainingSlots: SlotSummary[];
-  candidateSlot?: SlotSummary;
-  slotLimit: number;
+interface ConnectionCounts {
+  overlay: number;
+  preview: number;
+  admin: number;
+  unknown: number;
+  total: number;
 }
 
 interface SlotSummary {
   id: string;
   port: number;
-  state: SlotState;
   startedAt: string;
   activeWebSockets: number;
   build: SlotHealth["build"];
   compatibility: SlotHealth["compatibility"];
+}
+
+export interface GatewayStatus {
+  gatewayBuild: ReturnType<typeof getBuildInfo>;
+  activeReleaseSha: string | null;
+  activeSlot?: SlotSummary;
+  connections: ConnectionCounts;
+  inFlightMutations: number;
+  activeChildHealthy: boolean;
+  gatewayHealthy: boolean;
 }
 
 interface PublicGatewayStatus {
@@ -64,6 +65,12 @@ interface PublicGatewayStatus {
   gatewayBuild: ReturnType<typeof getBuildInfo>;
   activeBuild?: SlotHealth["build"];
   compatibility?: SlotHealth["compatibility"];
+}
+
+export interface BackendGateway {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  status(): GatewayStatus;
 }
 
 interface GatewayOptions {
@@ -78,33 +85,43 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
   const logger = options.logger || createLogger(config.logFile);
   const spawnBackend = options.spawnBackend || defaultSpawnBackend;
   const exitProcess = options.exitProcess || ((code: number) => process.exit(code));
-  const slots = new Map<string, BackendSlot>();
-  const slotFailures = new Map<string, Error>();
+  const gatewayBuild = getBuildInfo();
   let activeSlot: BackendSlot | undefined;
-  let candidateSlot: BackendSlot | undefined;
   let server: http.Server | undefined;
+  let controlServer: net.Server | undefined;
   let stopping = false;
   let fatalExitRequested = false;
+  let inFlightMutations = 0;
   let healthCheckTimer: NodeJS.Timeout | undefined;
   let healthCheckAbortController: AbortController | undefined;
-  let monitoredSlotId: string | undefined;
   let consecutiveHealthFailures = 0;
 
   async function start(): Promise<void> {
     if (server) return;
     stopping = false;
     fatalExitRequested = false;
-    const initialSlot = await startSlot("active");
-    activeSlot = initialSlot;
+    const slot = await startSlot();
+    activeSlot = slot;
 
-    server = http.createServer((req, res) => void proxyHttp(req, res));
-    server.on("upgrade", (req, socket, head) => proxyUpgrade(req, socket as net.Socket, head));
+    try {
+      server = http.createServer((req, res) => void proxyHttp(req, res));
+      server.on("upgrade", (req, socket, head) => proxyUpgrade(req, socket as net.Socket, head));
+      await listenHttp(server, config.port, config.host);
+      controlServer = await listenControlSocket(config.gatewayControlSocket, status, logger);
+    } catch (error) {
+      stopSlot(slot, "gateway_start_failed");
+      server?.closeAllConnections();
+      server = undefined;
+      throw error;
+    }
 
-    await new Promise<void>((resolve) => {
-      server!.listen(config.port, config.host, resolve);
-    });
     scheduleHealthCheck();
-    logger.info("openoverlay_gateway_started", { host: config.host, port: config.port, activeSlot: summarizeSlot(initialSlot) });
+    logger.info("openoverlay_gateway_started", {
+      host: config.host,
+      port: config.port,
+      controlSocket: config.gatewayControlSocket,
+      activeSlot: summarizeSlot(slot)
+    });
   }
 
   async function stop(): Promise<void> {
@@ -113,55 +130,35 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
     healthCheckTimer = undefined;
     healthCheckAbortController?.abort();
     healthCheckAbortController = undefined;
-    const serverStopped = new Promise<void>((resolve) => {
-      if (!server) {
-        resolve();
-        return;
-      }
-      server.close(() => resolve());
-    });
-    const slotsToStop = [...slots.values()];
-    const childExits = slotsToStop.map(waitForSlotExit);
-    for (const slot of slotsToStop) {
-      stopSlot(slot, "gateway_stop");
-    }
+
+    const httpStopped = closeHttpServer(server);
+    const controlStopped = closeNetServer(controlServer);
+    const slot = activeSlot;
+    const childExit = slot ? waitForSlotExit(slot) : Promise.resolve();
+    if (slot) stopSlot(slot, "gateway_stop");
     server?.closeAllConnections();
-    await Promise.all([serverStopped, ...childExits]);
+    controlServer?.close();
+    await Promise.all([httpStopped, controlStopped, childExit]);
     server = undefined;
+    controlServer = undefined;
+    removeControlSocket(config.gatewayControlSocket);
   }
 
   async function proxyHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (isGatewayStatusRequest(req.url)) {
-      if (req.method !== "GET" && req.method !== "HEAD") {
-        res.writeHead(405, {
-          allow: "GET, HEAD",
-          "cache-control": "no-store",
-          "content-type": "application/json",
-          "x-content-type-options": "nosniff"
-        });
-        res.end(JSON.stringify({ error: "Method not allowed" }));
-        return;
-      }
-      res.writeHead(200, {
-        "cache-control": "no-store",
-        "content-type": "application/json",
-        "x-content-type-options": "nosniff"
-      });
-      if (req.method === "HEAD") {
-        res.end();
-        return;
-      }
-      res.end(JSON.stringify(publicStatus()));
+      writePublicStatus(req, res, publicStatus());
       return;
     }
 
-    const selectedSlot = selectSlot(req);
-    if (!selectedSlot) {
+    const slot = selectSlot(req);
+    if (!slot) {
       writeUnsupportedVersion(res);
       return;
     }
-    const slot: BackendSlot = selectedSlot;
+    const slotId = slot.id;
 
+    const isMutation = isMutatingMethod(req.method);
+    if (isMutation) inFlightMutations += 1;
     let proxyFinished = false;
     const proxyReq = http.request(
       {
@@ -190,20 +187,15 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
     timeout.unref();
 
     function finishProxySuccess(): void {
-      if (proxyFinished) return;
-      proxyFinished = true;
-      clearTimeout(timeout);
+      finishProxy();
     }
 
     function finishProxyFailure(error: Error, statusCode: 502 | 504): void {
       if (proxyFinished) return;
-      proxyFinished = true;
-      clearTimeout(timeout);
-      logger.error("gateway_http_proxy_failed", { slot: slot.id, error: error.message });
+      finishProxy();
+      logger.error("gateway_http_proxy_failed", { slot: slotId, error: error.message });
       proxyReq.destroy();
       if (res.headersSent) {
-        // Once a response has begun, appending a JSON error would corrupt the
-        // upstream payload. Terminate it so clients can detect an incomplete response.
         res.destroy();
         return;
       }
@@ -211,18 +203,23 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
       res.end(JSON.stringify({ error: statusCode === 504 ? "Backend slot timed out" : "Backend slot unavailable" }));
     }
 
+    function finishProxy(): void {
+      if (proxyFinished) return;
+      proxyFinished = true;
+      clearTimeout(timeout);
+      if (isMutation) inFlightMutations = Math.max(0, inFlightMutations - 1);
+    }
+
     proxyReq.on("error", (error) => finishProxyFailure(error, 502));
     req.on("aborted", () => {
       if (!proxyFinished) {
-        proxyFinished = true;
-        clearTimeout(timeout);
+        finishProxy();
         proxyReq.destroy();
       }
     });
     res.on("close", () => {
       if (!proxyFinished) {
-        proxyFinished = true;
-        clearTimeout(timeout);
+        finishProxy();
         proxyReq.destroy();
       }
     });
@@ -242,7 +239,7 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
       for (const [name, value] of Object.entries(req.headers)) {
         if (Array.isArray(value)) {
           for (const item of value) upstream.write(`${name}: ${item}\r\n`);
-        } else if (value !== undefined) {
+        } else if (value !== undefined && name.toLowerCase() !== "host") {
           upstream.write(`${name}: ${value}\r\n`);
         }
       }
@@ -253,7 +250,7 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
       socket.pipe(upstream).pipe(socket);
     });
 
-    slot.sockets.add(socket);
+    slot.sockets.set(socket, classifyRealtimeClient(req));
     let cleanedUp = false;
     const cleanup = () => {
       if (cleanedUp) return;
@@ -261,7 +258,6 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
       slot.sockets.delete(socket);
       upstream.destroy();
       socket.destroy();
-      if (!stopping) retireDrainedSlots();
     };
     socket.on("close", cleanup);
     socket.on("error", cleanup);
@@ -279,28 +275,24 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
     return slot;
   }
 
-  async function startSlot(state: SlotState, expectedCommit?: string): Promise<BackendSlot> {
-    const port = nextAvailablePort();
+  async function startSlot(): Promise<BackendSlot> {
     const slot: BackendSlot = {
-      id: `${Date.now()}-${port}`,
-      port,
-      state,
+      id: `${Date.now()}-${config.gatewayBackendPorts[0]}`,
+      port: config.gatewayBackendPorts[0],
       startedAt: new Date().toISOString(),
       health: {},
-      sockets: new Set()
+      sockets: new Map()
     };
-    slots.set(slot.id, slot);
     slot.process = spawnBackend(slot, {
       ...process.env,
       HOST: config.gatewayBackendHost,
       PORT: String(slot.port),
-      SELF_UPDATE_ENABLED: "false",
       OPENOVERLAY_SLOT_ID: slot.id
     });
     attachChildLogging(slot);
-    slot.health = await waitForSlotHealth(slot, expectedCommit);
+    slot.health = await waitForSlotHealth(slot);
     if (!isCompatible(slot.health)) {
-      stopSlot(slot, "incompatible_candidate");
+      stopSlot(slot, "incompatible_backend");
       throw new Error(`Backend slot ${slot.id} does not support current OpenOverlay API/realtime versions`);
     }
     return slot;
@@ -308,24 +300,18 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
 
   function attachChildLogging(slot: BackendSlot): void {
     slot.process?.on("error", (error) => {
-      if (!slots.has(slot.id)) return;
-      const failure = new Error(`Backend slot ${slot.id} failed to start: ${error.message}`, { cause: error });
-      slotFailures.set(slot.id, failure);
-      logger.error("gateway_slot_process_error", { slot: slot.id, port: slot.port, state: slot.state, error: error.message });
-      requestGatewayRestartIfActive(slot, failure, "gateway_active_slot_process_failed");
+      if (stopping) return;
+      requestGatewayRestart(slot, new Error(`Backend slot failed to start: ${error.message}`), "gateway_active_slot_process_failed");
     });
     slot.process?.on("exit", (code, signal) => {
-      logger.info("gateway_slot_exited", { slot: slot.id, port: slot.port, state: slot.state, code, signal });
-      if (!slots.has(slot.id)) return;
-      const failure = new Error(`Backend slot ${slot.id} exited unexpectedly (code=${String(code)}, signal=${String(signal)})`);
-      slotFailures.set(slot.id, failure);
-      requestGatewayRestartIfActive(slot, failure, "gateway_active_slot_exited");
+      logger.info("gateway_slot_exited", { slot: slot.id, port: slot.port, code, signal });
+      if (stopping) return;
+      requestGatewayRestart(slot, new Error(`Backend slot exited unexpectedly (code=${String(code)}, signal=${String(signal)})`), "gateway_active_slot_exited");
     });
   }
 
-  function requestGatewayRestartIfActive(slot: BackendSlot, failure: Error, event: string): void {
-    const isActive = activeSlot?.id === slot.id || (!activeSlot && slot.state === "active");
-    if (stopping || fatalExitRequested || !isActive) return;
+  function requestGatewayRestart(slot: BackendSlot, failure: Error, event: string): void {
+    if (stopping || fatalExitRequested || activeSlot?.id !== slot.id) return;
     fatalExitRequested = true;
     logger.error(event, { slot: slot.id, port: slot.port, error: failure.message });
     void stop().catch((error) => {
@@ -345,11 +331,6 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
   async function monitorActiveSlot(): Promise<void> {
     const slot = activeSlot;
     if (stopping || !server || !slot) return;
-    if (monitoredSlotId !== slot.id) {
-      monitoredSlotId = slot.id;
-      consecutiveHealthFailures = 0;
-    }
-
     const controller = new AbortController();
     healthCheckAbortController = controller;
     const timeout = setTimeout(() => controller.abort(), config.gatewayHealthCheckTimeoutMs);
@@ -372,7 +353,7 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
         error: message
       });
       if (consecutiveHealthFailures >= config.gatewayHealthFailureThreshold) {
-        requestGatewayRestartIfActive(slot, new Error(`Active backend failed ${consecutiveHealthFailures} health checks: ${message}`), "gateway_active_slot_unhealthy");
+        requestGatewayRestart(slot, new Error(`Active backend failed ${consecutiveHealthFailures} health checks: ${message}`), "gateway_active_slot_unhealthy");
       }
     } finally {
       clearTimeout(timeout);
@@ -390,30 +371,17 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
     }
   }
 
-  async function waitForSlotHealth(slot: BackendSlot, expectedCommit?: string): Promise<SlotHealth> {
+  async function waitForSlotHealth(slot: BackendSlot): Promise<SlotHealth> {
     const deadline = Date.now() + config.gatewaySlotStartupTimeoutMs;
     let lastError: unknown;
     while (Date.now() < deadline) {
-      const slotFailure = slotFailures.get(slot.id);
-      if (slotFailure) {
-        lastError = slotFailure;
-        break;
-      }
-
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), Math.max(1, deadline - Date.now()));
       try {
         const health = await fetchSlotHealth(slot, controller.signal);
-        if (health.ok !== true) {
-          lastError = new Error("health payload did not report ok=true");
-        } else if (expectedCommit && health.build?.commit !== expectedCommit) {
-          stopSlot(slot, "unexpected_build_commit");
-          throw new Error(`Backend slot ${slot.id} reported commit ${health.build?.commit || "unknown"}; expected ${expectedCommit}`);
-        } else {
-          return health;
-        }
+        if (health.ok !== true) lastError = new Error("health payload did not report ok=true");
+        else return health;
       } catch (error) {
-        if (expectedCommit && error instanceof Error && error.message.includes(`expected ${expectedCommit}`)) throw error;
         lastError = error;
       } finally {
         clearTimeout(timeout);
@@ -426,119 +394,40 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
   }
 
   async function fetchSlotHealth(slot: BackendSlot, signal: AbortSignal): Promise<SlotHealth> {
-    const response = await fetch(`http://${config.gatewayBackendHost}:${slot.port}/health`, {
-      headers: { accept: "application/json" },
-      signal
-    });
+    const response = await fetch(`http://${config.gatewayBackendHost}:${slot.port}/health`, { headers: { accept: "application/json" }, signal });
     if (!response.ok) throw new Error(`health returned HTTP ${response.status}`);
     return (await response.json()) as SlotHealth;
   }
 
-  function promotionController(): PromotionController {
-    return {
-      canPromote() {
-        return !candidateSlot && drainingSlots().length === 0 && freePorts().length > 0;
-      },
-      async startCandidate(expectedCommit?: string) {
-        if (!this.canPromote()) {
-          throw new Error("Gateway already has a candidate or draining backend slot");
-        }
-        candidateSlot = await startSlot("candidate", expectedCommit);
-        logger.info("gateway_candidate_started", { slot: summarizeSlot(candidateSlot) });
-        return summarizeSlot(candidateSlot);
-      },
-      promoteCandidate() {
-        if (!candidateSlot) throw new Error("No candidate backend slot is ready to promote");
-        const candidateFailure = slotFailures.get(candidateSlot.id);
-        if (candidateFailure || candidateSlot.process?.exitCode !== null && candidateSlot.process?.exitCode !== undefined) {
-          const failedCandidate = candidateSlot;
-          candidateSlot = undefined;
-          stopSlot(failedCandidate, "candidate_exited_before_promotion");
-          throw candidateFailure || new Error(`Backend slot ${failedCandidate.id} exited before promotion`);
-        }
-        const previous = activeSlot;
-        candidateSlot.state = "active";
-        activeSlot = candidateSlot;
-        candidateSlot = undefined;
-        monitoredSlotId = activeSlot.id;
-        consecutiveHealthFailures = 0;
-        if (previous) {
-          previous.state = "draining";
-          disconnectSlotSockets(previous, "candidate_promoted");
-        }
-        logger.info("gateway_candidate_promoted", {
-          activeSlot: activeSlot ? summarizeSlot(activeSlot) : undefined,
-          drainingSlot: previous ? summarizeSlot(previous) : undefined
-        });
-        retireDrainedSlots();
-      },
-      async restartGateway() {
-        logger.info("openoverlay_gateway_restart_requested", { gatewayBuild: getBuildInfo(), activeSlot: activeSlot ? summarizeSlot(activeSlot) : undefined });
-        await stop();
-        exitProcess(0);
-      },
-      status
-    };
-  }
-
   function status(): GatewayStatus {
+    const connections = countConnections(activeSlot?.sockets);
+    const activeChildHealthy = Boolean(activeSlot?.health.ok === true && consecutiveHealthFailures === 0 && !fatalExitRequested);
+    const activeReleaseSha = gatewayBuild.commit || activeSlot?.health.build?.commit || null;
     return {
-      gatewayBuild: getBuildInfo(),
+      gatewayBuild,
+      activeReleaseSha,
       activeSlot: activeSlot ? summarizeSlot(activeSlot) : undefined,
-      drainingSlots: drainingSlots().map(summarizeSlot),
-      candidateSlot: candidateSlot ? summarizeSlot(candidateSlot) : undefined,
-      slotLimit: config.gatewayBackendPorts.length
+      connections,
+      inFlightMutations,
+      activeChildHealthy,
+      gatewayHealthy: Boolean(server?.listening && controlServer?.listening && activeChildHealthy && !stopping)
     };
   }
 
   function publicStatus(): PublicGatewayStatus {
-    const slot = activeSlot;
+    const state = status();
     return {
-      ok: Boolean(slot && slot.health.ok === true && consecutiveHealthFailures === 0 && !stopping && !fatalExitRequested),
-      gatewayBuild: getBuildInfo(),
-      activeBuild: slot?.health.build,
-      compatibility: slot?.health.compatibility
+      ok: state.gatewayHealthy,
+      gatewayBuild,
+      activeBuild: activeSlot?.health.build,
+      compatibility: activeSlot?.health.compatibility
     };
   }
 
-  function nextAvailablePort(): number {
-    const [port] = freePorts();
-    if (!port) throw new Error("No backend gateway slot ports are available");
-    return port;
-  }
-
-  function freePorts(): number[] {
-    const used = new Set([...slots.values()].filter((slot) => slot.process && !slot.process.killed).map((slot) => slot.port));
-    return config.gatewayBackendPorts.filter((port) => !used.has(port));
-  }
-
-  function drainingSlots(): BackendSlot[] {
-    return [...slots.values()].filter((slot) => slot.state === "draining");
-  }
-
-  function retireDrainedSlots(): void {
-    for (const slot of drainingSlots()) {
-      if (slot.sockets.size === 0) {
-        stopSlot(slot, "drained");
-      }
-    }
-  }
-
-  function disconnectSlotSockets(slot: BackendSlot, reason: string): void {
-    if (slot.sockets.size > 0) {
-      logger.info("gateway_slot_websockets_disconnecting", { slot: slot.id, port: slot.port, count: slot.sockets.size, reason });
-    }
-    for (const socket of [...slot.sockets]) socket.destroy();
-  }
-
   function stopSlot(slot: BackendSlot, reason: string): void {
-    logger.info("gateway_slot_stopping", { slot: slot.id, port: slot.port, state: slot.state, reason });
-    for (const socket of slot.sockets) {
-      socket.destroy();
-    }
+    logger.info("gateway_slot_stopping", { slot: slot.id, port: slot.port, reason });
+    for (const socket of slot.sockets.keys()) socket.destroy();
     slot.sockets.clear();
-    slotFailures.delete(slot.id);
-    slots.delete(slot.id);
     try {
       slot.process?.kill("SIGTERM");
     } catch (error) {
@@ -574,7 +463,7 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
     });
   }
 
-  return { start, stop, status, promotionController };
+  return { start, stop, status };
 }
 
 function defaultSpawnBackend(slot: BackendSlot, env: NodeJS.ProcessEnv): ChildProcess {
@@ -589,12 +478,129 @@ function summarizeSlot(slot: BackendSlot): SlotSummary {
   return {
     id: slot.id,
     port: slot.port,
-    state: slot.state,
     startedAt: slot.startedAt,
     activeWebSockets: slot.sockets.size,
     build: slot.health.build,
     compatibility: slot.health.compatibility
   };
+}
+
+function countConnections(sockets: Map<net.Socket, RealtimeClientKind> | undefined): ConnectionCounts {
+  const counts: ConnectionCounts = { overlay: 0, preview: 0, admin: 0, unknown: 0, total: 0 };
+  if (!sockets) return counts;
+  for (const kind of sockets.values()) {
+    counts[kind] += 1;
+    counts.total += 1;
+  }
+  return counts;
+}
+
+function classifyRealtimeClient(req: IncomingMessage): RealtimeClientKind {
+  try {
+    const url = new URL(req.url || "/", "http://localhost");
+    const role = url.searchParams.get("role");
+    const client = url.searchParams.get("client");
+    if (role === "overlay" && client === "overlay") return "overlay";
+    if (role === "overlay" && client === "preview") return "preview";
+    if (role === "admin") return "admin";
+  } catch {
+    // Invalid URLs are classified as unknown and still counted.
+  }
+  return "unknown";
+}
+
+async function listenControlSocket(socketPath: string, status: () => GatewayStatus, logger: Logger): Promise<net.Server> {
+  fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o750 });
+  if (fs.existsSync(socketPath)) {
+    if (!fs.lstatSync(socketPath).isSocket()) throw new Error(`Gateway control path exists and is not a socket: ${socketPath}`);
+    fs.unlinkSync(socketPath);
+  }
+  const server = net.createServer((socket) => {
+    socket.setEncoding("utf8");
+    let input = "";
+    socket.on("data", (chunk: string) => {
+      input += chunk;
+      if (Buffer.byteLength(input, "utf8") > 4_096) {
+        socket.end(`${JSON.stringify({ ok: false, error: "Control request too large" })}\n`);
+        return;
+      }
+      const newline = input.indexOf("\n");
+      if (newline < 0) return;
+      const line = input.slice(0, newline).trim();
+      let command = line;
+      try {
+        const body = JSON.parse(line) as { command?: unknown };
+        command = typeof body.command === "string" ? body.command : "";
+      } catch {
+        // Plain-text `status` remains convenient for restricted host tooling.
+      }
+      if (command !== "status") {
+        socket.end(`${JSON.stringify({ ok: false, error: "Unsupported control command" })}\n`);
+        return;
+      }
+      socket.end(`${JSON.stringify({ ok: true, status: status() })}\n`);
+    });
+    socket.on("error", (error) => logger.warn("gateway_control_client_error", { error: error.message }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once("error", onError);
+    server.listen(socketPath, () => {
+      server.off("error", onError);
+      resolve();
+    });
+  });
+  fs.chmodSync(socketPath, 0o660);
+  return server;
+}
+
+function removeControlSocket(socketPath: string): void {
+  try {
+    if (fs.lstatSync(socketPath).isSocket()) fs.unlinkSync(socketPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+function listenHttp(server: http.Server, port: number, host: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once("error", onError);
+    server.listen(port, host, () => {
+      server.off("error", onError);
+      resolve();
+    });
+  });
+}
+
+function closeHttpServer(server: http.Server | undefined): Promise<void> {
+  if (!server) return Promise.resolve();
+  return new Promise((resolve) => server.close(() => resolve()));
+}
+
+function closeNetServer(server: net.Server | undefined): Promise<void> {
+  if (!server) return Promise.resolve();
+  return new Promise((resolve) => server.close(() => resolve()));
+}
+
+function writePublicStatus(req: IncomingMessage, res: ServerResponse, body: PublicGatewayStatus): void {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405, {
+      allow: "GET, HEAD",
+      "cache-control": "no-store",
+      "content-type": "application/json",
+      "x-content-type-options": "nosniff"
+    });
+    res.end(JSON.stringify({ error: "Method not allowed" }));
+    return;
+  }
+  res.writeHead(200, {
+    "cache-control": "no-store",
+    "content-type": "application/json",
+    "x-content-type-options": "nosniff"
+  });
+  if (req.method === "HEAD") res.end();
+  else res.end(JSON.stringify(body));
 }
 
 function isGatewayStatusRequest(requestUrl: string | undefined): boolean {
@@ -608,14 +614,12 @@ function isGatewayStatusRequest(requestUrl: string | undefined): boolean {
 function requestedVersion(req: IncomingMessage, header: string, pathPattern: RegExp): string | undefined {
   const headerValue = req.headers[header];
   if (typeof headerValue === "string" && headerValue) return headerValue;
-  const match = (req.url || "").match(pathPattern);
-  return match?.[1];
+  return (req.url || "").match(pathPattern)?.[1];
 }
 
 function requestedQueryVersion(req: IncomingMessage, key: string): string | undefined {
   try {
-    const url = new URL(req.url || "/", "http://localhost");
-    return url.searchParams.get(key) || undefined;
+    return new URL(req.url || "/", "http://localhost").searchParams.get(key) || undefined;
   } catch {
     return undefined;
   }
@@ -628,8 +632,12 @@ function isCompatible(health: SlotHealth): boolean {
     OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS.every((version) => realtimeVersions.includes(version));
 }
 
+function isMutatingMethod(method: string | undefined): boolean {
+  return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+}
+
 function writeUnsupportedVersion(res: ServerResponse): void {
-  res.writeHead(426, { "content-type": "application/json" });
+  res.writeHead(426, { "content-type": "application/json", "x-content-type-options": "nosniff" });
   res.end(JSON.stringify({ error: "Unsupported OpenOverlay API or realtime version" }));
 }
 
@@ -641,8 +649,7 @@ if (process.env.OPENOVERLAY_GATEWAY_ENTRYPOINT === "1") {
   const config = loadConfig();
   const logger = createLogger(config.logFile);
   const gateway = createBackendGateway({ config, logger });
-  const selfUpdater = createSelfUpdater(config, logger, gateway.promotionController());
-  gateway.start().then(() => selfUpdater.start()).catch((error) => {
+  gateway.start().catch((error) => {
     console.error(error);
     process.exit(1);
   });
@@ -651,7 +658,6 @@ if (process.env.OPENOVERLAY_GATEWAY_ENTRYPOINT === "1") {
   const shutdown = () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    selfUpdater.stop();
     const forceExitTimer = setTimeout(() => process.exit(1), 10_000);
     forceExitTimer.unref();
     void (async () => {

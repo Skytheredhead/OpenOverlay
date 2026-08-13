@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily OpenOverlay backup schedule
+
+[Timer]
+OnCalendar=*-*-* 09:15:00 UTC
+Persistent=true
+RandomizedDelaySec=5m
+Unit=openoverlay-backup.service
+
+[Install]
+WantedBy=timers.target

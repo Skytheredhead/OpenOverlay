@@ -1,0 +1,19 @@
+[Unit]
+Description=Create and verify an OpenOverlay backup
+After=Openoverlaybackend.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/node /opt/openoverlay/current/scripts/openoverlay-backup.mjs create --kind daily
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/openoverlay
+ReadOnlyPaths=/var/lib/openoverlay /opt/openoverlay
+

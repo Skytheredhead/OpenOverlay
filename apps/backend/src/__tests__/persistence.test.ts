@@ -59,6 +59,40 @@ describe("persistence", () => {
     }
   });
 
+  it("opens an additive newer schema only when it explicitly supports this reader", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openoverlay-compatible-schema-"));
+    const config = {
+      env: "test" as const,
+      databasePath: path.join(dir, "db.sqlite"),
+      uploadDir: path.join(dir, "uploads"),
+      logFile: path.join(dir, "backend.log"),
+      jwtSecret: "test-secret",
+      corsOrigins: ["http://localhost:5173"]
+    };
+    const first = createBackendApp(config);
+    first.close();
+    const database = new DatabaseSync(config.databasePath);
+    database.exec(`
+      CREATE TABLE schema_compatibility (
+        schema_version INTEGER PRIMARY KEY,
+        writer_version INTEGER NOT NULL,
+        min_reader_version INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    database.prepare("INSERT INTO schema_compatibility VALUES (?, ?, ?, ?)").run(3, 3, 2, new Date().toISOString());
+    database.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(3, new Date().toISOString());
+    database.close();
+
+    const compatible = createBackendApp(config);
+    try {
+      expect(compatible.ctx.db.healthCheck()).toBe(true);
+    } finally {
+      compatible.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("migrates version-one users with a revocable session generation", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openoverlay-session-migration-"));
     const config = {
