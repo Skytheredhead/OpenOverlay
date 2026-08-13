@@ -133,7 +133,7 @@ describe("auth", () => {
     expect(() => loadConfig({ env: "prod" as "production", jwtSecret: "x".repeat(32) })).toThrow(/Invalid NODE_ENV/);
     expect(() => loadConfig({ env: "production", jwtSecret: "short" })).toThrow(/at least 32 bytes/);
     expect(() => loadConfig({ env: "production", jwtSecret: "dev-only-openoverlay-session-secret-change-me" })).toThrow(/known development secret/);
-    expect(loadConfig({ env: "production", jwtSecret: "x".repeat(32) }).env).toBe("production");
+    expect(loadConfig({ env: "production", jwtSecret: "x".repeat(32), shareLookupSecret: "y".repeat(32) }).env).toBe("production");
   });
 
   it("fails closed for invalid network configuration", () => {

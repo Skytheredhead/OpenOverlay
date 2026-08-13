@@ -80,7 +80,7 @@ describe("preset deletion realtime handling", () => {
       requestSignal = signal;
       return pendingPreset.promise;
     });
-    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [] });
+    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
     vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
     const router = createMemoryRouter([{
       path: "/dash/presets/:presetId",
@@ -136,7 +136,7 @@ describe("preset deletion realtime handling", () => {
 
   it("closes a previously loaded editor when reconnect reports its preset missing", async () => {
     vi.spyOn(presetApi, "get").mockResolvedValue({ preset: presetFixture() });
-    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [] });
+    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
     vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
     const router = createMemoryRouter([{
       path: "/dash/presets/:presetId",

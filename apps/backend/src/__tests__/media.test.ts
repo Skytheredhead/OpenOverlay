@@ -18,6 +18,30 @@ afterEach(() => {
 });
 
 describe("media upload safety", () => {
+  it("paginates the media library with an opaque validated cursor", async () => {
+    const user = await signup(server.agent, "pagination@example.com");
+    for (let index = 0; index < 26; index += 1) {
+      server.backend.ctx.db.createMedia({
+        ownerUserId: user.id,
+        filename: `item-${index}.png`,
+        originalFilename: `item-${index}.png`,
+        mimeType: "image/png",
+        sizeBytes: 1,
+        filePath: path.join(server.dir, "uploads", `item-${index}.png`)
+      });
+    }
+    const first = await server.agent.get("/api/media?limit=24").expect(200);
+    expect(first.body.media).toHaveLength(24);
+    expect(first.body.nextCursor).toEqual(expect.any(String));
+    const second = await server.agent.get(`/api/media?limit=24&cursor=${encodeURIComponent(first.body.nextCursor)}`).expect(200);
+    expect(second.body.media).toHaveLength(2);
+    expect(second.body.nextCursor).toBeNull();
+    const ids = [...first.body.media, ...second.body.media].map((item: { id: string }) => item.id);
+    expect(new Set(ids).size).toBe(26);
+    await server.agent.get("/api/media?limit=0").expect(400);
+    await server.agent.get("/api/media?cursor=not-a-cursor").expect(400);
+  });
+
   it("rejects SVG files with active content", async () => {
     await signup(server.agent, "svg-block@example.com");
 
@@ -288,7 +312,7 @@ describe("media upload safety", () => {
     expect(cleared.body.preset.state.home.logoUrl).toBeUndefined();
 
     const shared = await server.agent.post(`/api/presets/${created.body.preset.id}/share`).send({ email: "share-media-recipient@example.com" }).expect(201);
-    expect(shared.body).toEqual({ ok: true, mediaReferencesRemoved: true });
+    expect(shared.body).toMatchObject({ ok: true, mediaReferencesRemoved: true, receiptId: expect.any(String) });
     expect(shared.body).not.toHaveProperty("preset");
     let recipientPresets = (await recipient.get("/api/presets").expect(200)).body.presets;
     const recipientSoccerSummary = recipientPresets.find((preset: { name: string }) => preset.name === "Shared Match");
@@ -300,7 +324,7 @@ describe("media upload safety", () => {
       email: "share-media-recipient@example.com",
       side: "home"
     }).expect(201);
-    expect(sharedTeam.body).toEqual({ ok: true, mediaReferencesRemoved: true });
+    expect(sharedTeam.body).toMatchObject({ ok: true, mediaReferencesRemoved: true, receiptId: expect.any(String) });
     expect(sharedTeam.body).not.toHaveProperty("preset");
     recipientPresets = (await recipient.get("/api/presets").expect(200)).body.presets;
     const recipientTeamSummary = recipientPresets.find((preset: { name: string }) => preset.name.endsWith(" Team"));
@@ -325,7 +349,7 @@ describe("media upload safety", () => {
     const sharedChurch = await server.agent.post(`/api/presets/${church.body.preset.id}/share`).send({
       email: "share-media-recipient@example.com"
     }).expect(201);
-    expect(sharedChurch.body).toEqual({ ok: true, mediaReferencesRemoved: true });
+    expect(sharedChurch.body).toMatchObject({ ok: true, mediaReferencesRemoved: true, receiptId: expect.any(String) });
     expect(sharedChurch.body).not.toHaveProperty("preset");
     recipientPresets = (await recipient.get("/api/presets").expect(200)).body.presets;
     const recipientChurchSummary = recipientPresets.find((preset: { name: string }) => preset.name === "Shared Service");

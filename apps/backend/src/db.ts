@@ -44,7 +44,27 @@ export interface MediaRow {
   height: number | null;
   size_bytes: number;
   path: string;
+  thumbnail_path: string | null;
+  thumbnail_width: number | null;
+  thumbnail_height: number | null;
+  thumbnail_mime_type: string | null;
+  thumbnail_size_bytes: number | null;
   created_at: string;
+}
+
+export interface PendingShareRow {
+  id: string;
+  receipt_id: string;
+  sender_user_id: string;
+  recipient_lookup_hash: string;
+  resource_type: "preset" | "team";
+  snapshot_json: string;
+  media_references_removed: number;
+  status: "pending" | "fulfilled" | "expired";
+  recipient_user_id: string | null;
+  created_at: string;
+  expires_at: string;
+  fulfilled_at: string | null;
 }
 
 export interface TeamRow {
@@ -67,8 +87,8 @@ export interface EventLogRow {
 
 const MAX_EVENT_LOGS_PER_PRESET = 1_000;
 const MAX_EVENT_PAYLOAD_BYTES = 4 * 1024;
-const CURRENT_SCHEMA_VERSION = 2;
-const CURRENT_READER_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_READER_VERSION = 3;
 
 export class Database {
   private readonly db: DatabaseSync;
@@ -149,6 +169,10 @@ export class Database {
 
   findUserById(id: string): UserRow | undefined {
     return this.get<UserRow>("SELECT * FROM users WHERE id = ?", [id]);
+  }
+
+  listUsers(): UserRow[] {
+    return this.all<UserRow>("SELECT * FROM users ORDER BY created_at, id");
   }
 
   revokeUserSessions(id: string): void {
@@ -341,6 +365,11 @@ export class Database {
     height?: number | null;
     sizeBytes: number;
     filePath: string;
+    thumbnailPath?: string | null;
+    thumbnailWidth?: number | null;
+    thumbnailHeight?: number | null;
+    thumbnailMimeType?: string | null;
+    thumbnailSizeBytes?: number | null;
   }): MediaRow {
     const row: MediaRow = {
       id: randomUUID(),
@@ -353,10 +382,15 @@ export class Database {
       height: input.height ?? null,
       size_bytes: input.sizeBytes,
       path: input.filePath,
+      thumbnail_path: input.thumbnailPath ?? null,
+      thumbnail_width: input.thumbnailWidth ?? null,
+      thumbnail_height: input.thumbnailHeight ?? null,
+      thumbnail_mime_type: input.thumbnailMimeType ?? null,
+      thumbnail_size_bytes: input.thumbnailSizeBytes ?? null,
       created_at: new Date().toISOString()
     };
     this.run(
-      "INSERT INTO media (id, public_id, owner_user_id, filename, original_filename, mime_type, width, height, size_bytes, path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO media (id, public_id, owner_user_id, filename, original_filename, mime_type, width, height, size_bytes, path, thumbnail_path, thumbnail_width, thumbnail_height, thumbnail_mime_type, thumbnail_size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         row.id,
         row.public_id,
@@ -368,23 +402,35 @@ export class Database {
         row.height,
         row.size_bytes,
         row.path,
+        row.thumbnail_path,
+        row.thumbnail_width,
+        row.thumbnail_height,
+        row.thumbnail_mime_type,
+        row.thumbnail_size_bytes,
         row.created_at
       ]
     );
     return row;
   }
 
-  listMediaForUser(ownerUserId: string): MediaRow[] {
-    return this.all<MediaRow>("SELECT * FROM media WHERE owner_user_id = ? ORDER BY created_at DESC", [ownerUserId]);
+  listMediaForUser(ownerUserId: string, limit = 24, cursor?: { createdAt: string; id: string }): MediaRow[] {
+    if (cursor) {
+      return this.all<MediaRow>(
+        "SELECT * FROM media WHERE owner_user_id = ? AND (created_at < ? OR (created_at = ? AND id < ?)) ORDER BY created_at DESC, id DESC LIMIT ?",
+        [ownerUserId, cursor.createdAt, cursor.createdAt, cursor.id, limit]
+      );
+    }
+    return this.all<MediaRow>("SELECT * FROM media WHERE owner_user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?", [ownerUserId, limit]);
   }
 
   listMediaPaths(): string[] {
-    return this.all<{ path: string }>("SELECT path FROM media").map((row) => row.path);
+    return this.all<{ path: string; thumbnail_path: string | null }>("SELECT path, thumbnail_path FROM media")
+      .flatMap((row) => [row.path, ...(row.thumbnail_path ? [row.thumbnail_path] : [])]);
   }
 
   getMediaUsageForUser(ownerUserId: string): { itemCount: number; sizeBytes: number } {
     const row = this.get<{ item_count: number; size_bytes: number }>(
-      "SELECT COUNT(*) AS item_count, COALESCE(SUM(size_bytes), 0) AS size_bytes FROM media WHERE owner_user_id = ?",
+      "SELECT COUNT(*) AS item_count, COALESCE(SUM(size_bytes + COALESCE(thumbnail_size_bytes, 0)), 0) AS size_bytes FROM media WHERE owner_user_id = ?",
       [ownerUserId]
     );
     return { itemCount: Number(row?.item_count || 0), sizeBytes: Number(row?.size_bytes || 0) };
@@ -392,7 +438,7 @@ export class Database {
 
   getGlobalMediaUsage(): { itemCount: number; sizeBytes: number } {
     const row = this.get<{ item_count: number; size_bytes: number }>(
-      "SELECT COUNT(*) AS item_count, COALESCE(SUM(size_bytes), 0) AS size_bytes FROM media"
+      "SELECT COUNT(*) AS item_count, COALESCE(SUM(size_bytes + COALESCE(thumbnail_size_bytes, 0)), 0) AS size_bytes FROM media"
     );
     return { itemCount: Number(row?.item_count || 0), sizeBytes: Number(row?.size_bytes || 0) };
   }
@@ -469,6 +515,56 @@ export class Database {
     );
   }
 
+  createPendingShare(input: {
+    senderUserId: string;
+    recipientLookupHash: string;
+    resourceType: "preset" | "team";
+    snapshot: unknown;
+    mediaReferencesRemoved: boolean;
+    recipientUserId?: string;
+  }): PendingShareRow {
+    const now = new Date();
+    const row: PendingShareRow = {
+      id: randomUUID(),
+      receipt_id: randomBytes(24).toString("base64url"),
+      sender_user_id: input.senderUserId,
+      recipient_lookup_hash: input.recipientLookupHash,
+      resource_type: input.resourceType,
+      snapshot_json: JSON.stringify(input.snapshot),
+      media_references_removed: input.mediaReferencesRemoved ? 1 : 0,
+      status: input.recipientUserId ? "fulfilled" : "pending",
+      recipient_user_id: input.recipientUserId || null,
+      created_at: now.toISOString(),
+      expires_at: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      fulfilled_at: input.recipientUserId ? now.toISOString() : null
+    };
+    this.run(
+      "INSERT INTO pending_shares (id, receipt_id, sender_user_id, recipient_lookup_hash, resource_type, snapshot_json, media_references_removed, status, recipient_user_id, created_at, expires_at, fulfilled_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      Object.values(row)
+    );
+    return row;
+  }
+
+  countOutstandingShares(senderUserId: string): number {
+    return Number(this.get<{ count: number }>("SELECT COUNT(*) AS count FROM pending_shares WHERE sender_user_id = ? AND status = 'pending' AND expires_at > ?", [senderUserId, new Date().toISOString()])?.count || 0);
+  }
+
+  countRecentShareRequests(senderUserId: string, since: string): number {
+    return Number(this.get<{ count: number }>("SELECT COUNT(*) AS count FROM pending_shares WHERE sender_user_id = ? AND created_at >= ?", [senderUserId, since])?.count || 0);
+  }
+
+  listPendingSharesForHash(recipientLookupHash: string): PendingShareRow[] {
+    return this.all<PendingShareRow>("SELECT * FROM pending_shares WHERE recipient_lookup_hash = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at, id", [recipientLookupHash, new Date().toISOString()]);
+  }
+
+  fulfillPendingShare(id: string, recipientUserId: string): void {
+    this.run("UPDATE pending_shares SET status = 'fulfilled', recipient_user_id = ?, fulfilled_at = ? WHERE id = ? AND status = 'pending'", [recipientUserId, new Date().toISOString(), id]);
+  }
+
+  expirePendingShares(): void {
+    this.run("UPDATE pending_shares SET status = 'expired' WHERE status = 'pending' AND expires_at <= ?", [new Date().toISOString()]);
+  }
+
   private migrate(): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -482,8 +578,10 @@ export class Database {
       if (appliedVersion > CURRENT_SCHEMA_VERSION && !this.isNewerSchemaReadable(appliedVersion)) {
         throw new Error(`Database schema version ${appliedVersion} is newer than supported version ${CURRENT_SCHEMA_VERSION}`);
       }
-      if (appliedVersion < 1) this.applyInitialSchema();
-      if (appliedVersion < 2) this.applySessionRevocationSchema();
+      const applied = new Set(this.all<{ version: number }>("SELECT version FROM schema_migrations").map((row) => Number(row.version)));
+      if (!applied.has(1)) this.applyInitialSchema();
+      if (!applied.has(2)) this.applySessionRevocationSchema();
+      if (!applied.has(3)) this.applyExpandedSharingAndMediaSchema();
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -591,6 +689,48 @@ export class Database {
       this.db.exec("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1");
     }
     this.run("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", [2, new Date().toISOString()]);
+  }
+
+  private applyExpandedSharingAndMediaSchema(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_compatibility (
+        schema_version INTEGER PRIMARY KEY,
+        writer_version INTEGER NOT NULL,
+        min_reader_version INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS pending_shares (
+        id TEXT PRIMARY KEY,
+        receipt_id TEXT NOT NULL UNIQUE,
+        sender_user_id TEXT NOT NULL,
+        recipient_lookup_hash TEXT NOT NULL,
+        resource_type TEXT NOT NULL CHECK (resource_type IN ('preset', 'team')),
+        snapshot_json TEXT NOT NULL,
+        media_references_removed INTEGER NOT NULL CHECK (media_references_removed IN (0, 1)),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'fulfilled', 'expired')),
+        recipient_user_id TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        fulfilled_at TEXT,
+        FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_pending_shares_recipient ON pending_shares(recipient_lookup_hash, status, expires_at);
+      CREATE INDEX IF NOT EXISTS idx_pending_shares_sender ON pending_shares(sender_user_id, created_at DESC);
+    `);
+    const mediaColumns = new Set(this.all<{ name: string }>("PRAGMA table_info(media)").map((column) => column.name));
+    for (const [name, type] of [
+      ["thumbnail_path", "TEXT"],
+      ["thumbnail_width", "INTEGER"],
+      ["thumbnail_height", "INTEGER"],
+      ["thumbnail_mime_type", "TEXT"],
+      ["thumbnail_size_bytes", "INTEGER"]
+    ] as const) {
+      if (!mediaColumns.has(name)) this.db.exec(`ALTER TABLE media ADD COLUMN ${name} ${type}`);
+    }
+    const now = new Date().toISOString();
+    this.run("INSERT OR REPLACE INTO schema_compatibility (schema_version, writer_version, min_reader_version, updated_at) VALUES (?, ?, ?, ?)", [3, 3, 2, now]);
+    this.run("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", [3, now]);
   }
 }
 

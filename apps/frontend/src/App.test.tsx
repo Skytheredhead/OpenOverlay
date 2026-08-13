@@ -105,8 +105,8 @@ describe("TeamFields", () => {
 
 describe("MediaLibrary", () => {
   it("deduplicates overlapping batches and ignores an older list response", async () => {
-    const initialList = deferred<{ media: MediaItem[] }>();
-    const refreshedList = deferred<{ media: MediaItem[] }>();
+    const initialList = deferred<{ media: MediaItem[]; nextCursor: string | null }>();
+    const refreshedList = deferred<{ media: MediaItem[]; nextCursor: string | null }>();
     const upload = deferred<{ media: MediaItem }>();
     const item = mediaFixture();
     vi.spyOn(mediaApi, "list")
@@ -126,10 +126,10 @@ describe("MediaLibrary", () => {
 
     await act(async () => upload.resolve({ media: item }));
     await waitFor(() => expect(mediaApi.list).toHaveBeenCalledTimes(2));
-    await act(async () => refreshedList.resolve({ media: [item] }));
+    await act(async () => refreshedList.resolve({ media: [item], nextCursor: null }));
     expect(await screen.findByText(item.originalFilename)).toBeVisible();
 
-    await act(async () => initialList.resolve({ media: [] }));
+    await act(async () => initialList.resolve({ media: [], nextCursor: null }));
     expect(screen.getByText(item.originalFilename)).toBeVisible();
 
     const signal = uploadSpy.mock.calls[0]?.[1];

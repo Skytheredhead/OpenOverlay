@@ -40,6 +40,14 @@ try {
     throw new Error("JWT_SECRET must not use a documented placeholder or development secret");
   }
 
+  const shareSecret = requiredValue(values, "SHARE_LOOKUP_SECRET");
+  if (Buffer.byteLength(shareSecret, "utf8") < 32) {
+    throw new Error("SHARE_LOOKUP_SECRET must be at least 32 bytes");
+  }
+  if (shareSecret === secret) {
+    throw new Error("SHARE_LOOKUP_SECRET must be independent from JWT_SECRET");
+  }
+
   validateCorsOrigins(requiredValue(values, "CORS_ORIGINS"));
   if (values.has("PATH")) {
     throw new Error("PATH must not be set in the application environment file; the systemd unit owns the runtime path");

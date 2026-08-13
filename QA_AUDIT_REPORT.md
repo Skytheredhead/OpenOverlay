@@ -1,5 +1,13 @@
 # OpenOverlay Pre-Release QA, Reliability, and Regression Audit
 
+## Remediation update — 2026-08-13
+
+Release A (`1d17f40`) replaces the in-process Git/npm updater with immutable, checksummed release archives, a root-owned deployment controller, atomic `current`/`previous` symlinks, a Unix activity-control socket, health-gated rollback, hardened systemd units, verified online backups, restore smoke tests, CI-gated exact-SHA deployment, staged Vercel promotion, and dedicated-tunnel normalization tooling. GitHub CI run `31668698414` passed for the exact Release A SHA. The legacy production updater is currently fail-closed through an untracked sentinel, and verified initial plus pre-deploy snapshots were retained without interrupting an overlay.
+
+Release B remains deliberately unpromoted until Release A is installed as both the current and rollback baseline. Its additive schema v3 work includes explicit reader compatibility, opaque HMAC-addressed pending shares, durable share limits/expiry, thumbnail metadata/generation/backfill, thumbnail-inclusive quotas/backups, cursor pagination, lazy thumbnail loading, and focused media retry/load-more behavior.
+
+Production acceptance is still blocked on interactive/root-controlled bootstrap: install the restricted service/deploy users and forced SSH command, add an independent `SHARE_LOOKUP_SECRET`, create the Cloudflare Access service token and GitHub `Production` secrets, enable `PRODUCTION_DEPLOY_ENABLED`, exercise active-overlay deferral and unhealthy-candidate rollback, then normalize/upgrade the tunnel. No schema v3 code may be pushed or promoted before Release A is the verified rollback baseline.
+
 Date completed: 2026-08-11  
 Repository: `/Users/skylarenns/Desktop/OpenOverlay`  
 Baseline: `main` at `656795c`  

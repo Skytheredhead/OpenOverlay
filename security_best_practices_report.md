@@ -1,5 +1,11 @@
 # OpenOverlay Security Best-Practices Review
 
+## Remediation update — 2026-08-13
+
+The mutable in-process updater has been removed in Release A (`1d17f40`). Replacement controls include exact-SHA/checksum archive validation, traversal/link rejection, bounded input, a global deployment lock, immutable root-owned releases, a non-login service account, systemd filesystem/kernel/device hardening, activity-aware promotion refusal, isolated copied-database preflight, verified backup/restore, and automatic backend/Vercel rollback wiring. The public production workflow is fail-closed until environment-scoped secrets and an explicit enablement variable are installed interactively.
+
+Release B removes recipient enumeration by returning the same opaque receipt contract for present and absent accounts, storing only an HMAC of normalized recipient email, expiring/capping/rate-limiting durable pending shares, stripping media/action secrets from snapshots, and exposing no receipt-resolution endpoint. It also adds bounded Sharp thumbnail generation, validated opaque cursors, and thumbnail-inclusive storage accounting. Release B must not reach production until Release A is the established rollback reader for additive schema v3.
+
 Date: 2026-08-11  
 Audited baseline: `656795c` on `main`  
 Result status: local source and build artifacts only; nothing in this review was deployed

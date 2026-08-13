@@ -28,6 +28,8 @@ describe("production environment validation", () => {
     ["an invalid global media quota", { MEDIA_GLOBAL_MAX_BYTES: "0" }, /MEDIA_GLOBAL_MAX_BYTES/],
     ["an invalid free-space reserve", { STORAGE_MINIMUM_FREE_BYTES: "-1" }, /STORAGE_MINIMUM_FREE_BYTES/],
     ["the known development signing secret", { JWT_SECRET: "dev-only-openoverlay-session-secret-change-me" }, /development secret/],
+    ["a missing share lookup secret", { SHARE_LOOKUP_SECRET: "" }, /SHARE_LOOKUP_SECRET/],
+    ["a reused share lookup secret", { SHARE_LOOKUP_SECRET: "do-not-print-this-production-secret" }, /independent/],
     ["an environment-owned runtime path", { PATH: "/custom/bin" }, /PATH must not be set/]
   ])("rejects %s without echoing secrets", (_name, overrides, expectedError) => {
     const secret = "do-not-print-this-production-secret";
@@ -53,6 +55,7 @@ function validateEnvironment(overrides: Record<string, string> = {}) {
     STORAGE_MINIMUM_FREE_BYTES: "1073741824",
     LOG_FILE: "/var/log/openoverlay/backend.log",
     JWT_SECRET: "x".repeat(32),
+    SHARE_LOOKUP_SECRET: "y".repeat(32),
     CORS_ORIGINS: "https://openoverlay.skylarenns.com,http://localhost:5173,http://127.0.0.1:5173",
     FRONTEND_URL: "https://openoverlay.skylarenns.com",
     COOKIE_DOMAIN: "",

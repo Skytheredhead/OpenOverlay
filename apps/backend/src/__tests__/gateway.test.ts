@@ -217,6 +217,7 @@ async function testConfig(port: number): Promise<AppConfig> {
     storageMinimumFreeBytes: 0,
     logFile: "/tmp/openoverlay-gateway.log",
     jwtSecret: "secret",
+    shareLookupSecret: "share-secret",
     corsOrigins: [],
     frontendUrl: "http://localhost:5173",
     gatewayBackendHost: "127.0.0.1",

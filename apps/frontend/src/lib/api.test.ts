@@ -72,11 +72,11 @@ describe("api", () => {
 
   it("accepts a privacy-preserving share receipt and rejects the legacy recipient preset envelope", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ ok: true, mediaReferencesRemoved: true }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, mediaReferencesRemoved: true, receiptId: "receipt-1" }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, preset: { id: "recipient-copy" }, mediaReferencesRemoved: false }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(presetApi.share("source", "recipient@example.com")).resolves.toEqual({ ok: true, mediaReferencesRemoved: true });
+    await expect(presetApi.share("source", "recipient@example.com")).resolves.toEqual({ ok: true, mediaReferencesRemoved: true, receiptId: "receipt-1" });
     await expect(presetApi.share("source", "recipient@example.com")).rejects.toMatchObject({
       status: 0,
       message: "Server response did not confirm the share operation"

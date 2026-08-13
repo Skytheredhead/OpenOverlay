@@ -50,11 +50,17 @@ export interface MediaItem {
   sizeBytes: number;
   createdAt: string;
   url: string;
+  thumbnailUrl?: string;
+  thumbnailWidth?: number | null;
+  thumbnailHeight?: number | null;
+  thumbnailMimeType?: string | null;
+  thumbnailSizeBytes?: number | null;
 }
 
 export interface ShareReceipt {
   ok: true;
   mediaReferencesRemoved: boolean;
+  receiptId: string;
 }
 
 export interface PresetEvent {
@@ -260,12 +266,21 @@ export const teamApi = {
       method: "DELETE",
       headers: { "If-Match": `"${expectedRevision}"` }
     }));
+  },
+  async share(id: string, email: string) {
+    return expectShareReceipt(await api<unknown>(`/api/teams/${id}/share`, { method: "POST", body: JSON.stringify({ email }) }));
   }
 };
 
 export const mediaApi = {
-  async list(signal?: AbortSignal) {
-    return { media: expectArrayEnvelope(await api<unknown>("/api/media", { signal }), "media", isMedia) };
+  async list(signal?: AbortSignal, cursor?: string) {
+    const query = new URLSearchParams({ limit: "24" });
+    if (cursor) query.set("cursor", cursor);
+    const body = await api<unknown>(`/api/media?${query}`, { signal });
+    return {
+      media: expectArrayEnvelope(body, "media", isMedia),
+      nextCursor: isRecord(body) && (body.nextCursor === null || typeof body.nextCursor === "string") ? body.nextCursor : null
+    };
   },
   async upload(file: File, callerSignal?: AbortSignal): Promise<{ media: MediaItem }> {
     const data = new FormData();
@@ -328,12 +343,13 @@ function expectOk(body: unknown): { ok: true } {
 
 function expectShareReceipt(body: unknown): ShareReceipt {
   if (!isRecord(body) ||
-      Object.keys(body).length !== 2 ||
+      Object.keys(body).length !== 3 ||
       body.ok !== true ||
-      typeof body.mediaReferencesRemoved !== "boolean") {
+      typeof body.mediaReferencesRemoved !== "boolean" ||
+      !isNonEmptyString(body.receiptId)) {
     throw invalidResponse("Server response did not confirm the share operation", body);
   }
-  return { ok: true, mediaReferencesRemoved: body.mediaReferencesRemoved };
+  return { ok: true, mediaReferencesRemoved: body.mediaReferencesRemoved, receiptId: body.receiptId };
 }
 
 function invalidResponse(message: string, body: unknown): ApiError {
@@ -550,7 +566,8 @@ function isMedia(value: unknown): value is MediaItem {
     (value.width === null || isFiniteNumber(value.width)) &&
     (value.height === null || isFiniteNumber(value.height)) &&
     typeof value.createdAt === "string" &&
-    isNonEmptyString(value.url);
+    isNonEmptyString(value.url) &&
+    (value.thumbnailUrl === undefined || isNonEmptyString(value.thumbnailUrl));
 }
 
 function isPresetEvent(value: unknown): value is PresetEvent {

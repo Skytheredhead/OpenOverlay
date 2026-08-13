@@ -13,6 +13,7 @@ export interface AppConfig {
   storageMinimumFreeBytes: number;
   logFile: string;
   jwtSecret: string;
+  shareLookupSecret: string;
   corsOrigins: string[];
   cookieDomain?: string;
   frontendUrl: string;
@@ -45,6 +46,10 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   }
   if (!jwtSecret) {
     throw new Error("JWT_SECRET is required");
+  }
+  const shareLookupSecret = overrides.shareLookupSecret ?? process.env.SHARE_LOOKUP_SECRET ?? (env === "production" ? "" : "test-only-share-lookup-secret");
+  if (env === "production" && Buffer.byteLength(shareLookupSecret, "utf8") < 32) {
+    throw new Error("SHARE_LOOKUP_SECRET must be at least 32 bytes in production");
   }
 
   const corsOrigins = (
@@ -80,6 +85,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     storageMinimumFreeBytes: validateNonNegativeInteger(overrides.storageMinimumFreeBytes ?? parseNonNegativeInteger(process.env.STORAGE_MINIMUM_FREE_BYTES, 1024 * 1024 * 1024, "STORAGE_MINIMUM_FREE_BYTES"), "STORAGE_MINIMUM_FREE_BYTES"),
     logFile: path.resolve(overrides.logFile ?? process.env.LOG_FILE ?? path.join(cwd, "data", "logs", "backend.log")),
     jwtSecret,
+    shareLookupSecret,
     corsOrigins,
     cookieDomain,
     frontendUrl,

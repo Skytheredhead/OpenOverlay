@@ -43,7 +43,7 @@ describe("user isolation", () => {
 
     const created = await server.agent.post("/api/presets").send({ name: "Share Me", type: "soccer" }).expect(201);
     const share = await server.agent.post(`/api/presets/${created.body.preset.id}/share`).send({ email: "recipient@example.com" }).expect(201);
-    expect(share.body).toEqual({ ok: true, mediaReferencesRemoved: false });
+    expect(share.body).toMatchObject({ ok: true, mediaReferencesRemoved: false, receiptId: expect.any(String) });
     expect(share.body).not.toHaveProperty("preset");
     expect(share.body).not.toHaveProperty("id");
     expect(share.body).not.toHaveProperty("publicId");
@@ -52,6 +52,29 @@ describe("user isolation", () => {
     expect(recipientList.body.presets).toHaveLength(1);
     expect(recipientList.body.presets[0].name).toBe("Share Me");
     expect(recipientList.body.presets[0].id).not.toBe(created.body.preset.id);
+  });
+
+  it("does not enumerate recipients and fulfills an opaque pending share on signup", async () => {
+    await signup(server.agent, "owner@example.com");
+    const existing = request.agent(server.app);
+    await signup(existing, "existing@example.com");
+    const created = await server.agent.post("/api/presets").send({ name: "Pending Share", type: "soccer" }).expect(201);
+
+    const existingResponse = await server.agent.post(`/api/presets/${created.body.preset.id}/share`).send({ email: "existing@example.com" }).expect(201);
+    const missingResponse = await server.agent.post(`/api/presets/${created.body.preset.id}/share`).send({ email: "future@example.com" }).expect(201);
+    expect(Object.keys(missingResponse.body).sort()).toEqual(Object.keys(existingResponse.body).sort());
+    expect(missingResponse.body).toMatchObject({ ok: true, mediaReferencesRemoved: false, receiptId: expect.any(String) });
+    expect(missingResponse.body.receiptId).not.toBe(existingResponse.body.receiptId);
+
+    const pendingRows = server.backend.ctx.db.all<{ recipient_lookup_hash: string; snapshot_json: string }>("SELECT recipient_lookup_hash, snapshot_json FROM pending_shares");
+    expect(pendingRows).toHaveLength(2);
+    expect(JSON.stringify(pendingRows)).not.toContain("future@example.com");
+    expect(JSON.stringify(pendingRows)).not.toContain("existing@example.com");
+
+    const future = request.agent(server.app);
+    await signup(future, "future@example.com");
+    const futurePresets = await future.get("/api/presets").expect(200);
+    expect(futurePresets.body.presets).toEqual([expect.objectContaining({ name: "Pending Share" })]);
   });
 
   it("keeps saved teams scoped to the owning user", async () => {

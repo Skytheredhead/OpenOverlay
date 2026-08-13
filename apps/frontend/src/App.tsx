@@ -3909,6 +3909,8 @@ function teamLibraryToSoccerTeam(team: TeamLibraryEntry): SoccerState["home"] {
 
 export function MediaLibrary() {
   const [media, setMedia] = useState<MediaItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
@@ -3921,8 +3923,29 @@ export function MediaLibrary() {
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;
     const response = await mediaApi.list(signal);
-    if (!signal?.aborted && loadGenerationRef.current === generation) setMedia(response.media);
+    if (!signal?.aborted && loadGenerationRef.current === generation) {
+      setMedia(response.media);
+      setNextCursor(response.nextCursor);
+    }
   }, []);
+
+  async function loadMore() {
+    const controller = componentAbortRef.current;
+    if (!controller || controller.signal.aborted || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const response = await mediaApi.list(controller.signal, nextCursor);
+      if (!controller.signal.aborted) {
+        setMedia((current) => [...current, ...response.media.filter((item) => !current.some((existing) => existing.id === item.id))]);
+        setNextCursor(response.nextCursor);
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load more media");
+    } finally {
+      if (!controller.signal.aborted) setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -3997,7 +4020,7 @@ export function MediaLibrary() {
           <h1>Media</h1>
         </div>
       </div>
-      {error ? <div className="error" role="alert">{error}</div> : null}
+      {error ? <div className="error" role="alert">{error} <button className="button" type="button" onClick={() => void load(componentAbortRef.current?.signal)}>Retry media</button></div> : null}
       <label
         className={`dropzone ${uploading ? "disabled" : ""}`}
         aria-disabled={uploading}
@@ -4028,7 +4051,7 @@ export function MediaLibrary() {
       <section className="media-grid" style={{ marginTop: 18 }}>
         {media.map((item) => (
           <article className="media-card" key={item.id}>
-            <div className="media-thumb"><img src={mediaApi.mediaUrl(item.url)} alt={item.originalFilename} loading="lazy" decoding="async" /></div>
+            <div className="media-thumb"><img src={mediaApi.mediaUrl(item.thumbnailUrl || item.url)} alt={item.originalFilename} loading="lazy" decoding="async" /></div>
             <footer>
               <strong>{item.originalFilename}</strong>
               <span className="muted">{item.width || "?"} × {item.height || "?"}</span>
@@ -4037,6 +4060,7 @@ export function MediaLibrary() {
           </article>
         ))}
       </section>
+      {nextCursor ? <button className="button" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more"}</button> : null}
     </>
   );
 }

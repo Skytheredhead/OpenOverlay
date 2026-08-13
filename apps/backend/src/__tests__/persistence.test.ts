@@ -19,7 +19,7 @@ describe("persistence", () => {
     };
 
     const first = createBackendApp(config);
-    expect(first.ctx.db.get<{ version: number }>("SELECT MAX(version) AS version FROM schema_migrations")?.version).toBe(2);
+    expect(first.ctx.db.get<{ version: number }>("SELECT MAX(version) AS version FROM schema_migrations")?.version).toBe(3);
     const agent = request.agent(first.app);
     await agent.post("/api/auth/signup").send({ email: "persist@example.com", password: "password123" }).expect(201);
     const created = await agent.post("/api/presets").send({ name: "Persistent Match", type: "soccer" }).expect(201);
@@ -49,7 +49,7 @@ describe("persistence", () => {
     const first = createBackendApp(config);
     first.close();
     const database = new DatabaseSync(config.databasePath);
-    database.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(3, new Date().toISOString());
+    database.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(4, new Date().toISOString());
     database.close();
 
     try {
@@ -72,16 +72,8 @@ describe("persistence", () => {
     const first = createBackendApp(config);
     first.close();
     const database = new DatabaseSync(config.databasePath);
-    database.exec(`
-      CREATE TABLE schema_compatibility (
-        schema_version INTEGER PRIMARY KEY,
-        writer_version INTEGER NOT NULL,
-        min_reader_version INTEGER NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-    `);
-    database.prepare("INSERT INTO schema_compatibility VALUES (?, ?, ?, ?)").run(3, 3, 2, new Date().toISOString());
-    database.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(3, new Date().toISOString());
+    database.prepare("INSERT INTO schema_compatibility VALUES (?, ?, ?, ?)").run(4, 4, 3, new Date().toISOString());
+    database.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(4, new Date().toISOString());
     database.close();
 
     const compatible = createBackendApp(config);
@@ -115,7 +107,7 @@ describe("persistence", () => {
 
     const migrated = createBackendApp(config);
     try {
-      expect(migrated.ctx.db.get<{ version: number }>("SELECT MAX(version) AS version FROM schema_migrations")?.version).toBe(2);
+      expect(migrated.ctx.db.get<{ version: number }>("SELECT MAX(version) AS version FROM schema_migrations")?.version).toBe(3);
       expect(migrated.ctx.db.findUserById(signup.body.user.id)?.session_version).toBe(1);
     } finally {
       migrated.close();

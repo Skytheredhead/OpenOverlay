@@ -18,9 +18,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -42,8 +42,16 @@ jobs:
 
       - name: Validate shell scripts and patch whitespace
         run: |
-          bash -n scripts/deploy-backend.sh scripts/deploy-frontend-vercel.sh
+          bash -n scripts/*.sh scripts/openoverlay-deploy
           git diff --check
+
+      - name: ShellCheck and actionlint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck scripts/*.sh scripts/openoverlay-deploy
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          "$(go env GOPATH)/bin/actionlint"
 
       - name: Install Chromium
         run: |
@@ -59,3 +67,28 @@ jobs:
           OPENOVERLAY_E2E_FRONTEND_PORT: 15174
           OPENOVERLAY_E2E_DATA_DIR: ${{ runner.temp }}/openoverlay-e2e
         run: npm run test:e2e
+
+      - name: Verify systemd units
+        run: systemd-analyze verify apps/backend/systemd/*.service apps/backend/systemd/*.timer
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3

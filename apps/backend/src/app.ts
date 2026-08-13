@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import multer from "multer";
+import sharp from "sharp";
 import {
   createDefaultPresetState,
   defaultTeam,
@@ -25,7 +26,7 @@ import {
 import { AuthRateLimiter, DUMMY_PASSWORD_HASH, RateLimitError, authenticatedUser, clearSessionCookie, generateActionKey, hashActionKey, hashPassword, requireAuth, serializeUser, setSessionCookie, validateEmail, validatePassword, verifyActionKey, verifyPassword, sessionCookieName } from "./auth.js";
 import { getBuildInfo } from "./buildInfo.js";
 import { loadConfig, type AppConfig } from "./config.js";
-import { Database, RevisionConflictError, parseTeam, type MediaRow, type PresetRow, type TeamRow } from "./db.js";
+import { Database, RevisionConflictError, parseTeam, type MediaRow, type PendingShareRow, type PresetRow, type TeamRow, type UserRow } from "./db.js";
 import { createLogger } from "./logger.js";
 import { PresetActionValidationError, PresetStateValidationError, applyAction, cloneStateForShare, ensurePresetState, isChurchState, isPresetAction, isSoccerState, materializeState, mergePresetState, readStoredPresetState, validatePresetActionPayload } from "./state.js";
 import type { AppContext } from "./types.js";
@@ -39,7 +40,7 @@ export interface BackendApp {
 const MAX_MEDIA_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_JSON_REQUEST_BYTES = 2 * 1024 * 1024;
 const DATABASE_WRITE_HEADROOM_BYTES = 8 * 1024 * 1024;
-const MEDIA_RECONCILIATION_GRACE_MS = 60 * 60 * 1000;
+const MEDIA_RECONCILIATION_GRACE_MS = 24 * 60 * 60 * 1000;
 const MEDIA_UPLOAD_STAGING_MARKER = ".uploading-";
 const MANAGED_MEDIA_FILENAME = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-/i;
 const upload = multer({
@@ -65,6 +66,10 @@ const MAX_MEDIA_ITEMS_PER_USER = 100;
 const MAX_MEDIA_BYTES_PER_USER = 250 * 1024 * 1024;
 const MAX_PRESETS_PER_USER = 100;
 const MAX_TEAMS_PER_USER = 250;
+const MEDIA_PAGE_SIZE = 24;
+const MAX_MEDIA_PAGE_SIZE = 100;
+const MAX_OUTSTANDING_SHARES = 100;
+const MAX_DAILY_SHARE_REQUESTS = 20;
 
 class UploadValidationError extends Error {}
 class RequestValidationError extends Error {}
@@ -89,6 +94,15 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     }
   }, MEDIA_RECONCILIATION_GRACE_MS);
   mediaReconciliationTimer.unref();
+  const pendingShareTimer = setInterval(() => {
+    try {
+      db.expirePendingShares();
+      for (const user of db.listUsers()) fulfillPendingShares(ctx, user);
+    } catch (error) {
+      logger.error("pending_share_fulfillment_failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+  }, 60_000);
+  pendingShareTimer.unref();
   const authRateLimiter = new AuthRateLimiter();
   let activeMediaUploads = 0;
   const app = express();
@@ -188,6 +202,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
       throw error;
     }
     setSessionCookie(res, ctx, user.id, user.session_version);
+    fulfillPendingShares(ctx, user);
     res.status(201).json({ user: serializeUser({ id: user.id, email: user.email }) });
   }));
 
@@ -401,26 +416,65 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
       res.status(400).json({ error: "Recipient email is required" });
       return;
     }
-    const recipient = db.findUserByEmail(recipientEmail);
-    if (!recipient) {
-      res.status(404).json({ error: "Recipient account not found" });
-      return;
-    }
-    assertPresetQuota(ctx, recipient.id);
     const sourceState = readStoredPresetState(row).state;
-    const copied = recipient.id === req.user!.id
+    const recipient = db.findUserByEmail(recipientEmail);
+    const copied = recipient?.id === req.user!.id
       ? { state: canonicalizeOwnedPresetMedia(ctx, recipient.id, cloneStateForShare(sourceState)), removed: false }
       : cloneStateWithoutMediaReferences(sourceState);
+    reserveDurableShare(ctx, req.user!.id);
+    const snapshot = { name: row.name, type: row.type, state: copied.state };
+    let receipt: PendingShareRow;
     db.transaction(() => {
-      db.createPreset({
-        ownerUserId: recipient.id,
-        name: row.name,
-        type: row.type,
-        state: copied.state
+      if (recipient) {
+        assertPresetQuota(ctx, recipient.id);
+        db.createPreset({ ownerUserId: recipient.id, ...snapshot });
+      }
+      receipt = db.createPendingShare({
+        senderUserId: req.user!.id,
+        recipientLookupHash: shareLookupHash(ctx, recipientEmail),
+        resourceType: "preset",
+        snapshot,
+        mediaReferencesRemoved: copied.removed,
+        recipientUserId: recipient?.id
       });
-      db.logEvent({ presetId: row.id, ownerUserId: req.user!.id, type: "preset.share", payload: { recipientEmail } });
+      db.logEvent({ presetId: row.id, ownerUserId: req.user!.id, type: "preset.share", payload: { receiptId: receipt.receipt_id } });
     });
-    res.status(201).json({ ok: true, mediaReferencesRemoved: copied.removed });
+    res.status(201).json({ ok: true, mediaReferencesRemoved: copied.removed, receiptId: receipt!.receipt_id });
+  });
+
+  api.post("/teams/:id/share", requireAuth, (req, res) => {
+    const body = requestBody(req);
+    const row = db.getTeamForUser(routeParam(req, "id"), req.user!.id);
+    const recipientEmail = validateEmail(body.email);
+    if (!row) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    if (!recipientEmail) {
+      res.status(400).json({ error: "Recipient email is required" });
+      return;
+    }
+    reserveDurableShare(ctx, req.user!.id);
+    const source = serializeTeam(row);
+    const { id: _id, revision: _revision, createdAt: _createdAt, updatedAt: _updatedAt, dataRecovered: _dataRecovered, logoMediaId: _logoMediaId, logoUrl: _logoUrl, ...snapshot } = source;
+    const mediaReferencesRemoved = Boolean(source.logoMediaId || source.logoUrl);
+    const recipient = db.findUserByEmail(recipientEmail);
+    let receipt: PendingShareRow;
+    db.transaction(() => {
+      if (recipient) {
+        assertTeamQuota(ctx, recipient.id);
+        db.createTeam({ ownerUserId: recipient.id, team: snapshot });
+      }
+      receipt = db.createPendingShare({
+        senderUserId: req.user!.id,
+        recipientLookupHash: shareLookupHash(ctx, recipientEmail),
+        resourceType: "team",
+        snapshot,
+        mediaReferencesRemoved,
+        recipientUserId: recipient?.id
+      });
+    });
+    res.status(201).json({ ok: true, mediaReferencesRemoved, receiptId: receipt!.receipt_id });
   });
 
   api.post("/presets/:id/share-team", requireAuth, (req, res) => {
@@ -437,17 +491,13 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
       return;
     }
     const recipient = db.findUserByEmail(recipientEmail);
-    if (!recipient) {
-      res.status(404).json({ error: "Recipient account not found" });
-      return;
-    }
-    assertPresetQuota(ctx, recipient.id);
+    reserveDurableShare(ctx, req.user!.id);
     const side = body.side === "away" ? "away" : "home";
     const copiedState = createDefaultPresetState("soccer", `${state[side].shortName} Team`);
     let mediaReferencesRemoved = false;
     if (isSoccerState(copiedState)) {
       const sourceTeam = structuredClone(state[side]);
-      if (recipient.id === req.user!.id) {
+      if (recipient?.id === req.user!.id) {
         copiedState.home = canonicalizeOwnedTeamMedia(ctx, recipient.id, sourceTeam);
       } else {
         mediaReferencesRemoved = Boolean(sourceTeam.logoMediaId || sourceTeam.logoUrl);
@@ -456,8 +506,23 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
         copiedState.home = sourceTeam;
       }
     }
-    db.createPreset({ ownerUserId: recipient.id, name: `${state[side].shortName} Team`, type: "soccer", state: copiedState });
-    res.status(201).json({ ok: true, mediaReferencesRemoved });
+    const snapshot = { name: `${state[side].shortName} Team`, type: "soccer" as const, state: copiedState };
+    let receipt: PendingShareRow;
+    db.transaction(() => {
+      if (recipient) {
+        assertPresetQuota(ctx, recipient.id);
+        db.createPreset({ ownerUserId: recipient.id, ...snapshot });
+      }
+      receipt = db.createPendingShare({
+        senderUserId: req.user!.id,
+        recipientLookupHash: shareLookupHash(ctx, recipientEmail),
+        resourceType: "preset",
+        snapshot,
+        mediaReferencesRemoved,
+        recipientUserId: recipient?.id
+      });
+    });
+    res.status(201).json({ ok: true, mediaReferencesRemoved, receiptId: receipt!.receipt_id });
   });
 
   api.post("/presets/:id/action-key", requireAuth, (req, res) => {
@@ -584,7 +649,13 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
   });
 
   api.get("/media", requireAuth, (req, res) => {
-    res.json({ media: db.listMediaForUser(req.user!.id).map((row) => serializeMedia(row)) });
+    const limit = parseMediaLimit(req.query.limit);
+    const cursor = parseMediaCursor(req.query.cursor);
+    const rows = db.listMediaForUser(req.user!.id, limit + 1, cursor);
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit);
+    const last = hasMore ? page.at(-1) : undefined;
+    res.json({ media: page.map((row) => serializeMedia(row)), nextCursor: last ? encodeMediaCursor(last) : null });
   });
 
   api.post("/media", requireAuth, (req, _res, next) => {
@@ -637,6 +708,17 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.setHeader("Content-Type", row.mime_type);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     res.sendFile(row.path);
+  });
+
+  api.get("/media/thumbnail/:publicId", (req, res) => {
+    const row = db.getMediaByPublicId(routeParam(req, "publicId"));
+    if (!row?.thumbnail_path || !isSafeMediaFile(row.thumbnail_path, ctx.config.uploadDir)) {
+      res.status(404).send("Not found");
+      return;
+    }
+    res.setHeader("Content-Type", row.thumbnail_mime_type || "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.sendFile(row.thumbnail_path);
   });
 
   api.use((_req, res) => {
@@ -707,6 +789,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     ctx,
     close() {
       clearInterval(mediaReconciliationTimer);
+      clearInterval(pendingShareTimer);
       db.close();
     }
   };
@@ -764,8 +847,39 @@ function serializeMedia(row: MediaRow) {
     height: row.height,
     sizeBytes: row.size_bytes,
     createdAt: row.created_at,
-    url: `/api/v1/media/file/${row.public_id}`
+    url: `/api/v1/media/file/${row.public_id}`,
+    thumbnailUrl: row.thumbnail_path ? `/api/v1/media/thumbnail/${row.public_id}` : undefined,
+    thumbnailWidth: row.thumbnail_width,
+    thumbnailHeight: row.thumbnail_height,
+    thumbnailMimeType: row.thumbnail_mime_type,
+    thumbnailSizeBytes: row.thumbnail_size_bytes
   };
+}
+
+function parseMediaLimit(value: unknown): number {
+  if (value === undefined) return MEDIA_PAGE_SIZE;
+  if (typeof value !== "string" || !/^\d+$/.test(value)) throw new RequestValidationError("Media limit must be an integer");
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_MEDIA_PAGE_SIZE) throw new RequestValidationError(`Media limit must be from 1 to ${MAX_MEDIA_PAGE_SIZE}`);
+  return limit;
+}
+
+function parseMediaCursor(value: unknown): { createdAt: string; id: string } | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length > 512) throw new RequestValidationError("Invalid media cursor");
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { createdAt?: unknown; id?: unknown };
+    if (typeof parsed.createdAt !== "string" || !Number.isFinite(Date.parse(parsed.createdAt)) || typeof parsed.id !== "string" || !/^[0-9a-f-]{36}$/i.test(parsed.id)) {
+      throw new Error("invalid cursor payload");
+    }
+    return { createdAt: parsed.createdAt, id: parsed.id };
+  } catch {
+    throw new RequestValidationError("Invalid media cursor");
+  }
+}
+
+function encodeMediaCursor(row: MediaRow): string {
+  return Buffer.from(JSON.stringify({ createdAt: row.created_at, id: row.id }), "utf8").toString("base64url");
 }
 
 function serializeTeam(row: TeamRow): TeamLibraryEntry {
@@ -1046,22 +1160,44 @@ async function saveMediaUpload(ctx: AppContext, ownerUserId: string, file: Expre
   const filename = `${randomUUID()}-${safeBase || "upload"}${extension}`;
   const filePath = path.join(ctx.config.uploadDir, filename);
   const stagingPath = `${filePath}${MEDIA_UPLOAD_STAGING_MARKER}${randomUUID()}`;
+  const thumbnailPath = path.join(ctx.config.uploadDir, `${randomUUID()}-${safeBase || "upload"}-thumbnail.webp`);
+  const thumbnailStagingPath = `${thumbnailPath}${MEDIA_UPLOAD_STAGING_MARKER}${randomUUID()}`;
+  let thumbnail: { width: number; height: number; size: number } | undefined;
   let published = false;
+  let thumbnailPublished = false;
   try {
     assertGlobalMediaCapacity(ctx, file.size, file.size);
     await fs.promises.mkdir(ctx.config.uploadDir, { recursive: true });
     await fs.promises.writeFile(stagingPath, file.buffer, { mode: 0o640, flag: "wx" });
+    if (file.mimetype !== "image/svg+xml") {
+      try {
+        const thumbnailInfo = await sharp(file.buffer, { limitInputPixels: 40_000_000, failOn: "error" })
+          .rotate()
+          .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 82, effort: 4 })
+          .toFile(thumbnailStagingPath);
+        thumbnail = { width: thumbnailInfo.width, height: thumbnailInfo.height, size: thumbnailInfo.size };
+      } catch (error) {
+        await fs.promises.rm(thumbnailStagingPath, { force: true });
+        ctx.logger.warn("media_thumbnail_generation_deferred", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
     return ctx.db.transaction(() => {
-      assertMediaQuota(ctx, ownerUserId, file.size);
+      const totalSize = file.size + (thumbnail?.size || 0);
+      assertMediaQuota(ctx, ownerUserId, totalSize);
       // BEGIN IMMEDIATE serializes this exact global quota check with inserts
       // from another backend slot sharing the same database and upload store.
-      assertGlobalMediaCapacity(ctx, file.size, 0);
+      assertGlobalMediaCapacity(ctx, totalSize, 0);
       // Publish only after the exact quota checks pass. The rename is atomic
       // within the upload directory, and reconciliation gives newly published
       // managed files a grace window so a candidate slot with an older database
       // snapshot cannot unlink this file before the row below is committed.
       fs.renameSync(stagingPath, filePath);
       published = true;
+      if (thumbnail) {
+        fs.renameSync(thumbnailStagingPath, thumbnailPath);
+        thumbnailPublished = true;
+      }
       return ctx.db.createMedia({
         ownerUserId,
         filename,
@@ -1070,11 +1206,16 @@ async function saveMediaUpload(ctx: AppContext, ownerUserId: string, file: Expre
         width,
         height,
         sizeBytes: file.size,
-        filePath
+        filePath,
+        thumbnailPath: thumbnail ? thumbnailPath : null,
+        thumbnailWidth: thumbnail?.width,
+        thumbnailHeight: thumbnail?.height,
+        thumbnailMimeType: thumbnail ? "image/webp" : null,
+        thumbnailSizeBytes: thumbnail?.size
       });
     });
   } catch (error) {
-    const cleanupPaths = published ? [filePath, stagingPath] : [stagingPath];
+    const cleanupPaths = [stagingPath, thumbnailStagingPath, ...(published ? [filePath] : []), ...(thumbnailPublished ? [thumbnailPath] : [])];
     await Promise.all(cleanupPaths.map(async (cleanupPath) => {
       await fs.promises.rm(cleanupPath, { force: true }).catch((cleanupError: unknown) => {
         ctx.logger.error("upload_cleanup_failed", { filePath: cleanupPath, error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError) });
@@ -1126,6 +1267,48 @@ function assertTeamQuota(ctx: AppContext, ownerUserId: string): void {
   if (ctx.db.countTeamsForUser(ownerUserId) >= MAX_TEAMS_PER_USER) {
     throw new ResourceQuotaError(`Team limit reached (${MAX_TEAMS_PER_USER})`);
   }
+}
+
+function reserveDurableShare(ctx: AppContext, senderUserId: string): void {
+  ctx.db.expirePendingShares();
+  if (ctx.db.countOutstandingShares(senderUserId) >= MAX_OUTSTANDING_SHARES) {
+    throw new ResourceQuotaError(`Pending share limit reached (${MAX_OUTSTANDING_SHARES})`);
+  }
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  if (ctx.db.countRecentShareRequests(senderUserId, since) >= MAX_DAILY_SHARE_REQUESTS) {
+    throw new RateLimitError(`Share request limit reached (${MAX_DAILY_SHARE_REQUESTS} per day)`, 60 * 60);
+  }
+}
+
+function shareLookupHash(ctx: AppContext, normalizedEmail: string): string {
+  return createHmac("sha256", ctx.config.shareLookupSecret).update(normalizedEmail.toLowerCase()).digest("hex");
+}
+
+function fulfillPendingShares(ctx: AppContext, user: UserRow): void {
+  const pending = ctx.db.listPendingSharesForHash(shareLookupHash(ctx, user.email));
+  for (const share of pending) {
+    try {
+      ctx.db.transaction(() => {
+        if (share.resource_type === "preset") {
+          assertPresetQuota(ctx, user.id);
+          const snapshot = JSON.parse(share.snapshot_json) as { name: string; type: PresetType; state: PresetState };
+          dbSafeCreatePreset(ctx, user.id, snapshot);
+        } else {
+          assertTeamQuota(ctx, user.id);
+          const snapshot = JSON.parse(share.snapshot_json) as Omit<TeamLibraryEntry, "id" | "revision" | "createdAt" | "updatedAt">;
+          ctx.db.createTeam({ ownerUserId: user.id, team: snapshot });
+        }
+        ctx.db.fulfillPendingShare(share.id, user.id);
+      });
+    } catch (error) {
+      ctx.logger.error("pending_share_fulfillment_item_failed", { receiptId: share.receipt_id, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+}
+
+function dbSafeCreatePreset(ctx: AppContext, ownerUserId: string, snapshot: { name: string; type: PresetType; state: PresetState }): void {
+  const state = ensurePresetState(snapshot.type, snapshot.name, snapshot.state);
+  ctx.db.createPreset({ ownerUserId, name: snapshot.name.slice(0, 120), type: snapshot.type, state });
 }
 
 function validateSvg(buffer: Buffer): void {
@@ -1227,13 +1410,19 @@ function readUInt24LE(buffer: Buffer, offset: number): number {
 async function deleteMediaSafely(ctx: AppContext, row: MediaRow): Promise<void> {
   const uploadRoot = `${path.resolve(ctx.config.uploadDir)}${path.sep}`;
   if (!path.resolve(row.path).startsWith(uploadRoot)) throw new Error("Refusing to delete media outside the upload directory");
-  const quarantinePath = `${row.path}.deleting-${randomUUID()}`;
-  let quarantined = false;
-  try {
-    await fs.promises.rename(row.path, quarantinePath);
-    quarantined = true;
-  } catch (error) {
-    if (!isFileNotFound(error)) throw error;
+  const sourcePaths = [row.path, ...(row.thumbnail_path ? [row.thumbnail_path] : [])];
+  for (const sourcePath of sourcePaths) {
+    if (!path.resolve(sourcePath).startsWith(uploadRoot)) throw new Error("Refusing to delete media outside the upload directory");
+  }
+  const quarantines: Array<{ original: string; tombstone: string }> = [];
+  for (const sourcePath of sourcePaths) {
+    const tombstone = `${sourcePath}.deleting-${randomUUID()}`;
+    try {
+      await fs.promises.rename(sourcePath, tombstone);
+      quarantines.push({ original: sourcePath, tombstone });
+    } catch (error) {
+      if (!isFileNotFound(error)) throw error;
+    }
   }
   try {
     ctx.db.transaction(() => {
@@ -1242,13 +1431,13 @@ async function deleteMediaSafely(ctx: AppContext, row: MediaRow): Promise<void> 
       if (!deleted) throw new RequestValidationError("Media was already deleted");
     });
   } catch (error) {
-    if (quarantined) {
+    if (quarantines.length > 0) {
       try {
-        await fs.promises.rename(quarantinePath, row.path);
+        for (const quarantine of quarantines) await fs.promises.rename(quarantine.tombstone, quarantine.original);
       } catch (restoreError) {
         ctx.logger.error("media_restore_failed", {
           path: row.path,
-          quarantinePath,
+          quarantinePaths: quarantines.map((item) => item.tombstone),
           error: restoreError instanceof Error ? restoreError.message : String(restoreError),
           originalError: error instanceof Error ? error.message : String(error)
         });
@@ -1257,11 +1446,8 @@ async function deleteMediaSafely(ctx: AppContext, row: MediaRow): Promise<void> 
     }
     throw error;
   }
-  if (quarantined) {
-    await fs.promises.rm(quarantinePath, { force: true }).catch((error: unknown) => {
-      ctx.logger.error("media_cleanup_failed", { path: quarantinePath, error: error instanceof Error ? error.message : String(error) });
-    });
-  }
+  // Successful deletes intentionally retain their tombstones for 24 hours so
+  // an online database snapshot can still resolve bytes for a row it captured.
 }
 
 export function reconcileMediaStorage(ctx: AppContext): void {
