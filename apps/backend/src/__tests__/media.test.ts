@@ -99,7 +99,10 @@ describe("media upload safety", () => {
     truncatedPng.writeUInt32BE(1, 16);
     truncatedPng.writeUInt32BE(1, 20);
     await server.agent.post("/api/media").attach("file", truncatedPng, { filename: "truncated.png", contentType: "image/png" }).expect(400);
-    await server.agent.post("/api/media").attach("file", Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x07, 0x08, 0x00, 0x01, 0x00, 0x01]), { filename: "truncated.jpg", contentType: "image/jpeg" }).expect(400);
+    await server.agent
+      .post("/api/media")
+      .attach("file", Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x07, 0x08, 0x00, 0x01, 0x00, 0x01]), { filename: "truncated.jpg", contentType: "image/jpeg" })
+      .expect(400);
   });
 
   it("uses collision-resistant names for concurrent same-name uploads", async () => {
@@ -117,7 +120,10 @@ describe("media upload safety", () => {
   it("blocks deletion while media is referenced", async () => {
     await signup(server.agent, "referenced@example.com");
     const upload = await server.agent.post("/api/media").attach("file", onePixelPng(), { filename: "team.png", contentType: "image/png" }).expect(201);
-    await server.agent.post("/api/teams").send({ fullName: "Media FC", shortName: "Media", logoMediaId: upload.body.media.id, logoUrl: upload.body.media.url }).expect(201);
+    await server.agent
+      .post("/api/teams")
+      .send({ fullName: "Media FC", shortName: "Media", logoMediaId: upload.body.media.id, logoUrl: upload.body.media.url })
+      .expect(201);
     await server.agent.delete(`/api/media/${upload.body.media.id}`).expect(409);
     await server.request.get(upload.body.media.url).expect(200);
   });
@@ -188,11 +194,7 @@ describe("media upload safety", () => {
   });
 
   it("preserves fresh staging artifacts but reclaims them after the crash-recovery grace window", () => {
-    const stagingPath = path.join(
-      server.dir,
-      "uploads",
-      "00000000-0000-4000-8000-000000000001-staged.png.uploading-00000000-0000-4000-8000-000000000002"
-    );
+    const stagingPath = path.join(server.dir, "uploads", "00000000-0000-4000-8000-000000000001-staged.png.uploading-00000000-0000-4000-8000-000000000002");
     fs.writeFileSync(stagingPath, onePixelPng());
 
     reconcileMediaStorage(server.backend.ctx);
@@ -208,11 +210,14 @@ describe("media upload safety", () => {
     const upload = await server.agent.post("/api/media").attach("file", onePixelPng(), { filename: "owner.png", contentType: "image/png" }).expect(201);
     const other = request.agent(server.app);
     await signup(other, "media-other@example.com");
-    await other.post("/api/teams").send({
-      fullName: "External Reference FC",
-      logoMediaId: upload.body.media.id,
-      logoUrl: upload.body.media.url
-    }).expect(400);
+    await other
+      .post("/api/teams")
+      .send({
+        fullName: "External Reference FC",
+        logoMediaId: upload.body.media.id,
+        logoUrl: upload.body.media.url
+      })
+      .expect(400);
 
     await server.agent.delete(`/api/media/${upload.body.media.id}`).expect(200);
     await server.request.get(upload.body.media.url).expect(404);
@@ -236,25 +241,37 @@ describe("media upload safety", () => {
     await signup(server.agent, "team-media-owner@example.com");
     const upload = await server.agent.post("/api/media").attach("file", onePixelPng(), { filename: "team.png", contentType: "image/png" }).expect(201);
 
-    const valid = await server.agent.post("/api/teams").send({
-      fullName: "Canonical FC",
-      logoMediaId: upload.body.media.id
-    }).expect(201);
+    const valid = await server.agent
+      .post("/api/teams")
+      .send({
+        fullName: "Canonical FC",
+        logoMediaId: upload.body.media.id
+      })
+      .expect(201);
     expect(valid.body.team.logoUrl).toBe(upload.body.media.url);
 
-    await server.agent.post("/api/teams").send({
-      fullName: "Mismatched FC",
-      logoMediaId: upload.body.media.id,
-      logoUrl: "https://attacker.example/tracker.svg"
-    }).expect(400);
-    await server.agent.post("/api/teams").send({
-      fullName: "URL-only FC",
-      logoUrl: upload.body.media.url
-    }).expect(400);
-    await server.agent.post("/api/teams").send({
-      fullName: "Missing FC",
-      logoMediaId: "missing-media-id"
-    }).expect(400);
+    await server.agent
+      .post("/api/teams")
+      .send({
+        fullName: "Mismatched FC",
+        logoMediaId: upload.body.media.id,
+        logoUrl: "https://attacker.example/tracker.svg"
+      })
+      .expect(400);
+    await server.agent
+      .post("/api/teams")
+      .send({
+        fullName: "URL-only FC",
+        logoUrl: upload.body.media.url
+      })
+      .expect(400);
+    await server.agent
+      .post("/api/teams")
+      .send({
+        fullName: "Missing FC",
+        logoMediaId: "missing-media-id"
+      })
+      .expect(400);
   });
 
   it("rejects unavailable or mismatched media in soccer and church preset writes", async () => {
@@ -304,10 +321,13 @@ describe("media upload safety", () => {
     const clearedState = structuredClone(duplicate.body.preset.state);
     clearedState.home.logoMediaId = "";
     clearedState.home.logoUrl = "";
-    const cleared = await server.agent.patch(`/api/presets/${duplicate.body.preset.id}`).send({
-      state: clearedState,
-      expectedRevision: duplicate.body.preset.revision
-    }).expect(200);
+    const cleared = await server.agent
+      .patch(`/api/presets/${duplicate.body.preset.id}`)
+      .send({
+        state: clearedState,
+        expectedRevision: duplicate.body.preset.revision
+      })
+      .expect(200);
     expect(cleared.body.preset.state.home.logoMediaId).toBeUndefined();
     expect(cleared.body.preset.state.home.logoUrl).toBeUndefined();
 
@@ -320,10 +340,13 @@ describe("media upload safety", () => {
     expect(recipientSoccer.state.home.logoMediaId).toBeUndefined();
     expect(recipientSoccer.state.home.logoUrl).toBeUndefined();
 
-    const sharedTeam = await server.agent.post(`/api/presets/${created.body.preset.id}/share-team`).send({
-      email: "share-media-recipient@example.com",
-      side: "home"
-    }).expect(201);
+    const sharedTeam = await server.agent
+      .post(`/api/presets/${created.body.preset.id}/share-team`)
+      .send({
+        email: "share-media-recipient@example.com",
+        side: "home"
+      })
+      .expect(201);
     expect(sharedTeam.body).toMatchObject({ ok: true, mediaReferencesRemoved: true, receiptId: expect.any(String) });
     expect(sharedTeam.body).not.toHaveProperty("preset");
     recipientPresets = (await recipient.get("/api/presets").expect(200)).body.presets;
@@ -346,9 +369,12 @@ describe("media upload safety", () => {
       variant: "clean"
     });
     const church = await server.agent.post("/api/presets").send({ name: "Shared Service", type: "church", state: churchState }).expect(201);
-    const sharedChurch = await server.agent.post(`/api/presets/${church.body.preset.id}/share`).send({
-      email: "share-media-recipient@example.com"
-    }).expect(201);
+    const sharedChurch = await server.agent
+      .post(`/api/presets/${church.body.preset.id}/share`)
+      .send({
+        email: "share-media-recipient@example.com"
+      })
+      .expect(201);
     expect(sharedChurch.body).toMatchObject({ ok: true, mediaReferencesRemoved: true, receiptId: expect.any(String) });
     expect(sharedChurch.body).not.toHaveProperty("preset");
     recipientPresets = (await recipient.get("/api/presets").expect(200)).body.presets;
@@ -393,10 +419,7 @@ describe("media upload safety", () => {
     await signup(server.agent, "disk-floor@example.com");
     server.backend.ctx.config.storageMinimumFreeBytes = Number.MAX_SAFE_INTEGER;
 
-    const response = await server.agent
-      .post("/api/media")
-      .attach("file", onePixelPng(), { filename: "disk-floor.png", contentType: "image/png" })
-      .expect(507);
+    const response = await server.agent.post("/api/media").attach("file", onePixelPng(), { filename: "disk-floor.png", contentType: "image/png" }).expect(507);
 
     expect(response.body.error).toMatch(/retain at least/);
     expect(server.backend.ctx.db.getGlobalMediaUsage()).toEqual({ itemCount: 0, sizeBytes: 0 });
@@ -406,7 +429,9 @@ describe("media upload safety", () => {
   it("removes a just-written file if the database insert fails", async () => {
     await signup(server.agent, "cleanup@example.com");
     const originalCreateMedia = server.backend.ctx.db.createMedia.bind(server.backend.ctx.db);
-    server.backend.ctx.db.createMedia = () => { throw new Error("simulated database failure"); };
+    server.backend.ctx.db.createMedia = () => {
+      throw new Error("simulated database failure");
+    };
     await server.agent.post("/api/media").attach("file", onePixelPng(), { filename: "orphan.png", contentType: "image/png" }).expect(500);
     server.backend.ctx.db.createMedia = originalCreateMedia;
     expect(fs.readdirSync(path.join(server.dir, "uploads"))).toEqual([]);
@@ -414,13 +439,13 @@ describe("media upload safety", () => {
 
   it("maps oversized uploads to payload too large", async () => {
     await signup(server.agent, "large@example.com");
-    await server.agent.post("/api/media").attach("file", Buffer.alloc(10 * 1024 * 1024 + 1), { filename: "large.png", contentType: "image/png" }).expect(413);
+    await server.agent
+      .post("/api/media")
+      .attach("file", Buffer.alloc(10 * 1024 * 1024 + 1), { filename: "large.png", contentType: "image/png" })
+      .expect(413);
   });
 });
 
 function onePixelPng(): Buffer {
-  return Buffer.from(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
-    "base64"
-  );
+  return Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64");
 }

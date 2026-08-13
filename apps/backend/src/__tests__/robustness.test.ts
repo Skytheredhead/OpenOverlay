@@ -73,7 +73,10 @@ describe("preset integrity and API resilience", () => {
   it("rejects malformed patches and prototype-pollution keys without changing state", async () => {
     await signup(server.agent, "state-patch@example.com");
     const created = await server.agent.post("/api/presets").send({ name: "Safe", type: "soccer" }).expect(201);
-    await server.agent.patch(`/api/presets/${created.body.preset.id}`).send({ statePatch: { activeGraphics: null }, expectedRevision: 1 }).expect(400);
+    await server.agent
+      .patch(`/api/presets/${created.body.preset.id}`)
+      .send({ statePatch: { activeGraphics: null }, expectedRevision: 1 })
+      .expect(400);
     await server.agent
       .patch(`/api/presets/${created.body.preset.id}`)
       .set("Content-Type", "application/json")
@@ -90,11 +93,7 @@ describe("preset integrity and API resilience", () => {
     expect(created.body.preset.revision).toBe(1);
     const missing = await server.agent.patch(`/api/presets/${created.body.preset.id}`).send({ name: "Unconditional" }).expect(428);
     expect(missing.body.error).toMatch(/expectedRevision|If-Match/);
-    const first = await server.agent
-      .patch(`/api/presets/${created.body.preset.id}`)
-      .set("If-Match", '"1"')
-      .send({ name: "First" })
-      .expect(200);
+    const first = await server.agent.patch(`/api/presets/${created.body.preset.id}`).set("If-Match", '"1"').send({ name: "First" }).expect(200);
     expect(first.body.preset.revision).toBe(2);
     const stale = await server.agent.patch(`/api/presets/${created.body.preset.id}`).send({ name: "Stale", expectedRevision: 1 }).expect(409);
     expect(stale.body.currentRevision).toBe(2);
@@ -164,17 +163,11 @@ describe("preset integrity and API resilience", () => {
     await signup(server.agent, "clock-validation@example.com");
     const created = await server.agent.post("/api/presets").send({ name: "Clock", type: "soccer" }).expect(201);
 
-    const missing = await server.agent
-      .patch(`/api/presets/${created.body.preset.id}/soccer`)
-      .send({ clockTime: "1:02" })
-      .expect(428);
+    const missing = await server.agent.patch(`/api/presets/${created.body.preset.id}/soccer`).send({ clockTime: "1:02" }).expect(428);
     expect(missing.body.error).toMatch(/expectedRevision|If-Match/);
 
     for (const clockTime of ["", "1:60", "1abc", -1, null]) {
-      const response = await server.agent
-        .patch(`/api/presets/${created.body.preset.id}/soccer`)
-        .send({ clockTime, expectedRevision: 1 })
-        .expect(400);
+      const response = await server.agent.patch(`/api/presets/${created.body.preset.id}/soccer`).send({ clockTime, expectedRevision: 1 }).expect(400);
       expect(response.body.error).toMatch(/clockTime/);
     }
 
@@ -182,10 +175,7 @@ describe("preset integrity and API resilience", () => {
     expect(current.body.preset.revision).toBe(1);
     expect(current.body.preset.state.clock.baseSeconds).toBe(0);
 
-    const valid = await server.agent
-      .patch(`/api/presets/${created.body.preset.id}/soccer`)
-      .send({ clockTime: "1:02", expectedRevision: 1 })
-      .expect(200);
+    const valid = await server.agent.patch(`/api/presets/${created.body.preset.id}/soccer`).send({ clockTime: "1:02", expectedRevision: 1 }).expect(200);
     expect(valid.body.preset.state.clock.baseSeconds).toBe(62);
   });
 
@@ -204,7 +194,9 @@ describe("preset integrity and API resilience", () => {
     await signup(server.agent, "transaction@example.com");
     const created = await server.agent.post("/api/presets").send({ name: "Atomic", type: "soccer" }).expect(201);
     const originalLogEvent = server.backend.ctx.db.logEvent.bind(server.backend.ctx.db);
-    server.backend.ctx.db.logEvent = () => { throw new Error("simulated log failure"); };
+    server.backend.ctx.db.logEvent = () => {
+      throw new Error("simulated log failure");
+    };
     await server.agent.post(`/api/presets/${created.body.preset.id}/actions/home-score-plus`).send({ expectedRevision: 1 }).expect(500);
     server.backend.ctx.db.logEvent = originalLogEvent;
     const current = await server.agent.get(`/api/presets/${created.body.preset.id}`).expect(200);
@@ -219,7 +211,11 @@ describe("preset integrity and API resilience", () => {
     const key = await server.agent.post(`/api/presets/${created.body.preset.id}/action-key`).expect(200);
     await server.request.post(`/api/presets/${created.body.preset.id}/actions/home-score-plus?key=${key.body.actionKey}`).send({}).expect(401);
     await server.request.post(`/api/presets/${created.body.preset.id}/actions/home-score-plus`).send({ actionKey: key.body.actionKey }).expect(401);
-    await server.request.post(`/api/presets/${created.body.preset.id}/actions/home-score-plus`).set("x-openoverlay-action-key", key.body.actionKey).send({}).expect(200);
+    await server.request
+      .post(`/api/presets/${created.body.preset.id}/actions/home-score-plus`)
+      .set("x-openoverlay-action-key", key.body.actionKey)
+      .send({})
+      .expect(200);
   });
 
   it("returns not-found rather than a false session-expiry response for an authenticated stale action URL", async () => {
@@ -304,12 +300,14 @@ describe("preset integrity and API resilience", () => {
     const user = await signup(server.agent, "event-payload-cap@example.com");
     const created = await server.agent.post("/api/presets").send({ name: "Event cap", type: "soccer" }).expect(201);
 
-    expect(() => server.backend.ctx.db.logEvent({
-      presetId: created.body.preset.id,
-      ownerUserId: user.id,
-      type: "test.oversized",
-      payload: { value: "x".repeat(4 * 1024) }
-    })).toThrow(/4096 bytes/);
+    expect(() =>
+      server.backend.ctx.db.logEvent({
+        presetId: created.body.preset.id,
+        ownerUserId: user.id,
+        type: "test.oversized",
+        payload: { value: "x".repeat(4 * 1024) }
+      })
+    ).toThrow(/4096 bytes/);
     const row = server.backend.ctx.db.get<{ count: number }>("SELECT COUNT(*) AS count FROM event_logs WHERE preset_id = ?", [created.body.preset.id]);
     expect(Number(row?.count)).toBe(1);
   });

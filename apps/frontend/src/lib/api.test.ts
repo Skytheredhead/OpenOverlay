@@ -19,19 +19,26 @@ describe("api", () => {
   });
 
   it("reports malformed JSON deterministically", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("not-json", { status: 502, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not-json", { status: 502, headers: { "Content-Type": "application/json" } }))
+    );
 
     await expect(api("/test")).rejects.toMatchObject({ status: 502, message: "Server returned malformed JSON (502)" } satisfies Partial<ApiError>);
   });
 
   it("accepts an empty successful response", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 }))
+    );
 
     await expect(api<void>("/test", { method: "DELETE" })).resolves.toBeUndefined();
   });
 
   it("rejects empty and non-JSON success responses instead of returning invalid data", async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(new Response(null, { status: 200 }))
       .mockResolvedValueOnce(new Response("ok", { status: 200, headers: { "Content-Type": "text/plain" } }));
     vi.stubGlobal("fetch", fetchMock);
@@ -42,9 +49,15 @@ describe("api", () => {
 
   it("fails a stalled request with a bounded timeout", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+          })
+      )
+    );
 
     try {
       const rejection = expect(api("/stalled")).rejects.toMatchObject({
@@ -59,7 +72,8 @@ describe("api", () => {
   });
 
   it("rejects malformed endpoint envelopes before UI code can consume them", async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(jsonResponse({ presets: {} }))
       .mockResolvedValueOnce(jsonResponse({ user: { id: "user-1" } }))
       .mockResolvedValueOnce(jsonResponse({ ok: false }));
@@ -71,7 +85,8 @@ describe("api", () => {
   });
 
   it("accepts a privacy-preserving share receipt and rejects the legacy recipient preset envelope", async () => {
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(jsonResponse({ ok: true, mediaReferencesRemoved: true, receiptId: "receipt-1" }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, preset: { id: "recipient-copy" }, mediaReferencesRemoved: false }));
     vi.stubGlobal("fetch", fetchMock);
@@ -93,7 +108,10 @@ describe("api", () => {
       updatedAt: "2026-08-10T00:00:00.000Z",
       overlayClientCount: 1
     };
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ presets: [item] })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ presets: [item] }))
+    );
 
     await expect(presetApi.list()).resolves.toEqual({ presets: [item] });
   });
@@ -106,12 +124,14 @@ describe("api", () => {
     await expect(teamApi.remove("team-1", 3)).resolves.toEqual({ ok: true });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls.map(([, init]) => ({
-      method: init?.method,
-      ifMatch: new Headers(init?.headers).get("If-Match")
-    }))).toEqual([
-      { method: "DELETE", ifMatch: "\"7\"" },
-      { method: "DELETE", ifMatch: "\"3\"" }
+    expect(
+      fetchMock.mock.calls.map(([, init]) => ({
+        method: init?.method,
+        ifMatch: new Headers(init?.headers).get("If-Match")
+      }))
+    ).toEqual([
+      { method: "DELETE", ifMatch: '"7"' },
+      { method: "DELETE", ifMatch: '"3"' }
     ]);
   });
 
@@ -162,34 +182,42 @@ describe("api", () => {
     ];
 
     for (const [description, entry] of malformedEntries) {
-      expect(isPreset({
+      expect(
+        isPreset({
+          ...valid,
+          state: {
+            ...valid.state,
+            home: { ...valid.state.home, roster: [entry] }
+          }
+        }),
+        description
+      ).toBe(false);
+    }
+
+    expect(
+      isPreset({
         ...valid,
         state: {
           ...valid.state,
-          home: { ...valid.state.home, roster: [entry] }
+          away: { ...valid.state.away, roster: [null] }
         }
-      }), description).toBe(false);
-    }
-
-    expect(isPreset({
-      ...valid,
-      state: {
-        ...valid.state,
-        away: { ...valid.state.away, roster: [null] }
-      }
-    }), "away roster is validated too").toBe(false);
+      }),
+      "away roster is validated too"
+    ).toBe(false);
   });
 
   it("rejects non-string optional soccer team logo URLs", () => {
     for (const logoUrl of [null, 42, {}, []]) {
       const valid = validSoccerPreset();
-      expect(isPreset({
-        ...valid,
-        state: {
-          ...valid.state,
-          home: { ...valid.state.home, logoUrl }
-        }
-      })).toBe(false);
+      expect(
+        isPreset({
+          ...valid,
+          state: {
+            ...valid.state,
+            home: { ...valid.state.home, logoUrl }
+          }
+        })
+      ).toBe(false);
     }
   });
 
@@ -197,11 +225,14 @@ describe("api", () => {
     const valid = validSoccerPreset();
     const soccerPackage = valid.state.soccerPackage;
     const invalidPackages: Array<[string, unknown]> = [
-      ["overlayPackage", {
-        ...soccerPackage,
-        overlayPackage: "legacy",
-        colorBanks: { ...soccerPackage.colorBanks, legacy: { bg: "#000000" } }
-      }],
+      [
+        "overlayPackage",
+        {
+          ...soccerPackage,
+          overlayPackage: "legacy",
+          colorBanks: { ...soccerPackage.colorBanks, legacy: { bg: "#000000" } }
+        }
+      ],
       ["activeOverlay", { ...soccerPackage, activeOverlay: "sponsor-bug" }],
       ["selectedOverlay", { ...soccerPackage, selectedOverlay: "sponsor-bug" }],
       ["surface", { ...soccerPackage, surface: "transparent" }],
@@ -210,21 +241,30 @@ describe("api", () => {
       ["oneLinePosition", { ...soccerPackage, oneLinePosition: "middle-left" }],
       ["twoLinePosition", { ...soccerPackage, twoLinePosition: "middle-right" }],
       ["lineupTeam", { ...soccerPackage, lineupTeam: "neutral" }],
-      ["countdown.mode", {
-        ...soccerPackage,
-        countdown: { ...soccerPackage.countdown, mode: "compact" }
-      }],
-      ["countdown.position", {
-        ...soccerPackage,
-        countdown: { ...soccerPackage.countdown, position: "middle-center" }
-      }]
+      [
+        "countdown.mode",
+        {
+          ...soccerPackage,
+          countdown: { ...soccerPackage.countdown, mode: "compact" }
+        }
+      ],
+      [
+        "countdown.position",
+        {
+          ...soccerPackage,
+          countdown: { ...soccerPackage.countdown, position: "middle-center" }
+        }
+      ]
     ];
 
     for (const [description, malformedPackage] of invalidPackages) {
-      expect(isPreset({
-        ...valid,
-        state: { ...valid.state, soccerPackage: malformedPackage }
-      }), description).toBe(false);
+      expect(
+        isPreset({
+          ...valid,
+          state: { ...valid.state, soccerPackage: malformedPackage }
+        }),
+        description
+      ).toBe(false);
     }
   });
 
@@ -233,29 +273,33 @@ describe("api", () => {
     const soccerPackage = valid.state.soccerPackage;
     const { ink: _missingInk, ...roundedWithoutInk } = soccerPackage.colorBanks.rounded;
 
-    expect(isPreset({
-      ...valid,
-      state: {
-        ...valid.state,
-        soccerPackage: {
-          ...soccerPackage,
-          colorBanks: { ...soccerPackage.colorBanks, rounded: roundedWithoutInk }
-        }
-      }
-    })).toBe(false);
-    expect(isPreset({
-      ...valid,
-      state: {
-        ...valid.state,
-        soccerPackage: {
-          ...soccerPackage,
-          colorBanks: {
-            ...soccerPackage.colorBanks,
-            classic: { ...soccerPackage.colorBanks.classic, panelGray: null }
+    expect(
+      isPreset({
+        ...valid,
+        state: {
+          ...valid.state,
+          soccerPackage: {
+            ...soccerPackage,
+            colorBanks: { ...soccerPackage.colorBanks, rounded: roundedWithoutInk }
           }
         }
-      }
-    })).toBe(false);
+      })
+    ).toBe(false);
+    expect(
+      isPreset({
+        ...valid,
+        state: {
+          ...valid.state,
+          soccerPackage: {
+            ...soccerPackage,
+            colorBanks: {
+              ...soccerPackage.colorBanks,
+              classic: { ...soccerPackage.colorBanks.classic, panelGray: null }
+            }
+          }
+        }
+      })
+    ).toBe(false);
   });
 
   it("validates optional soccer text-animation payloads deeply", () => {
@@ -279,10 +323,16 @@ describe("api", () => {
   it("does not expire a fresh session when an older auth probe or login returns 401", async () => {
     const authExpired = vi.fn();
     window.addEventListener(AUTH_EXPIRED_EVENT, authExpired);
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" }
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" }
+          })
+      )
+    );
 
     try {
       await expect(authApi.me()).rejects.toMatchObject({ status: 401 });

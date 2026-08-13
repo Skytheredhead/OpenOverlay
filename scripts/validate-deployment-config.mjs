@@ -3,14 +3,7 @@
 import fs from "node:fs";
 
 const files = ["vercel.json", "apps/frontend/vercel.json"];
-const expectedRewrites = [
-  "/login",
-  "/signup",
-  "/dash",
-  "/dash/(.*)",
-  "/overlay/(.*)",
-  "/overlay-test/(.*)"
-];
+const expectedRewrites = ["/login", "/signup", "/dash", "/dash/(.*)", "/overlay/(.*)", "/overlay-test/(.*)"];
 const requiredSecurityHeaders = [
   "content-security-policy",
   "permissions-policy",
@@ -67,12 +60,7 @@ for (const line of [
 
 const backendDeployFile = "scripts/deploy-backend.sh";
 const backendDeploy = fs.readFileSync(backendDeployFile, "utf8");
-for (const fragment of [
-  "git archive --format=tar.gz",
-  "shasum -a 256",
-  "ClearAllForwardings=yes",
-  "RequestTTY=no"
-]) {
+for (const fragment of ["git archive --format=tar.gz", "shasum -a 256", "ClearAllForwardings=yes", "RequestTTY=no"]) {
   if (!backendDeploy.includes(fragment)) throw new Error(`${backendDeployFile} is missing required deployment invariant: ${fragment}`);
 }
 for (const obsolete of ["SELF_UPDATE_ENABLED", "SELF_UPDATE_REPO_DIR", "GATEWAY_RELEASE_DIR"]) {

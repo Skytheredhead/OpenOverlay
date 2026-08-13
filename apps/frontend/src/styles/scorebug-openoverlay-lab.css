@@ -10,7 +10,14 @@
   --sky: #75c8ff;
   --blue: #143b94;
   --red: #df1f34;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -47,9 +54,7 @@ button {
   min-height: 100vh;
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  background:
-    linear-gradient(120deg, rgba(122, 18, 53, 0.24), transparent 42%),
-    linear-gradient(150deg, #070a0f 0%, #101722 48%, #160912 100%);
+  background: linear-gradient(120deg, rgba(122, 18, 53, 0.24), transparent 42%), linear-gradient(150deg, #070a0f 0%, #101722 48%, #160912 100%);
 }
 
 .lab-panel {
@@ -209,12 +214,14 @@ h1 {
 
 .surface-checker {
   background:
-    linear-gradient(45deg, #dfe4ec 25%, transparent 25%),
-    linear-gradient(-45deg, #dfe4ec 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #dfe4ec 75%),
-    linear-gradient(-45deg, transparent 75%, #dfe4ec 75%);
+    linear-gradient(45deg, #dfe4ec 25%, transparent 25%), linear-gradient(-45deg, #dfe4ec 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #dfe4ec 75%), linear-gradient(-45deg, transparent 75%, #dfe4ec 75%);
   background-color: #f7f9fc;
-  background-position: 0 0, 0 16px, 16px -16px, -16px 0;
+  background-position:
+    0 0,
+    0 16px,
+    16px -16px,
+    -16px 0;
   background-size: 32px 32px;
 }
 
@@ -260,7 +267,9 @@ h1 {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
 }
 
 .overlay.active {
@@ -391,10 +400,18 @@ h1 {
   animation: segmentSnap 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.overlay-scorebug.overlay-entering .bug-score:nth-child(2) { animation-delay: 80ms; }
-.overlay-scorebug.overlay-entering .bug-clock { animation-delay: 140ms; }
-.overlay-scorebug.overlay-entering .bug-score:nth-child(4) { animation-delay: 200ms; }
-.overlay-scorebug.overlay-entering .bug-team:nth-child(5) { animation-delay: 260ms; }
+.overlay-scorebug.overlay-entering .bug-score:nth-child(2) {
+  animation-delay: 80ms;
+}
+.overlay-scorebug.overlay-entering .bug-clock {
+  animation-delay: 140ms;
+}
+.overlay-scorebug.overlay-entering .bug-score:nth-child(4) {
+  animation-delay: 200ms;
+}
+.overlay-scorebug.overlay-entering .bug-team:nth-child(5) {
+  animation-delay: 260ms;
+}
 
 .overlay-lower-matchup.overlay-entering .lower-match-row > strong,
 .overlay-lower-result.overlay-entering .lower-result-score,
@@ -411,7 +428,9 @@ h1 {
 }
 
 .overlay-countdown.overlay-entering .timer-card {
-  animation: timerCardIntro 700ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both, shadowFadeIn 620ms ease both;
+  animation:
+    timerCardIntro 700ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    shadowFadeIn 620ms ease both;
 }
 
 .overlay-countdown.overlay-exiting .timer-card {
@@ -429,188 +448,502 @@ h1 {
   animation: lineupRowIntro 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.overlay-lineup.overlay-entering .lineup-list li:nth-child(1) { animation-delay: 80ms; }
-.overlay-lineup.overlay-entering .lineup-list li:nth-child(2) { animation-delay: 115ms; }
-.overlay-lineup.overlay-entering .lineup-list li:nth-child(3) { animation-delay: 150ms; }
-.overlay-lineup.overlay-entering .lineup-list li:nth-child(4) { animation-delay: 185ms; }
-.overlay-lineup.overlay-entering .lineup-list li:nth-child(5) { animation-delay: 220ms; }
-.overlay-lineup.overlay-entering .lineup-list li:nth-child(6) { animation-delay: 255ms; }
+.overlay-lineup.overlay-entering .lineup-list li:nth-child(1) {
+  animation-delay: 80ms;
+}
+.overlay-lineup.overlay-entering .lineup-list li:nth-child(2) {
+  animation-delay: 115ms;
+}
+.overlay-lineup.overlay-entering .lineup-list li:nth-child(3) {
+  animation-delay: 150ms;
+}
+.overlay-lineup.overlay-entering .lineup-list li:nth-child(4) {
+  animation-delay: 185ms;
+}
+.overlay-lineup.overlay-entering .lineup-list li:nth-child(5) {
+  animation-delay: 220ms;
+}
+.overlay-lineup.overlay-entering .lineup-list li:nth-child(6) {
+  animation-delay: 255ms;
+}
 
 @keyframes fullMatchIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)); filter: blur(5px) brightness(1.12); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)); filter: blur(0) brightness(1); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(5px) brightness(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(0) brightness(1);
+  }
 }
 
 @keyframes fullMatchOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)); filter: blur(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)); filter: blur(5px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(5px);
+  }
 }
 
 @keyframes fullPanelOutro {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(14px); }
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(14px);
+  }
 }
 
 @keyframes fullTeamsOutro {
-  from { opacity: 1; clip-path: inset(0 0 0 0); filter: brightness(1); }
-  to { opacity: 0; clip-path: inset(0 48% 0 48%); filter: brightness(1.15); }
+  from {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    filter: brightness(1);
+  }
+  to {
+    opacity: 0;
+    clip-path: inset(0 48% 0 48%);
+    filter: brightness(1.15);
+  }
 }
 
 @keyframes lowerIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 50% 0 50%); filter: blur(4px); }
-  64% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); filter: blur(0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); filter: blur(0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 50% 0 50%);
+    filter: blur(4px);
+  }
+  64% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
 }
 
 @keyframes lowerOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); filter: blur(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 50% 0 50%); filter: blur(4px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 50% 0 50%);
+    filter: blur(4px);
+  }
 }
 
 @keyframes panelIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(-68px); clip-path: inset(0 100% 0 0); filter: blur(4px); }
-  62% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); filter: blur(0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0) rotateY(0); filter: blur(0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(-68px);
+    clip-path: inset(0 100% 0 0);
+    filter: blur(4px);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0) rotateY(0);
+    filter: blur(0);
+  }
 }
 
 @keyframes panelOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); filter: blur(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(-58px); clip-path: inset(0 100% 0 0); filter: blur(4px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(-58px);
+    clip-path: inset(0 100% 0 0);
+    filter: blur(4px);
+  }
 }
 
 @keyframes scorebugIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateY(-18px); clip-path: inset(0 50% 0 50%); filter: blur(5px); }
-  62% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); clip-path: inset(0 0 0 0); filter: blur(0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); filter: blur(0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateY(-18px);
+    clip-path: inset(0 50% 0 50%);
+    filter: blur(5px);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    filter: blur(0);
+  }
 }
 
 @keyframes scorebugOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); clip-path: inset(0 0 0 0); filter: blur(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateY(-18px); clip-path: inset(0 50% 0 50%); filter: blur(5px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateY(-18px);
+    clip-path: inset(0 50% 0 50%);
+    filter: blur(5px);
+  }
 }
 
 @keyframes timerIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)); filter: blur(5px) brightness(1.12); }
-  58% { opacity: 1; transform: scale(var(--overlay-scale, 1)); filter: blur(0) brightness(1.04); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)); filter: blur(0) brightness(1); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(5px) brightness(1.12);
+  }
+  58% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(0) brightness(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(0) brightness(1);
+  }
 }
 
 @keyframes timerOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)); filter: blur(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)); filter: blur(5px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    filter: blur(5px);
+  }
 }
 
 @keyframes textBugIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(-22px); clip-path: inset(0 100% 0 0); filter: blur(3px); }
-  68% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); filter: blur(0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); filter: blur(0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(-22px);
+    clip-path: inset(0 100% 0 0);
+    filter: blur(3px);
+  }
+  68% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    filter: blur(0);
+  }
 }
 
 @keyframes textBugOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); filter: blur(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(22px); clip-path: inset(0 0 0 100%); filter: blur(3px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(22px);
+    clip-path: inset(0 0 0 100%);
+    filter: blur(3px);
+  }
 }
 
 @keyframes bgBloom {
-  from { opacity: 0; }
-  to { opacity: var(--package-bg-opacity); }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: var(--package-bg-opacity);
+  }
 }
 
 @keyframes labelPop {
-  0% { opacity: 0; transform: translateX(-18px); clip-path: inset(0 100% 0 0); }
-  68% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-18px);
+    clip-path: inset(0 100% 0 0);
+  }
+  68% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes labelExit {
-  from { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  to { opacity: 0; transform: translateX(20px); clip-path: inset(0 0 0 100%); }
+  from {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(20px);
+    clip-path: inset(0 0 0 100%);
+  }
 }
 
 @keyframes fullLabelOutro {
-  from { opacity: 1; transform: translateY(0); clip-path: inset(0 0 0 0); }
-  to { opacity: 0; transform: translateY(-10px); clip-path: inset(0 50% 0 50%); }
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+    clip-path: inset(0 50% 0 50%);
+  }
 }
 
 @keyframes teamLeftIntro {
-  0% { opacity: 0; transform: translateX(-46px); }
-  70% { opacity: 1; transform: translateX(0); }
-  100% { opacity: 1; transform: translateX(0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-46px);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes teamRightIntro {
-  0% { opacity: 0; transform: translateX(46px); }
-  70% { opacity: 1; transform: translateX(0); }
-  100% { opacity: 1; transform: translateX(0); }
+  0% {
+    opacity: 0;
+    transform: translateX(46px);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes fullTeamSoftOutro {
-  from { opacity: 1; transform: translateY(0); filter: blur(0); }
-  to { opacity: 0; transform: translateY(10px); filter: blur(2px); }
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(2px);
+  }
 }
 
 @keyframes segmentSnap {
-  0% { opacity: 0; transform: translateX(-18px); clip-path: inset(0 100% 0 0); }
-  68% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-18px);
+    clip-path: inset(0 100% 0 0);
+  }
+  68% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes centerSegmentIntro {
-  0% { opacity: 0; transform: translateX(-10px); clip-path: inset(0 50% 0 50%); }
-  68% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+    clip-path: inset(0 50% 0 50%);
+  }
+  68% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes centerSegmentExit {
-  from { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  to { opacity: 0; transform: translateX(0); clip-path: inset(0 50% 0 50%); }
+  from {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(0);
+    clip-path: inset(0 50% 0 50%);
+  }
 }
 
 @keyframes fullDividerOutro {
-  from { opacity: 1; transform: translateY(0); clip-path: inset(0 0 0 0); }
-  to { opacity: 0; transform: translateY(8px); clip-path: inset(50% 0 50% 0); }
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+    clip-path: inset(50% 0 50% 0);
+  }
 }
 
 @keyframes timerCardIntro {
-  0% { opacity: 0; transform: translateX(-28px); clip-path: inset(0 100% 0 0); }
-  68% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-28px);
+    clip-path: inset(0 100% 0 0);
+  }
+  68% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes timerCardOutro {
-  0% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; transform: translateX(28px); clip-path: inset(0 0 0 100%); }
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(28px);
+    clip-path: inset(0 0 0 100%);
+  }
 }
 
 @keyframes shadowFadeIn {
-  from { --shadow-alpha: 0; }
-  to { --shadow-alpha: 0.3; }
+  from {
+    --shadow-alpha: 0;
+  }
+  to {
+    --shadow-alpha: 0.3;
+  }
 }
 
 @keyframes lineupRowIntro {
-  0% { opacity: 0; transform: translateX(-18px); }
-  70% { opacity: 1; transform: translateX(3px); }
-  100% { opacity: 1; transform: translateX(0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes lineupSlideOutLeft {
-  from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(-34px); }
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-34px);
+  }
 }
 
 @keyframes lineupSlideOutRight {
-  from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(34px); }
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(34px);
+  }
 }
 
 @keyframes lineupSlideInRight {
-  from { opacity: 0; transform: translateX(34px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(34px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes lineupSlideInLeft {
-  from { opacity: 0; transform: translateX(-34px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-34px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -628,8 +961,7 @@ h1 {
   opacity: var(--package-bg-opacity);
   transition: opacity 220ms ease;
   background:
-    radial-gradient(circle at 50% 44%, rgba(255, 246, 228, 0.18), transparent 34%),
-    linear-gradient(135deg, rgba(59, 8, 32, 0.95), rgba(122, 18, 53, 0.86));
+    radial-gradient(circle at 50% 44%, rgba(255, 246, 228, 0.18), transparent 34%), linear-gradient(135deg, rgba(59, 8, 32, 0.95), rgba(122, 18, 53, 0.86));
 }
 
 .background-off .package-bg {
@@ -713,9 +1045,7 @@ h1 {
 .full-team {
   gap: 18px;
   padding: 0 26px;
-  background:
-    linear-gradient(135deg, rgba(245, 189, 47, 0.18), transparent),
-    var(--maroon);
+  background: linear-gradient(135deg, rgba(245, 189, 47, 0.18), transparent), var(--maroon);
   min-width: 0;
 }
 
@@ -1067,12 +1397,24 @@ h1 {
   animation: lineupSlideInLeft 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(1) { animation-delay: 0ms; }
-.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(2) { animation-delay: 45ms; }
-.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(3) { animation-delay: 90ms; }
-.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(4) { animation-delay: 135ms; }
-.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(5) { animation-delay: 180ms; }
-.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(6) { animation-delay: 225ms; }
+.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(1) {
+  animation-delay: 0ms;
+}
+.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(2) {
+  animation-delay: 45ms;
+}
+.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(3) {
+  animation-delay: 90ms;
+}
+.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(4) {
+  animation-delay: 135ms;
+}
+.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(5) {
+  animation-delay: 180ms;
+}
+.lineup-list:is(.lineup-slide-out-left, .lineup-slide-out-right, .lineup-slide-in-right, .lineup-slide-in-left) li:nth-child(6) {
+  animation-delay: 225ms;
+}
 
 .overlay-scorebug {
   --scorebug-width: 66%;
@@ -1099,9 +1441,7 @@ h1 {
 
 .bug-team {
   color: var(--ivory);
-  background:
-    linear-gradient(135deg, rgba(245, 189, 47, 0.22), transparent),
-    var(--maroon);
+  background: linear-gradient(135deg, rgba(245, 189, 47, 0.22), transparent), var(--maroon);
   font-size: 28px;
   font-weight: 950;
 }
@@ -1221,9 +1561,7 @@ h1 {
   place-items: center;
   padding: 44px 56px;
   color: var(--ivory);
-  background:
-    linear-gradient(135deg, rgba(245, 189, 47, 0.18), transparent),
-    var(--maroon);
+  background: linear-gradient(135deg, rgba(245, 189, 47, 0.18), transparent), var(--maroon);
   border: 1px solid rgba(255, 246, 228, 0.2);
   border-radius: 8px;
   filter: drop-shadow(0 18px 20px rgba(0, 0, 0, var(--shadow-alpha)));
@@ -1269,7 +1607,9 @@ h1 {
 .timer-value,
 .full-countdown,
 .lower-result-state b {
-  transition: min-width 260ms ease, width 260ms ease;
+  transition:
+    min-width 260ms ease,
+    width 260ms ease;
 }
 
 .timer-card .timer-value {
@@ -1306,9 +1646,7 @@ h1 {
 .overlay-text-bug > div {
   min-width: 250px;
   padding: 13px 17px;
-  background:
-    linear-gradient(135deg, rgba(245, 189, 47, 0.18), transparent),
-    rgba(122, 18, 53, 0.96);
+  background: linear-gradient(135deg, rgba(245, 189, 47, 0.18), transparent), rgba(122, 18, 53, 0.96);
   border: 1px solid rgba(255, 246, 228, 0.2);
   border-radius: 8px;
 }
@@ -1922,7 +2260,10 @@ h1::after {
   color: var(--oo-ink);
   cursor: pointer;
   font-weight: 700;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
 .score-controls button:hover,
@@ -1966,10 +2307,8 @@ h1::after {
 .surface-checker {
   background-color: #ffffff;
   background-image:
-    linear-gradient(45deg, #dcdcdc 25%, transparent 25%),
-    linear-gradient(-45deg, #dcdcdc 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #dcdcdc 75%),
-    linear-gradient(-45deg, transparent 75%, #dcdcdc 75%);
+    linear-gradient(45deg, #dcdcdc 25%, transparent 25%), linear-gradient(-45deg, #dcdcdc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #dcdcdc 75%), linear-gradient(-45deg, transparent 75%, #dcdcdc 75%);
 }
 
 .field-lines {
@@ -1982,13 +2321,14 @@ h1::after {
 }
 
 .overlay {
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
 }
 
 .package-bg {
   background:
-    linear-gradient(90deg, rgba(227, 6, 19, 0.94) 0 2.6%, transparent 2.6%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.86));
+    linear-gradient(90deg, rgba(227, 6, 19, 0.94) 0 2.6%, transparent 2.6%), linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.86));
 }
 
 .team-logo {
@@ -2452,108 +2792,292 @@ h1::after {
 }
 
 @keyframes fullMatchIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 50% 0 50%); }
-  55% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 50% 0 50%);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes fullMatchOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 50% 0 50%); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 50% 0 50%);
+  }
 }
 
 @keyframes lowerIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateY(18px); clip-path: inset(0 100% 0 0); }
-  72% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateY(18px);
+    clip-path: inset(0 100% 0 0);
+  }
+  72% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes lowerOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateY(18px); clip-path: inset(0 0 0 100%); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateY(18px);
+    clip-path: inset(0 0 0 100%);
+  }
 }
 
 @keyframes panelIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(-44px); clip-path: inset(0 100% 0 0); }
-  70% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(-44px);
+    clip-path: inset(0 100% 0 0);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes panelOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(-44px); clip-path: inset(0 100% 0 0); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(-44px);
+    clip-path: inset(0 100% 0 0);
+  }
 }
 
 @keyframes scorebugIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateY(-12px); clip-path: inset(0 100% 0 0); }
-  66% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateY(-12px);
+    clip-path: inset(0 100% 0 0);
+  }
+  66% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes scorebugOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateY(-12px); clip-path: inset(0 0 0 100%); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateY(-12px);
+    clip-path: inset(0 0 0 100%);
+  }
 }
 
 @keyframes timerIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)); clip-path: inset(50% 0 50% 0); }
-  64% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(50% 0 50% 0);
+  }
+  64% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes timerOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)); clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)); clip-path: inset(50% 0 50% 0); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+    clip-path: inset(50% 0 50% 0);
+  }
 }
 
 @keyframes textBugIntro {
-  0% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(-14px); clip-path: inset(0 100% 0 0); }
-  70% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(-14px);
+    clip-path: inset(0 100% 0 0);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes textBugOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(14px); clip-path: inset(0 0 0 100%); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(14px);
+    clip-path: inset(0 0 0 100%);
+  }
 }
 
 @keyframes labelPop {
-  0% { opacity: 0; transform: translateX(-14px); clip-path: inset(0 100% 0 0); }
-  72% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-14px);
+    clip-path: inset(0 100% 0 0);
+  }
+  72% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes segmentSnap {
-  0% { opacity: 0; transform: translateX(-14px); clip-path: inset(0 100% 0 0); }
-  76% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-14px);
+    clip-path: inset(0 100% 0 0);
+  }
+  76% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes centerSegmentIntro {
-  0% { opacity: 0; transform: translateY(-8px); clip-path: inset(50% 0 50% 0); }
-  72% { opacity: 1; transform: translateY(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateY(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+    clip-path: inset(50% 0 50% 0);
+  }
+  72% {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes timerCardIntro {
-  0% { opacity: 0; transform: translateX(-24px); clip-path: inset(0 100% 0 0); }
-  70% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-24px);
+    clip-path: inset(0 100% 0 0);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @keyframes timerCardOutro {
-  0% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 0; transform: translateX(24px); clip-path: inset(0 0 0 100%); }
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(24px);
+    clip-path: inset(0 0 0 100%);
+  }
 }
 
 @keyframes shadowFadeIn {
-  from { --shadow-alpha: 0; }
-  to { --shadow-alpha: 0.3; }
+  from {
+    --shadow-alpha: 0;
+  }
+  to {
+    --shadow-alpha: 0.3;
+  }
 }
 
 @keyframes shadowFadeOut {
-  from { --shadow-alpha: 0.3; }
-  to { --shadow-alpha: 0; }
+  from {
+    --shadow-alpha: 0.3;
+  }
+  to {
+    --shadow-alpha: 0;
+  }
 }
 
 .overlay-scorebug.overlay-entering {
@@ -2609,9 +3133,21 @@ h1::after {
 }
 
 @keyframes lineupRowIntro {
-  0% { opacity: 0; transform: translateX(-12px); clip-path: inset(0 100% 0 0); }
-  72% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
-  100% { opacity: 1; transform: translateX(0); clip-path: inset(0 0 0 0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-12px);
+    clip-path: inset(0 100% 0 0);
+  }
+  72% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    clip-path: inset(0 0 0 0);
+  }
 }
 
 @media (max-width: 980px) {
@@ -2748,8 +3284,7 @@ h1::after {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background:
-    linear-gradient(90deg, transparent 0 12%, var(--oo-red) 12% 34%, var(--oo-ink) 34% 47%, transparent 47%);
+  background: linear-gradient(90deg, transparent 0 12%, var(--oo-red) 12% 34%, var(--oo-ink) 34% 47%, transparent 47%);
   animation: ooScoreStrike 680ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -2901,7 +3436,9 @@ h1::after {
   opacity: 1;
   transform: translate(10px, 10px);
   clip-path: inset(0 0 0 0);
-  transition: opacity 260ms ease, clip-path 260ms ease;
+  transition:
+    opacity 260ms ease,
+    clip-path 260ms ease;
 }
 
 .match-kicker::before,
@@ -3007,7 +3544,9 @@ h1::after {
   opacity: 1;
   transform: translate(8px, 8px);
   clip-path: inset(0 0 0 0);
-  transition: opacity 260ms ease, clip-path 260ms ease;
+  transition:
+    opacity 260ms ease,
+    clip-path 260ms ease;
   z-index: -2;
 }
 
@@ -3108,39 +3647,84 @@ h1::after {
 }
 
 @keyframes lowerOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateY(18px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateY(18px);
+  }
 }
 
 @keyframes panelOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(-44px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(-44px);
+  }
 }
 
 @keyframes scorebugOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateY(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateY(-12px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateY(-12px);
+  }
 }
 
 @keyframes timerOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1));
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1));
+  }
 }
 
 @keyframes textBugOutro {
-  0% { opacity: 1; transform: scale(var(--overlay-scale, 1)) translateX(0); }
-  100% { opacity: 0; transform: scale(var(--overlay-scale, 1)) translateX(14px); }
+  0% {
+    opacity: 1;
+    transform: scale(var(--overlay-scale, 1)) translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(var(--overlay-scale, 1)) translateX(14px);
+  }
 }
 
 @keyframes ooLabelSlideIntro {
-  0% { opacity: 0; transform: translateX(-18px); }
-  68% { opacity: 1; transform: translateX(0); }
-  100% { opacity: 1; transform: translateX(0); }
+  0% {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  68% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes ooLabelSlideOutro {
-  0% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(-10px); }
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
 }
 
 @keyframes ooLabelShadowIntro {
@@ -3657,13 +4241,21 @@ h1::after {
 }
 
 @keyframes ooLabelFadeIntro {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes fullTeamStableIntro {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .lower-match-row .lower-versus {
@@ -3883,8 +4475,12 @@ h1::after {
 }
 
 @keyframes fullTeamOpacityIntro {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Lock full matchup label geometry so it cannot settle after deploy. */

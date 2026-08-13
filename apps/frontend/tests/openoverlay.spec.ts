@@ -93,24 +93,24 @@ async function createGame(page: Page, name: string, type: "soccer" | "church" = 
 async function assertNoHorizontalClipping(page: Page, width: number): Promise<void> {
   const report = await page.evaluate(() => {
     const viewportWidth = document.documentElement.clientWidth;
-    const overflow = [document.documentElement, document.body, ...document.querySelectorAll<HTMLElement>(
-      ".app-shell, .main, .live-game-page, .editor-layout, .soccer-bottom-control-panel"
-    )]
+    const overflow = [
+      document.documentElement,
+      document.body,
+      ...document.querySelectorAll<HTMLElement>(".app-shell, .main, .live-game-page, .editor-layout, .soccer-bottom-control-panel")
+    ]
       .filter((element, index, all) => all.indexOf(element) === index)
       .map((element) => ({
-        element: element === document.documentElement
-          ? "html"
-          : element === document.body
-            ? "body"
-            : element.className,
+        element: element === document.documentElement ? "html" : element === document.body ? "body" : element.className,
         clientWidth: element.clientWidth,
         scrollWidth: element.scrollWidth
       }))
       .filter(({ clientWidth, scrollWidth }) => clientWidth > 0 && scrollWidth > clientWidth + 1);
 
-    const clippedControls = [...document.querySelectorAll<HTMLElement>(
-      "a[href], button:not([disabled]), input:not([type='file']):not([disabled]), select:not([disabled]), textarea:not([disabled]), [role='tab']"
-    )]
+    const clippedControls = [
+      ...document.querySelectorAll<HTMLElement>(
+        "a[href], button:not([disabled]), input:not([type='file']):not([disabled]), select:not([disabled]), textarea:not([disabled]), [role='tab']"
+      )
+    ]
       .filter((element) => {
         if (element.closest("[aria-hidden='true'], [inert]")) return false;
         const style = getComputedStyle(element);
@@ -198,9 +198,7 @@ test("a delayed autosave remains bound to its preset during rapid route navigati
     }
     await route.continue();
   });
-  const firstSave = page.waitForResponse((response) =>
-    response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${firstPresetId}`)
-  );
+  const firstSave = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${firstPresetId}`));
 
   let navigationWarning = "";
   page.once("dialog", async (dialog) => {
@@ -247,11 +245,9 @@ test("an action waits for the pending autosave and preserves both changes", asyn
     await route.continue();
   });
 
-  const saveResponse = page.waitForResponse((response) =>
-    response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${presetId}`)
-  );
-  const actionResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/home-score-plus`)
+  const saveResponse = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${presetId}`));
+  const actionResponse = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/home-score-plus`)
   );
   await page.getByLabel("Period", { exact: true }).fill("RACE");
   await page.getByRole("button", { name: "Add point to OOU" }).click();
@@ -328,15 +324,13 @@ test("a failed autosave stays dirty and blocks actions until a successful retry"
   await expect.poll(() => logoutWarning).toContain("unsaved or staged changes");
   await expect(page).toHaveURL(new RegExp(`/dash/presets/${presetId}$`));
 
-  const retryResponse = page.waitForResponse((response) =>
-    response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${presetId}`)
-  );
+  const retryResponse = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${presetId}`));
   await page.getByRole("button", { name: "Retry save" }).click();
   expect((await retryResponse).status()).toBe(200);
   await expect(page.getByRole("button", { name: "Retry save" })).toBeHidden();
 
-  const actionResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/home-score-plus`)
+  const actionResponse = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/home-score-plus`)
   );
   await page.getByRole("button", { name: "Add point to OOU" }).click();
   expect((await actionResponse).status()).toBe(200);
@@ -397,8 +391,8 @@ test("failed and delayed sidebar duplication cannot bypass or hijack dirty navig
     firstDuplicateWarning = dialog.message();
     await dialog.accept();
   });
-  const failedDuplicateResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().endsWith(`/api/v1/presets/${presetId}/duplicate`)
+  const failedDuplicateResponse = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith(`/api/v1/presets/${presetId}/duplicate`)
   );
   await page.getByRole("menuitem", { name: "Duplicate" }).click();
   expect((await failedDuplicateResponse).status()).toBe(200);
@@ -417,8 +411,8 @@ test("failed and delayed sidebar duplication cannot bypass or hijack dirty navig
   await sidebarGame.focus();
   await page.keyboard.press("Shift+F10");
   page.once("dialog", async (dialog) => dialog.accept());
-  const delayedDuplicateResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().endsWith(`/api/v1/presets/${presetId}/duplicate`)
+  const delayedDuplicateResponse = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith(`/api/v1/presets/${presetId}/duplicate`)
   );
   await page.getByRole("menuitem", { name: "Duplicate" }).click();
   await secondDuplicateStarted;
@@ -464,25 +458,23 @@ test("soccer operator tools update output, clear graphics, rotate keys, and expo
   await expect(gameMenu).toBeHidden();
   await expect(sidebarGame).toBeFocused();
 
-  const statSave = page.waitForResponse((response) =>
-    response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${presetId}`)
-  );
+  const statSave = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${presetId}`));
   await page.getByRole("button", { name: "Add one to OOU shots" }).click();
   expect((await statSave).status()).toBe(200);
   await expect(output.locator(".stat-line", { hasText: "Shots" }).locator("strong")).toHaveText("1");
 
   await page.getByLabel("Graphic title (optional)").fill("E2E GOAL");
   await page.getByLabel("Subtitle / player (optional)").fill("Player 9");
-  const goalResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/trigger-goal`)
+  const goalResponse = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/trigger-goal`)
   );
   await page.getByRole("button", { name: "Goal", exact: true }).click();
   expect((await goalResponse).status()).toBe(200);
   await expect(output.getByRole("heading", { name: "E2E GOAL" })).toBeVisible();
   await expect(output.getByText("Player 9", { exact: true })).toBeVisible();
 
-  const clearResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/clear`)
+  const clearResponse = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/clear`)
   );
   await page.getByRole("button", { name: "Panic clear" }).click();
   expect((await clearResponse).status()).toBe(200);
@@ -493,16 +485,16 @@ test("soccer operator tools update output, clear graphics, rotate keys, and expo
     confirmMessage = dialog.message();
     await dialog.accept();
   });
-  const actionKeyResponse = page.waitForResponse((response) =>
-    response.request().method() === "POST" && response.url().endsWith(`/api/v1/presets/${presetId}/action-key`)
+  const actionKeyResponse = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith(`/api/v1/presets/${presetId}/action-key`)
   );
   await page.getByRole("button", { name: "Rotate action key" }).click();
   expect((await actionKeyResponse).status()).toBe(200);
   expect(confirmMessage).toContain("Existing Stream Deck and automation keys will stop working immediately");
   await expect(page.locator(".action-key-notice code")).toHaveText(/^ooa_[A-Za-z0-9_-]{32}$/);
 
-  const initialEventResponse = page.waitForResponse((response) =>
-    response.request().method() === "GET" && response.url().endsWith(`/api/v1/presets/${presetId}/events`)
+  const initialEventResponse = page.waitForResponse(
+    (response) => response.request().method() === "GET" && response.url().endsWith(`/api/v1/presets/${presetId}/events`)
   );
   await page.getByRole("button", { name: "Event log" }).click();
   expect((await initialEventResponse).status()).toBe(200);
@@ -512,8 +504,8 @@ test("soccer operator tools update output, clear graphics, rotate keys, and expo
   await expect(eventLog.getByText("action.clear", { exact: true })).toBeVisible();
   await expect(eventLog.getByText("preset.action-key.rotate", { exact: true })).toBeVisible();
 
-  const refreshResponse = page.waitForResponse((response) =>
-    response.request().method() === "GET" && response.url().endsWith(`/api/v1/presets/${presetId}/events`)
+  const refreshResponse = page.waitForResponse(
+    (response) => response.request().method() === "GET" && response.url().endsWith(`/api/v1/presets/${presetId}/events`)
   );
   await eventLog.getByRole("button", { name: "Refresh" }).click();
   expect((await refreshResponse).status()).toBe(200);
@@ -676,7 +668,7 @@ test("deleting a live preset clears connected editor and overlay clients", async
     headers: { "X-OpenOverlay-Api-Version": "v1" }
   });
   expect(presetResponse.status()).toBe(200);
-  const presetBody = await presetResponse.json() as { preset: { publicId: string; revision: number } };
+  const presetBody = (await presetResponse.json()) as { preset: { publicId: string; revision: number } };
 
   const overlayPage = await context.newPage();
   await overlayPage.goto(`/overlay-test/${presetBody.preset.publicId}`);

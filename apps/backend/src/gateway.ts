@@ -314,9 +314,11 @@ export function createBackendGateway(options: GatewayOptions = {}): BackendGatew
     if (stopping || fatalExitRequested || activeSlot?.id !== slot.id) return;
     fatalExitRequested = true;
     logger.error(event, { slot: slot.id, port: slot.port, error: failure.message });
-    void stop().catch((error) => {
-      logger.error("gateway_fatal_shutdown_failed", { error: error instanceof Error ? error.message : String(error) });
-    }).finally(() => exitProcess(1));
+    void stop()
+      .catch((error) => {
+        logger.error("gateway_fatal_shutdown_failed", { error: error instanceof Error ? error.message : String(error) });
+      })
+      .finally(() => exitProcess(1));
   }
 
   function scheduleHealthCheck(): void {
@@ -628,8 +630,10 @@ function requestedQueryVersion(req: IncomingMessage, key: string): string | unde
 function isCompatible(health: SlotHealth): boolean {
   const apiVersions = health.compatibility?.api?.supported || [];
   const realtimeVersions = health.compatibility?.realtime?.supported || [];
-  return OPENOVERLAY_SUPPORTED_API_VERSIONS.every((version) => apiVersions.includes(version)) &&
-    OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS.every((version) => realtimeVersions.includes(version));
+  return (
+    OPENOVERLAY_SUPPORTED_API_VERSIONS.every((version) => apiVersions.includes(version)) &&
+    OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS.every((version) => realtimeVersions.includes(version))
+  );
 }
 
 function isMutatingMethod(method: string | undefined): boolean {

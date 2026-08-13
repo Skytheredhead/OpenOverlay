@@ -33,10 +33,7 @@ export interface AppConfig {
 export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   const env = parseEnvironment(overrides.env ?? process.env.NODE_ENV);
   const cwd = process.cwd();
-  const jwtSecret =
-    overrides.jwtSecret ??
-    process.env.JWT_SECRET ??
-    (env === "production" ? "" : DEVELOPMENT_JWT_SECRET);
+  const jwtSecret = overrides.jwtSecret ?? process.env.JWT_SECRET ?? (env === "production" ? "" : DEVELOPMENT_JWT_SECRET);
 
   if (env === "production" && Buffer.byteLength(jwtSecret, "utf8") < 32) {
     throw new Error("JWT_SECRET must be at least 32 bytes in production");
@@ -52,13 +49,11 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     throw new Error("SHARE_LOOKUP_SECRET must be at least 32 bytes in production");
   }
 
-  const corsOrigins = (
-    overrides.corsOrigins ??
+  const corsOrigins = (overrides.corsOrigins ??
     (process.env.CORS_ORIGINS || "http://localhost:5173,http://127.0.0.1:5173,https://openoverlay.skylarenns.com")
       .split(",")
       .map((origin) => origin.trim())
-      .filter(Boolean)
-  ) as string[];
+      .filter(Boolean)) as string[];
   validateOrigins(corsOrigins, env);
 
   const port = validatePort(overrides.port ?? parsePort(process.env.PORT, 8734, "PORT"), "PORT");
@@ -81,8 +76,14 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     port,
     databasePath: path.resolve(overrides.databasePath ?? process.env.DATABASE_PATH ?? path.join(cwd, "data", "openoverlay.sqlite")),
     uploadDir: path.resolve(overrides.uploadDir ?? process.env.UPLOAD_DIR ?? path.join(cwd, "data", "uploads")),
-    mediaGlobalMaxBytes: validatePositiveInteger(overrides.mediaGlobalMaxBytes ?? parsePositiveInteger(process.env.MEDIA_GLOBAL_MAX_BYTES, 10 * 1024 * 1024 * 1024, "MEDIA_GLOBAL_MAX_BYTES"), "MEDIA_GLOBAL_MAX_BYTES"),
-    storageMinimumFreeBytes: validateNonNegativeInteger(overrides.storageMinimumFreeBytes ?? parseNonNegativeInteger(process.env.STORAGE_MINIMUM_FREE_BYTES, 1024 * 1024 * 1024, "STORAGE_MINIMUM_FREE_BYTES"), "STORAGE_MINIMUM_FREE_BYTES"),
+    mediaGlobalMaxBytes: validatePositiveInteger(
+      overrides.mediaGlobalMaxBytes ?? parsePositiveInteger(process.env.MEDIA_GLOBAL_MAX_BYTES, 10 * 1024 * 1024 * 1024, "MEDIA_GLOBAL_MAX_BYTES"),
+      "MEDIA_GLOBAL_MAX_BYTES"
+    ),
+    storageMinimumFreeBytes: validateNonNegativeInteger(
+      overrides.storageMinimumFreeBytes ?? parseNonNegativeInteger(process.env.STORAGE_MINIMUM_FREE_BYTES, 1024 * 1024 * 1024, "STORAGE_MINIMUM_FREE_BYTES"),
+      "STORAGE_MINIMUM_FREE_BYTES"
+    ),
     logFile: path.resolve(overrides.logFile ?? process.env.LOG_FILE ?? path.join(cwd, "data", "logs", "backend.log")),
     jwtSecret,
     shareLookupSecret,
@@ -92,14 +93,38 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     gatewayBackendHost,
     gatewayBackendPorts,
     gatewayControlSocket: path.resolve(overrides.gatewayControlSocket ?? process.env.GATEWAY_CONTROL_SOCKET ?? "/run/openoverlay/gateway-control.sock"),
-    gatewaySlotStartupTimeoutMs: validatePositiveNumber(overrides.gatewaySlotStartupTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_SLOT_STARTUP_TIMEOUT_MS, 15_000, "GATEWAY_SLOT_STARTUP_TIMEOUT_MS"), "GATEWAY_SLOT_STARTUP_TIMEOUT_MS"),
-    gatewayHealthCheckIntervalMs: validatePositiveNumber(overrides.gatewayHealthCheckIntervalMs ?? parsePositiveNumber(process.env.GATEWAY_HEALTH_CHECK_INTERVAL_MS, 10_000, "GATEWAY_HEALTH_CHECK_INTERVAL_MS"), "GATEWAY_HEALTH_CHECK_INTERVAL_MS"),
-    gatewayHealthCheckTimeoutMs: validatePositiveNumber(overrides.gatewayHealthCheckTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_HEALTH_CHECK_TIMEOUT_MS, 2_000, "GATEWAY_HEALTH_CHECK_TIMEOUT_MS"), "GATEWAY_HEALTH_CHECK_TIMEOUT_MS"),
-    gatewayHealthFailureThreshold: validatePositiveInteger(overrides.gatewayHealthFailureThreshold ?? parsePositiveInteger(process.env.GATEWAY_HEALTH_FAILURE_THRESHOLD, 3, "GATEWAY_HEALTH_FAILURE_THRESHOLD"), "GATEWAY_HEALTH_FAILURE_THRESHOLD"),
-    gatewayProxyTimeoutMs: validatePositiveNumber(overrides.gatewayProxyTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_PROXY_TIMEOUT_MS, 60_000, "GATEWAY_PROXY_TIMEOUT_MS"), "GATEWAY_PROXY_TIMEOUT_MS"),
-    realtimeMaxConnections: validatePositiveInteger(overrides.realtimeMaxConnections ?? parsePositiveInteger(process.env.REALTIME_MAX_CONNECTIONS, 512, "REALTIME_MAX_CONNECTIONS"), "REALTIME_MAX_CONNECTIONS"),
-    realtimeMaxConnectionsPerIp: validatePositiveInteger(overrides.realtimeMaxConnectionsPerIp ?? parsePositiveInteger(process.env.REALTIME_MAX_CONNECTIONS_PER_IP, 64, "REALTIME_MAX_CONNECTIONS_PER_IP"), "REALTIME_MAX_CONNECTIONS_PER_IP"),
-    realtimeMaxPayloadBytes: validatePositiveInteger(overrides.realtimeMaxPayloadBytes ?? parsePositiveInteger(process.env.REALTIME_MAX_PAYLOAD_BYTES, 64 * 1024, "REALTIME_MAX_PAYLOAD_BYTES"), "REALTIME_MAX_PAYLOAD_BYTES")
+    gatewaySlotStartupTimeoutMs: validatePositiveNumber(
+      overrides.gatewaySlotStartupTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_SLOT_STARTUP_TIMEOUT_MS, 15_000, "GATEWAY_SLOT_STARTUP_TIMEOUT_MS"),
+      "GATEWAY_SLOT_STARTUP_TIMEOUT_MS"
+    ),
+    gatewayHealthCheckIntervalMs: validatePositiveNumber(
+      overrides.gatewayHealthCheckIntervalMs ?? parsePositiveNumber(process.env.GATEWAY_HEALTH_CHECK_INTERVAL_MS, 10_000, "GATEWAY_HEALTH_CHECK_INTERVAL_MS"),
+      "GATEWAY_HEALTH_CHECK_INTERVAL_MS"
+    ),
+    gatewayHealthCheckTimeoutMs: validatePositiveNumber(
+      overrides.gatewayHealthCheckTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_HEALTH_CHECK_TIMEOUT_MS, 2_000, "GATEWAY_HEALTH_CHECK_TIMEOUT_MS"),
+      "GATEWAY_HEALTH_CHECK_TIMEOUT_MS"
+    ),
+    gatewayHealthFailureThreshold: validatePositiveInteger(
+      overrides.gatewayHealthFailureThreshold ?? parsePositiveInteger(process.env.GATEWAY_HEALTH_FAILURE_THRESHOLD, 3, "GATEWAY_HEALTH_FAILURE_THRESHOLD"),
+      "GATEWAY_HEALTH_FAILURE_THRESHOLD"
+    ),
+    gatewayProxyTimeoutMs: validatePositiveNumber(
+      overrides.gatewayProxyTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_PROXY_TIMEOUT_MS, 60_000, "GATEWAY_PROXY_TIMEOUT_MS"),
+      "GATEWAY_PROXY_TIMEOUT_MS"
+    ),
+    realtimeMaxConnections: validatePositiveInteger(
+      overrides.realtimeMaxConnections ?? parsePositiveInteger(process.env.REALTIME_MAX_CONNECTIONS, 512, "REALTIME_MAX_CONNECTIONS"),
+      "REALTIME_MAX_CONNECTIONS"
+    ),
+    realtimeMaxConnectionsPerIp: validatePositiveInteger(
+      overrides.realtimeMaxConnectionsPerIp ?? parsePositiveInteger(process.env.REALTIME_MAX_CONNECTIONS_PER_IP, 64, "REALTIME_MAX_CONNECTIONS_PER_IP"),
+      "REALTIME_MAX_CONNECTIONS_PER_IP"
+    ),
+    realtimeMaxPayloadBytes: validatePositiveInteger(
+      overrides.realtimeMaxPayloadBytes ?? parsePositiveInteger(process.env.REALTIME_MAX_PAYLOAD_BYTES, 64 * 1024, "REALTIME_MAX_PAYLOAD_BYTES"),
+      "REALTIME_MAX_PAYLOAD_BYTES"
+    )
   };
 }
 
@@ -126,7 +151,10 @@ function parseNonNegativeInteger(value: string | undefined, fallback: number, la
 
 function parsePortList(value: string | undefined, fallback: number[]): number[] {
   if (value === undefined || value.trim() === "") return validatePortList(fallback, "GATEWAY_BACKEND_PORTS");
-  return validatePortList(value.split(",").map((item) => Number(item.trim())), "GATEWAY_BACKEND_PORTS");
+  return validatePortList(
+    value.split(",").map((item) => Number(item.trim())),
+    "GATEWAY_BACKEND_PORTS"
+  );
 }
 
 function parsePort(value: string | undefined, fallback: number, label: string): number {

@@ -6,7 +6,12 @@ import { type PresetRow } from "./db.js";
 import { verifySessionToken, sessionCookieName } from "./auth.js";
 import { materializeState, readStoredPresetState } from "./state.js";
 import type { AppContext } from "./types.js";
-import { OPENOVERLAY_API_VERSION, OPENOVERLAY_REALTIME_VERSION, OPENOVERLAY_SUPPORTED_API_VERSIONS, OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS } from "@openoverlay/shared";
+import {
+  OPENOVERLAY_API_VERSION,
+  OPENOVERLAY_REALTIME_VERSION,
+  OPENOVERLAY_SUPPORTED_API_VERSIONS,
+  OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS
+} from "@openoverlay/shared";
 
 export interface RealtimeHub {
   io: Server;
@@ -144,12 +149,7 @@ export function attachRealtime(server: HttpServer, ctx: AppContext): RealtimeHub
   return hub;
 }
 
-async function handleSocket(
-  socket: Socket,
-  ctx: AppContext,
-  hub: RealtimeHub,
-  overlayClients: Map<string, Set<string>>
-): Promise<void> {
+async function handleSocket(socket: Socket, ctx: AppContext, hub: RealtimeHub, overlayClients: Map<string, Set<string>>): Promise<void> {
   const request = socket.data.realtimeRequest as RealtimeConnectionRequest | undefined;
   if (!request) {
     socket.disconnect(true);
@@ -157,8 +157,10 @@ async function handleSocket(
   }
   const { apiVersion, realtimeVersion } = request;
 
-  if ((apiVersion && !OPENOVERLAY_SUPPORTED_API_VERSIONS.includes(apiVersion as typeof OPENOVERLAY_API_VERSION)) ||
-    (realtimeVersion && !OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS.includes(realtimeVersion as typeof OPENOVERLAY_REALTIME_VERSION))) {
+  if (
+    (apiVersion && !OPENOVERLAY_SUPPORTED_API_VERSIONS.includes(apiVersion as typeof OPENOVERLAY_API_VERSION)) ||
+    (realtimeVersion && !OPENOVERLAY_SUPPORTED_REALTIME_VERSIONS.includes(realtimeVersion as typeof OPENOVERLAY_REALTIME_VERSION))
+  ) {
     socket.emit("error:message", { error: "Incompatible OpenOverlay API or realtime version" });
     socket.disconnect(true);
     return;

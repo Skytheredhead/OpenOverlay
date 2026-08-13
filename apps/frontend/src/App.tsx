@@ -57,7 +57,26 @@ import {
   type TeamLibraryEntry
 } from "@openoverlay/shared";
 import { getElementById, OverlayRenderer } from "./components/OverlayRenderer";
-import { AUTH_EXPIRED_EVENT, FRONTEND_BUILD, WS_URL, ApiError, authApi, isPreset, isPresetDeletedEvent, isRealtimeErrorMessage, mediaApi, overlayApi, presetApi, statusApi, teamApi, type BuildInfo, type MediaItem, type PresetDeletedEvent, type PresetEvent, type User } from "./lib/api";
+import {
+  AUTH_EXPIRED_EVENT,
+  FRONTEND_BUILD,
+  WS_URL,
+  ApiError,
+  authApi,
+  isPreset,
+  isPresetDeletedEvent,
+  isRealtimeErrorMessage,
+  mediaApi,
+  overlayApi,
+  presetApi,
+  statusApi,
+  teamApi,
+  type BuildInfo,
+  type MediaItem,
+  type PresetDeletedEvent,
+  type PresetEvent,
+  type User
+} from "./lib/api";
 import { DebouncedSerialMutationQueue, KeyedDebouncer, KeyedSerialTaskQueue } from "./lib/mutationQueue";
 
 interface AuthContextValue {
@@ -105,10 +124,7 @@ const PROGRAMMATIC_NAVIGATION_EVENT = "openoverlay:before-programmatic-navigatio
 const ALLOW_PROGRAMMATIC_NAVIGATION_EVENT = "openoverlay:allow-programmatic-navigation";
 const PRESET_DELETED_UI_EVENT = "openoverlay:preset-deleted";
 const DEPLOYMENT_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-const DEFAULT_TEAM_COLOR_PAIRS = [
-  defaultTeamColors.home,
-  defaultTeamColors.away
-];
+const DEFAULT_TEAM_COLOR_PAIRS = [defaultTeamColors.home, defaultTeamColors.away];
 const PRESET_NAME_PLACEHOLDERS: Record<PresetType, string> = {
   soccer: "Soccer Game",
   church: "Church Sunday",
@@ -127,10 +143,46 @@ export function App() {
             <Route path="/signup" element={<Login mode="signup" />} />
             <Route path="/overlay/:overlayId" element={<OverlayPage test={false} />} />
             <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
-            <Route path="/dash" element={<RequireAuth><AppShell><Dashboard /></AppShell></RequireAuth>} />
-            <Route path="/dash/teams" element={<RequireAuth><AppShell><TeamsLibrary /></AppShell></RequireAuth>} />
-            <Route path="/dash/media" element={<RequireAuth><AppShell><MediaLibrary /></AppShell></RequireAuth>} />
-            <Route path="/dash/presets/:presetId" element={<RequireAuth><AppShell><PresetEditor /></AppShell></RequireAuth>} />
+            <Route
+              path="/dash"
+              element={
+                <RequireAuth>
+                  <AppShell>
+                    <Dashboard />
+                  </AppShell>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/dash/teams"
+              element={
+                <RequireAuth>
+                  <AppShell>
+                    <TeamsLibrary />
+                  </AppShell>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/dash/media"
+              element={
+                <RequireAuth>
+                  <AppShell>
+                    <MediaLibrary />
+                  </AppShell>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/dash/presets/:presetId"
+              element={
+                <RequireAuth>
+                  <AppShell>
+                    <PresetEditor />
+                  </AppShell>
+                </RequireAuth>
+              }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AuthProvider>
@@ -159,7 +211,10 @@ function DeploymentCompatibilityChecker() {
         const supportsFrontendRealtime = health.compatibility?.realtime?.supported.includes(FRONTEND_BUILD.requiredRealtimeVersion);
 
         if (supportsFrontendApi === false || supportsFrontendRealtime === false) {
-          setResult({ status: "error", reason: `Backend does not support required API/realtime version ${FRONTEND_BUILD.requiredApiVersion}/${FRONTEND_BUILD.requiredRealtimeVersion}.` });
+          setResult({
+            status: "error",
+            reason: `Backend does not support required API/realtime version ${FRONTEND_BUILD.requiredApiVersion}/${FRONTEND_BUILD.requiredRealtimeVersion}.`
+          });
           return;
         }
 
@@ -312,16 +367,19 @@ function useResizableSidebar() {
     dragCleanupRef.current = cleanup;
   }, []);
 
-  const resizeWithKeyboard = useCallback((event: React.KeyboardEvent) => {
-    let next: number | null = null;
-    if (event.key === "ArrowLeft") next = width - 8;
-    if (event.key === "ArrowRight") next = width + 8;
-    if (event.key === "Home") next = SIDEBAR_MIN_WIDTH;
-    if (event.key === "End") next = SIDEBAR_MAX_WIDTH;
-    if (next === null) return;
-    event.preventDefault();
-    setWidth(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, next)));
-  }, [width]);
+  const resizeWithKeyboard = useCallback(
+    (event: React.KeyboardEvent) => {
+      let next: number | null = null;
+      if (event.key === "ArrowLeft") next = width - 8;
+      if (event.key === "ArrowRight") next = width + 8;
+      if (event.key === "Home") next = SIDEBAR_MIN_WIDTH;
+      if (event.key === "End") next = SIDEBAR_MAX_WIDTH;
+      if (next === null) return;
+      event.preventDefault();
+      setWidth(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, next)));
+    },
+    [width]
+  );
 
   return { width, resizing, startDrag, resizeWithKeyboard };
 }
@@ -373,8 +431,9 @@ function ModalLayer({
         return;
       }
       if (event.key !== "Tab" || !layerRef.current) return;
-      const focusable = [...layerRef.current.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR)]
-        .filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+      const focusable = [...layerRef.current.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR)].filter(
+        (element) => !element.hidden && element.getAttribute("aria-hidden") !== "true"
+      );
       if (focusable.length === 0) {
         event.preventDefault();
         layerRef.current.focus();
@@ -475,8 +534,12 @@ export function PromptDialogProvider({ children }: { children: React.ReactNode }
               />
             </label>
             <div className="control-row prompt-actions">
-              <button className="button" type="button" onClick={() => close(null)}>Cancel</button>
-              <button className="button primary" type="submit">{dialog.submitLabel || "OK"}</button>
+              <button className="button" type="button" onClick={() => close(null)}>
+                Cancel
+              </button>
+              <button className="button primary" type="submit">
+                {dialog.submitLabel || "OK"}
+              </button>
             </div>
           </form>
         </ModalLayer>
@@ -571,7 +634,9 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
         <div className="auth-panel" role="alert">
           <h1>OpenOverlay is unavailable</h1>
           <p>{error}</p>
-          <button className="button primary" type="button" onClick={() => void refresh()}>Retry</button>
+          <button className="button primary" type="button" onClick={() => void refresh()}>
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -589,8 +654,12 @@ function Home() {
           <span>OpenOverlay</span>
         </Link>
         <div className="nav-actions">
-          <Link className="button ghost" to="/login">Login</Link>
-          <Link className="button primary" to="/dash">Open dashboard</Link>
+          <Link className="button ghost" to="/login">
+            Login
+          </Link>
+          <Link className="button primary" to="/dash">
+            Open dashboard
+          </Link>
         </div>
       </header>
       <main className="hero">
@@ -598,8 +667,12 @@ function Home() {
           <h1>OpenOverlay</h1>
           <p>Free and open-source livestream graphics.</p>
           <div className="hero-actions">
-            <Link className="button primary" to="/signup">Create account</Link>
-            <Link className="button" to="/login">Login</Link>
+            <Link className="button primary" to="/signup">
+              Create account
+            </Link>
+            <Link className="button" to="/login">
+              Login
+            </Link>
           </div>
         </section>
         <section className="hero-preview" aria-label="Overlay preview">
@@ -643,9 +716,7 @@ function Login({ mode }: { mode: "login" | "signup" }) {
       else await authApi.login(email, password);
       await refresh();
       const requestedPath = (location.state as { from?: unknown } | null)?.from;
-      const destination = typeof requestedPath === "string" && requestedPath.startsWith("/dash") && !requestedPath.startsWith("//")
-        ? requestedPath
-        : "/dash";
+      const destination = typeof requestedPath === "string" && requestedPath.startsWith("/dash") && !requestedPath.startsWith("//") ? requestedPath : "/dash";
       navigate(destination, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed");
@@ -671,11 +742,24 @@ function Login({ mode }: { mode: "login" | "signup" }) {
             </label>
             <label className="field">
               <span>Password</span>
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={8} required />
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                minLength={8}
+                required
+              />
             </label>
-            <button className="button primary" type="submit" disabled={submitting}>{submitting ? "Please wait..." : mode === "signup" ? "Sign up" : "Login"}</button>
+            <button className="button primary" type="submit" disabled={submitting}>
+              {submitting ? "Please wait..." : mode === "signup" ? "Sign up" : "Login"}
+            </button>
           </div>
-          {error ? <div className="error" role="alert">{error}</div> : null}
+          {error ? (
+            <div className="error" role="alert">
+              {error}
+            </div>
+          ) : null}
           <p className="muted" style={{ marginTop: 16 }}>
             {mode === "signup" ? "Already have an account? " : "Need an account? "}
             <Link to={mode === "signup" ? "/login" : "/signup"}>{mode === "signup" ? "Login" : "Sign up"}</Link>
@@ -704,14 +788,17 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    void presetApi.list(controller.signal).then((response) => {
-      if (controller.signal.aborted) return;
-      setGames(response.presets);
-      setShellError(null);
-    }).catch((err) => {
-      if (controller.signal.aborted) return;
-      setShellError(err instanceof Error ? err.message : "Could not load sidebar games");
-    });
+    void presetApi
+      .list(controller.signal)
+      .then((response) => {
+        if (controller.signal.aborted) return;
+        setGames(response.presets);
+        setShellError(null);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setShellError(err instanceof Error ? err.message : "Could not load sidebar games");
+      });
     return () => controller.abort();
   }, [location.pathname]);
 
@@ -720,7 +807,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       const payload = event instanceof CustomEvent ? event.detail : undefined;
       if (!isPresetDeletedEvent(payload)) return;
       setGames((current) => current.filter((item) => item.id !== payload.id));
-      setPresetMenu((current) => current?.game.id === payload.id ? null : current);
+      setPresetMenu((current) => (current?.game.id === payload.id ? null : current));
     }
     window.addEventListener(PRESET_DELETED_UI_EVENT, handlePresetDeleted);
     return () => window.removeEventListener(PRESET_DELETED_UI_EVENT, handlePresetDeleted);
@@ -849,18 +936,20 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const shellStyle = { "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties;
-  const shellClass = [
-    "app-shell",
-    sidebarCollapsed ? "sidebar-collapsed" : "",
-    resizing ? "is-resizing" : ""
-  ].filter(Boolean).join(" ");
+  const shellClass = ["app-shell", sidebarCollapsed ? "sidebar-collapsed" : "", resizing ? "is-resizing" : ""].filter(Boolean).join(" ");
 
   return (
     <div className={shellClass} style={shellStyle}>
       <aside className="sidebar">
         <div className="sidebar-nav-wrap">
           <div className="sidebar-header">
-            <Link to="/dash" className="brand sidebar-brand" aria-label="OpenOverlay dashboard" tabIndex={sidebarCollapsed ? -1 : undefined} aria-hidden={sidebarCollapsed}>
+            <Link
+              to="/dash"
+              className="brand sidebar-brand"
+              aria-label="OpenOverlay dashboard"
+              tabIndex={sidebarCollapsed ? -1 : undefined}
+              aria-hidden={sidebarCollapsed}
+            >
               <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
               <span className="sidebar-brand-text">OpenOverlay</span>
             </Link>
@@ -875,7 +964,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
           <nav className="sidebar-nav" inert={sidebarCollapsed} aria-hidden={sidebarCollapsed}>
-            <NavLink to="/dash" end><LayoutDashboard size={18} /> <span className="nav-label">Games</span></NavLink>
+            <NavLink to="/dash" end>
+              <LayoutDashboard size={18} /> <span className="nav-label">Games</span>
+            </NavLink>
             {games.length > 0 ? (
               <div className="sidebar-subnav" aria-label="Active games">
                 {games.map((game) => (
@@ -907,8 +998,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 ))}
               </div>
             ) : null}
-            <NavLink to="/dash/teams"><Users size={18} /> <span className="nav-label">Teams</span></NavLink>
-            <NavLink to="/dash/media"><Image size={18} /> <span className="nav-label">Media</span></NavLink>
+            <NavLink to="/dash/teams">
+              <Users size={18} /> <span className="nav-label">Teams</span>
+            </NavLink>
+            <NavLink to="/dash/media">
+              <Image size={18} /> <span className="nav-label">Media</span>
+            </NavLink>
           </nav>
         </div>
         <div className="sidebar-account" inert={sidebarCollapsed} aria-hidden={sidebarCollapsed}>
@@ -931,7 +1026,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
               if (!requestProgrammaticNavigation()) return;
               void logout(allowProgrammaticNavigation).catch((err) => setShellError(err instanceof Error ? err.message : "Could not log out"));
             }}
-          ><LogOut size={20} strokeWidth={2.4} /></button>
+          >
+            <LogOut size={20} strokeWidth={2.4} />
+          </button>
         </div>
         {!sidebarCollapsed ? (
           <div
@@ -958,12 +1055,20 @@ function AppShell({ children }: { children: React.ReactNode }) {
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
-          <button type="button" role="menuitem" disabled={sidebarMutationBusy} onClick={() => void duplicateSidebarPreset(presetMenu.game)}><Copy size={15} /> {sidebarMutationBusy ? "Working..." : "Duplicate"}</button>
-          <button type="button" role="menuitem" className="danger" disabled={sidebarMutationBusy} onClick={() => void deleteSidebarPreset(presetMenu.game)}><Trash2 size={15} /> Delete</button>
+          <button type="button" role="menuitem" disabled={sidebarMutationBusy} onClick={() => void duplicateSidebarPreset(presetMenu.game)}>
+            <Copy size={15} /> {sidebarMutationBusy ? "Working..." : "Duplicate"}
+          </button>
+          <button type="button" role="menuitem" className="danger" disabled={sidebarMutationBusy} onClick={() => void deleteSidebarPreset(presetMenu.game)}>
+            <Trash2 size={15} /> Delete
+          </button>
         </div>
       ) : null}
       <main className="main">
-        {shellError ? <div className="error shell-error" role="alert">{shellError}</div> : null}
+        {shellError ? (
+          <div className="error shell-error" role="alert">
+            {shellError}
+          </div>
+        ) : null}
         {children}
       </main>
     </div>
@@ -997,9 +1102,10 @@ function Dashboard() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const refresh = () => void load(controller.signal).catch((err) => {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load games");
-    });
+    const refresh = () =>
+      void load(controller.signal).catch((err) => {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load games");
+      });
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") refresh();
     };
@@ -1065,10 +1171,16 @@ function Dashboard() {
       <div className="page-title">
         <h1>Games</h1>
       </div>
-      {error ? <div className="error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      ) : null}
       <section className="preset-grid game-card-grid">
         <button className="preset-card preset-card-new" type="button" onClick={openNewGameDialog}>
-          <span className="new-game-card-icon" aria-hidden="true"><Plus size={22} /></span>
+          <span className="new-game-card-icon" aria-hidden="true">
+            <Plus size={22} />
+          </span>
           <span className="new-game-card-copy">
             <h2>New Game</h2>
             <p>Soccer / Church</p>
@@ -1083,8 +1195,12 @@ function Dashboard() {
               </div>
               <h2>{preset.name}</h2>
               <div className="control-row game-card-actions">
-                <button className="button game-card-copy" type="button" onClick={() => void copyGameOverlayLink(preset.publicId)}><Copy size={14} /> Copy overlay</button>
-                <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Test</a>
+                <button className="button game-card-copy" type="button" onClick={() => void copyGameOverlayLink(preset.publicId)}>
+                  <Copy size={14} /> Copy overlay
+                </button>
+                <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer">
+                  <ExternalLink size={14} /> Test
+                </a>
               </div>
             </div>
             <Link className="button game-card-play" to={`/dash/presets/${preset.id}`} aria-label={`Open ${preset.name}`} title={`Open ${preset.name}`}>
@@ -1095,13 +1211,7 @@ function Dashboard() {
       </section>
       {isNewGameOpen ? (
         <ModalLayer initialFocusRef={newGameNameRef} onClose={closeNewGameDialog}>
-          <form
-            className="prompt-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="new-game-dialog-title"
-            onSubmit={createPreset}
-          >
+          <form className="prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="new-game-dialog-title" onSubmit={createPreset}>
             <h2 id="new-game-dialog-title">New game</h2>
             <label className="field">
               <span>Game type</span>
@@ -1130,8 +1240,12 @@ function Dashboard() {
               />
             </label>
             <div className="control-row prompt-actions">
-              <button className="button" type="button" onClick={closeNewGameDialog} disabled={creatingGame}>Cancel</button>
-              <button className="button primary" type="submit" disabled={creatingGame}>{creatingGame ? "Creating..." : "Create game"}</button>
+              <button className="button" type="button" onClick={closeNewGameDialog} disabled={creatingGame}>
+                Cancel
+              </button>
+              <button className="button primary" type="submit" disabled={creatingGame}>
+                {creatingGame ? "Creating..." : "Create game"}
+              </button>
             </div>
           </form>
         </ModalLayer>
@@ -1165,11 +1279,7 @@ export function TeamsLibrary() {
   const allowNextNavigationRef = useRef(false);
 
   const hasPendingTeamSave = useCallback(() => pendingTeamIdsRef.current.size > 0, []);
-  useUnsavedNavigationBlocker(
-    hasPendingTeamSave,
-    allowNextNavigationRef,
-    "Team changes are still saving. Leave this page anyway?"
-  );
+  useUnsavedNavigationBlocker(hasPendingTeamSave, allowNextNavigationRef, "Team changes are still saving. Leave this page anyway?");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const generation = loadGenerationRef.current + 1;
@@ -1190,9 +1300,7 @@ export function TeamsLibrary() {
     teamsRef.current = teamsResponse.teams;
     setTeams(teamsResponse.teams);
     setMedia(mediaResult.status === "fulfilled" ? mediaResult.value.media : []);
-    const selected = teamsResponse.teams.find((team) => team.id === selectedIdRef.current)
-      ?? teamsResponse.teams[0]
-      ?? null;
+    const selected = teamsResponse.teams.find((team) => team.id === selectedIdRef.current) ?? teamsResponse.teams[0] ?? null;
     const nextDraft = selected ? structuredClone(selected) : null;
     selectedIdRef.current = selected?.id ?? null;
     draftRef.current = nextDraft;
@@ -1201,7 +1309,9 @@ export function TeamsLibrary() {
     setSaveStatuses({});
     const recoveredCount = teamsResponse.teams.filter((team) => team.dataRecovered).length;
     if (recoveredCount > 0) {
-      setError(`${recoveredCount} stored team ${recoveredCount === 1 ? "record was" : "records were"} corrupt and loaded with safe defaults. Review and resave ${recoveredCount === 1 ? "it" : "them"}.`);
+      setError(
+        `${recoveredCount} stored team ${recoveredCount === 1 ? "record was" : "records were"} corrupt and loaded with safe defaults. Review and resave ${recoveredCount === 1 ? "it" : "them"}.`
+      );
     } else if (mediaResult.status === "rejected") {
       setError("Teams loaded, but the media library could not be loaded.");
     } else {
@@ -1337,9 +1447,7 @@ export function TeamsLibrary() {
       return;
     }
     setError(null);
-    const current = draftRef.current?.id === teamId
-      ? draftRef.current
-      : teamsRef.current.find((team) => team.id === teamId);
+    const current = draftRef.current?.id === teamId ? draftRef.current : teamsRef.current.find((team) => team.id === teamId);
     if (!current) return;
     const next = mergeTeamPatch(current, patch);
     draftRef.current = draftRef.current?.id === teamId ? next : draftRef.current;
@@ -1361,19 +1469,14 @@ export function TeamsLibrary() {
       return;
     }
     if (!window.confirm(`Delete ${target?.fullName || "this team"}?`)) return;
-    const pendingSnapshot = pendingTeamIdsRef.current.has(id)
-      ? structuredClone(draftRef.current?.id === id ? draftRef.current : target ?? null)
-      : null;
+    const pendingSnapshot = pendingTeamIdsRef.current.has(id) ? structuredClone(draftRef.current?.id === id ? draftRef.current : (target ?? null)) : null;
     setError(null);
     try {
       teamSaveDebouncerRef.current?.cancel(id);
       conflictedTeamIdsRef.current.add(id);
       latestTeamSaveRevisionRef.current[id] = teamSaveRevisionRef.current + 1;
       teamSaveRevisionRef.current += 1;
-      await teamSaveQueueRef.current!.run(id, () => teamApi.remove(
-        id,
-        serverTeamRevisionRef.current[id] ?? target.revision
-      ));
+      await teamSaveQueueRef.current!.run(id, () => teamApi.remove(id, serverTeamRevisionRef.current[id] ?? target.revision));
       pendingTeamIdsRef.current.delete(id);
       conflictedTeamIdsRef.current.delete(id);
       const remaining = teamsRef.current.filter((team) => team.id !== id);
@@ -1409,16 +1512,29 @@ export function TeamsLibrary() {
       <div className="page-title">
         <h1>Teams</h1>
       </div>
-      {error ? <div className="error" role="alert"><span>{error}</span><button className="button" type="button" onClick={() => void load().catch((err) => setError(err instanceof Error ? err.message : "Could not reload teams"))}>Reload teams</button></div> : null}
+      {error ? (
+        <div className="error" role="alert">
+          <span>{error}</span>
+          <button
+            className="button"
+            type="button"
+            onClick={() => void load().catch((err) => setError(err instanceof Error ? err.message : "Could not reload teams"))}
+          >
+            Reload teams
+          </button>
+        </div>
+      ) : null}
       <div className={`team-library-layout ${draft ? "" : "empty"}`}>
         <section className="team-list">
           <button
             type="button"
             className="team-list-item team-list-item-new"
-            style={{
-              "--team-primary": "var(--sw-red)",
-              "--team-secondary": "color-mix(in srgb, var(--sw-bg) 82%, white 18%)"
-            } as React.CSSProperties}
+            style={
+              {
+                "--team-primary": "var(--sw-red)",
+                "--team-secondary": "color-mix(in srgb, var(--sw-bg) 82%, white 18%)"
+              } as React.CSSProperties
+            }
             onClick={() => void createTeam()}
           >
             <span className="team-list-item-icon" aria-hidden="true">
@@ -1430,10 +1546,12 @@ export function TeamsLibrary() {
             <button
               key={team.id}
               className={`team-list-item ${team.id === selectedId ? "active" : ""}`}
-              style={{
-                "--team-primary": team.primaryColor,
-                "--team-secondary": team.secondaryColor
-              } as React.CSSProperties}
+              style={
+                {
+                  "--team-primary": team.primaryColor,
+                  "--team-secondary": team.secondaryColor
+                } as React.CSSProperties
+              }
               onClick={() => {
                 selectedIdRef.current = team.id;
                 setSelectedId(team.id);
@@ -1442,7 +1560,9 @@ export function TeamsLibrary() {
               <TeamLogo team={team} />
               <span>
                 <strong>{titleCaseFirst(team.fullName)}</strong>
-                <small>{team.abbreviation} · {formatRecord(team.record)}</small>
+                <small>
+                  {team.abbreviation} · {formatRecord(team.record)}
+                </small>
               </span>
             </button>
           ))}
@@ -1458,11 +1578,15 @@ export function TeamsLibrary() {
                 <h2>{titleCaseFirst(draft.fullName)}</h2>
               </div>
               <div className="control-row">
-                <button className="button danger" disabled={conflictedTeamIdsRef.current.has(draft.id)} onClick={() => void deleteTeam(draft.id)}><Trash2 size={17} /> Delete</button>
+                <button className="button danger" disabled={conflictedTeamIdsRef.current.has(draft.id)} onClick={() => void deleteTeam(draft.id)}>
+                  <Trash2 size={17} /> Delete
+                </button>
               </div>
             </div>
             <TeamFields key={draft.id} team={draft} media={media} onChange={(patch) => updateDraft(draft.id, patch)} />
-            <p className="muted autosave-status" role="status">{saveStatusLabel(saveStatuses[draft.id] ?? "idle", draft.updatedAt)}</p>
+            <p className="muted autosave-status" role="status">
+              {saveStatusLabel(saveStatuses[draft.id] ?? "idle", draft.updatedAt)}
+            </p>
           </section>
         ) : null}
       </div>
@@ -1532,14 +1656,11 @@ export function PresetEditor() {
     return false;
   }, []);
 
-  const hasUnsavedWork = useCallback(() => Boolean(
-    pendingSoccerTextUpdateRef.current || hasPendingPresetSaveRef.current || autosaveFailedRef.current || mutationBusyRef.current
-  ), []);
-  useUnsavedNavigationBlocker(
-    hasUnsavedWork,
-    allowNextNavigationRef,
-    "This game still has unsaved or staged changes. Leave without waiting for them?"
+  const hasUnsavedWork = useCallback(
+    () => Boolean(pendingSoccerTextUpdateRef.current || hasPendingPresetSaveRef.current || autosaveFailedRef.current || mutationBusyRef.current),
+    []
   );
+  useUnsavedNavigationBlocker(hasUnsavedWork, allowNextNavigationRef, "This game still has unsaved or staged changes. Leave without waiting for them?");
 
   const appendHistory = useCallback((state: PresetState) => {
     const trimmed = historyRef.current.slice(0, historyIndexRef.current + 1);
@@ -1586,17 +1707,12 @@ export function PresetEditor() {
     void mutationQueueRef.current?.flush();
 
     async function loadPreset() {
-      const optionalResults = Promise.allSettled([
-        mediaApi.list(controller.signal),
-        teamApi.list(controller.signal)
-      ]);
+      const optionalResults = Promise.allSettled([mediaApi.list(controller.signal), teamApi.list(controller.signal)]);
       const presetResult = await presetApi.get(requestedPresetId, controller.signal);
       if (controller.signal.aborted || routeGenerationRef.current !== generation) return;
 
       const fetchedPreset = presetResult.preset;
-      const buffered = bufferedSocketPresetRef.current?.generation === generation
-        ? bufferedSocketPresetRef.current.preset
-        : null;
+      const buffered = bufferedSocketPresetRef.current?.generation === generation ? bufferedSocketPresetRef.current.preset : null;
       const fetchedRevision = getPresetRevision(fetchedPreset) ?? -1;
       const bufferedRevision = buffered ? (getPresetRevision(buffered) ?? Number.MAX_SAFE_INTEGER) : -1;
       const loadedPreset = buffered && bufferedRevision >= fetchedRevision ? buffered : fetchedPreset;
@@ -1610,10 +1726,7 @@ export function PresetEditor() {
       if (mediaResult.status === "fulfilled") setMedia(mediaResult.value.media);
       if (teamsResult.status === "fulfilled") setTeams(teamsResult.value.teams);
 
-      const optionalFailures = [
-        mediaResult.status === "rejected" ? "media" : null,
-        teamsResult.status === "rejected" ? "teams" : null
-      ].filter(Boolean);
+      const optionalFailures = [mediaResult.status === "rejected" ? "media" : null, teamsResult.status === "rejected" ? "teams" : null].filter(Boolean);
       if (optionalFailures.length > 0) setError(`Game loaded, but ${optionalFailures.join(" and ")} could not be loaded.`);
     }
 
@@ -1681,9 +1794,8 @@ export function PresetEditor() {
     function enterDeletedState(explicitPayload?: PresetDeletedEvent) {
       if (routeGenerationRef.current !== generation) return;
       const current = presetRef.current;
-      const sidebarPayload = explicitPayload ?? (current && current.id === requestedPresetId
-        ? { id: current.id, publicId: current.publicId, revision: current.revision }
-        : null);
+      const sidebarPayload =
+        explicitPayload ?? (current && current.id === requestedPresetId ? { id: current.id, publicId: current.publicId, revision: current.revision } : null);
 
       // Invalidate any HTTP/autosave completion already in flight before
       // clearing the editor. Those requests may still settle, but they can no
@@ -1795,106 +1907,112 @@ export function PresetEditor() {
     return () => window.clearTimeout(timeout);
   }, [connection]);
 
-  const commitState = useCallback((nextState: PresetState, persist = true) => {
-    const current = presetRef.current;
-    if (!current || mutationBusyRef.current || revisionConflict) return;
-    const resourceId = current.id;
-    const generation = routeGenerationRef.current;
-    replacePreset({ ...current, state: nextState });
-    appendHistory(nextState);
-    if (persist) {
-      autosaveFailedRef.current = false;
-      setAutosaveFailed(false);
-      const sequence = localSaveSequenceRef.current + 1;
-      localSaveSequenceRef.current = sequence;
-      latestSaveSequenceByPresetRef.current[resourceId] = sequence;
+  const commitState = useCallback(
+    (nextState: PresetState, persist = true) => {
+      const current = presetRef.current;
+      if (!current || mutationBusyRef.current || revisionConflict) return;
+      const resourceId = current.id;
+      const generation = routeGenerationRef.current;
+      replacePreset({ ...current, state: nextState });
+      appendHistory(nextState);
+      if (persist) {
+        autosaveFailedRef.current = false;
+        setAutosaveFailed(false);
+        const sequence = localSaveSequenceRef.current + 1;
+        localSaveSequenceRef.current = sequence;
+        latestSaveSequenceByPresetRef.current[resourceId] = sequence;
+        hasPendingPresetSaveRef.current = true;
+        mutationQueueRef.current?.schedule(resourceId, async () => {
+          try {
+            const response = await presetApi.patch(resourceId, {
+              state: nextState,
+              expectedRevision: serverRevisionByPresetRef.current[resourceId]
+            });
+            if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+            const serverRevision = getPresetRevision(response.preset);
+            if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
+            if (latestSaveSequenceByPresetRef.current[resourceId] === sequence) hasPendingPresetSaveRef.current = false;
+            const latest = presetRef.current;
+            if (latest) replacePreset({ ...response.preset, state: latest.state });
+            autosaveFailedRef.current = false;
+            setAutosaveFailed(false);
+          } catch (err) {
+            if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+            if (latestSaveSequenceByPresetRef.current[resourceId] === sequence) hasPendingPresetSaveRef.current = false;
+            if (err instanceof ApiError && err.status === 409) {
+              mutationBusyRef.current = true;
+              setMutationBusy(true);
+              setRevisionConflict(true);
+              setError("This game changed in another tab. Reload the latest version before continuing.");
+            } else {
+              autosaveFailedRef.current = true;
+              setAutosaveFailed(true);
+              setError(err instanceof Error ? err.message : "Could not autosave game");
+            }
+            throw err;
+          }
+        });
+      }
+    },
+    [appendHistory, replacePreset, revisionConflict]
+  );
+
+  const restoreHistory = useCallback(
+    async (direction: "undo" | "redo") => {
+      const current = presetRef.current;
+      if (!current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
+      const resourceId = current.id;
+      const generation = routeGenerationRef.current;
+      const nextIndex = direction === "redo" ? Math.min(historyRef.current.length - 1, historyIndexRef.current + 1) : Math.max(0, historyIndexRef.current - 1);
+      const nextState = historyRef.current[nextIndex];
+      if (!nextState || nextIndex === historyIndexRef.current) return;
+      const previousIndex = historyIndexRef.current;
+      const previousState = structuredClone(current.state);
+      pendingSoccerTextUpdateRef.current = null;
+      setPendingSoccerTextUpdate(null);
+      mutationBusyRef.current = true;
+      setMutationBusy(true);
+      historyIndexRef.current = nextIndex;
+      setHistoryIndex(nextIndex);
+      replacePreset({ ...current, state: structuredClone(nextState) });
       hasPendingPresetSaveRef.current = true;
-      mutationQueueRef.current?.schedule(resourceId, async () => {
-        try {
-          const response = await presetApi.patch(resourceId, {
+      let conflict = false;
+      try {
+        const response = await mutationQueueRef.current!.run(() =>
+          presetApi.patch(resourceId, {
             state: nextState,
             expectedRevision: serverRevisionByPresetRef.current[resourceId]
-          });
-          if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
-          const serverRevision = getPresetRevision(response.preset);
-          if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
-          if (latestSaveSequenceByPresetRef.current[resourceId] === sequence) hasPendingPresetSaveRef.current = false;
-          const latest = presetRef.current;
-          if (latest) replacePreset({ ...response.preset, state: latest.state });
-          autosaveFailedRef.current = false;
-          setAutosaveFailed(false);
-        } catch (err) {
-          if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
-          if (latestSaveSequenceByPresetRef.current[resourceId] === sequence) hasPendingPresetSaveRef.current = false;
-          if (err instanceof ApiError && err.status === 409) {
-            mutationBusyRef.current = true;
-            setMutationBusy(true);
-            setRevisionConflict(true);
-            setError("This game changed in another tab. Reload the latest version before continuing.");
-          } else {
-            autosaveFailedRef.current = true;
-            setAutosaveFailed(true);
-            setError(err instanceof Error ? err.message : "Could not autosave game");
+          })
+        );
+        if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+        const serverRevision = getPresetRevision(response.preset);
+        if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
+        replacePreset(response.preset);
+      } catch (err) {
+        if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
+        historyIndexRef.current = previousIndex;
+        setHistoryIndex(previousIndex);
+        const latest = presetRef.current;
+        if (latest) replacePreset({ ...latest, state: previousState });
+        if (err instanceof ApiError && err.status === 409) {
+          conflict = true;
+          setRevisionConflict(true);
+          setError("This game changed in another tab. Reload the latest version before continuing.");
+        } else {
+          setError(err instanceof Error ? err.message : "Could not restore game history");
+        }
+      } finally {
+        if (routeGenerationRef.current === generation && presetRef.current?.id === resourceId) {
+          hasPendingPresetSaveRef.current = false;
+          if (!conflict) {
+            mutationBusyRef.current = false;
+            setMutationBusy(false);
           }
-          throw err;
-        }
-      });
-    }
-  }, [appendHistory, replacePreset, revisionConflict]);
-
-  const restoreHistory = useCallback(async (direction: "undo" | "redo") => {
-    const current = presetRef.current;
-    if (!current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
-    const resourceId = current.id;
-    const generation = routeGenerationRef.current;
-    const nextIndex = direction === "redo"
-      ? Math.min(historyRef.current.length - 1, historyIndexRef.current + 1)
-      : Math.max(0, historyIndexRef.current - 1);
-    const nextState = historyRef.current[nextIndex];
-    if (!nextState || nextIndex === historyIndexRef.current) return;
-    const previousIndex = historyIndexRef.current;
-    const previousState = structuredClone(current.state);
-    pendingSoccerTextUpdateRef.current = null;
-    setPendingSoccerTextUpdate(null);
-    mutationBusyRef.current = true;
-    setMutationBusy(true);
-    historyIndexRef.current = nextIndex;
-    setHistoryIndex(nextIndex);
-    replacePreset({ ...current, state: structuredClone(nextState) });
-    hasPendingPresetSaveRef.current = true;
-    let conflict = false;
-    try {
-      const response = await mutationQueueRef.current!.run(() => presetApi.patch(resourceId, {
-        state: nextState,
-        expectedRevision: serverRevisionByPresetRef.current[resourceId]
-      }));
-      if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
-      const serverRevision = getPresetRevision(response.preset);
-      if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
-      replacePreset(response.preset);
-    } catch (err) {
-      if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
-      historyIndexRef.current = previousIndex;
-      setHistoryIndex(previousIndex);
-      const latest = presetRef.current;
-      if (latest) replacePreset({ ...latest, state: previousState });
-      if (err instanceof ApiError && err.status === 409) {
-        conflict = true;
-        setRevisionConflict(true);
-        setError("This game changed in another tab. Reload the latest version before continuing.");
-      } else {
-        setError(err instanceof Error ? err.message : "Could not restore game history");
-      }
-    } finally {
-      if (routeGenerationRef.current === generation && presetRef.current?.id === resourceId) {
-        hasPendingPresetSaveRef.current = false;
-        if (!conflict) {
-          mutationBusyRef.current = false;
-          setMutationBusy(false);
         }
       }
-    }
-  }, [replacePreset, requireSavedState, revisionConflict]);
+    },
+    [replacePreset, requireSavedState, revisionConflict]
+  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1940,12 +2058,7 @@ export function PresetEditor() {
     setError(null);
     let conflict = false;
     try {
-      const response = await mutationQueueRef.current!.run(() => presetApi.action(
-        resourceId,
-        action,
-        payload,
-        serverRevisionByPresetRef.current[resourceId]
-      ));
+      const response = await mutationQueueRef.current!.run(() => presetApi.action(resourceId, action, payload, serverRevisionByPresetRef.current[resourceId]));
       if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
       const serverRevision = getPresetRevision(response.preset);
       if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
@@ -1977,7 +2090,9 @@ export function PresetEditor() {
         <div className="error" role="alert">
           <h1>Game deleted</h1>
           <p>This game was deleted in another session. Its editor and output have been closed.</p>
-          <Link className="button" to="/dash">Return to games</Link>
+          <Link className="button" to="/dash">
+            Return to games
+          </Link>
         </div>
       </div>
     );
@@ -1989,9 +2104,13 @@ export function PresetEditor() {
         {error ? (
           <div className="error" role="alert">
             <p>Could not load game: {error}</p>
-            <button className="button" type="button" onClick={() => setReloadKey((value) => value + 1)}>Retry</button>
+            <button className="button" type="button" onClick={() => setReloadKey((value) => value + 1)}>
+              Retry
+            </button>
           </div>
-        ) : "Loading game..."}
+        ) : (
+          "Loading game..."
+        )}
       </div>
     );
   }
@@ -2056,7 +2175,7 @@ export function PresetEditor() {
             reorderSoccerTab(item as SoccerEditorTab);
           }}
           onMouseUp={clearSoccerTabDrag}
-          onDragStart={() => soccerState ? startSoccerTabDrag(item as SoccerEditorTab) : undefined}
+          onDragStart={() => (soccerState ? startSoccerTabDrag(item as SoccerEditorTab) : undefined)}
           onDragOver={(event) => {
             if (!soccerState) return;
             event.preventDefault();
@@ -2085,7 +2204,9 @@ export function PresetEditor() {
   }
 
   function commitSoccerMatchState(nextState: SoccerState, changedFields: SoccerTextAnimationField[]) {
-    const visibleFields = uniqueSoccerTextFields(changedFields.filter((field) => soccerTextFieldIsVisible(field, soccerState?.soccerPackage.activeOverlay ?? null, soccerState)));
+    const visibleFields = uniqueSoccerTextFields(
+      changedFields.filter((field) => soccerTextFieldIsVisible(field, soccerState?.soccerPackage.activeOverlay ?? null, soccerState))
+    );
     if (visibleFields.length > 0 || pendingSoccerTextUpdateRef.current) {
       commitState(nextState, false);
       setPendingSoccerTextUpdate((current) => ({
@@ -2158,13 +2279,15 @@ export function PresetEditor() {
   async function sharePreset() {
     const current = presetRef.current;
     if (!current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
-    const email = (await prompt({
-      title: "Share game",
-      label: "Recipient account email",
-      placeholder: "operator@example.com",
-      inputType: "email",
-      submitLabel: "Share copy"
-    }))?.trim();
+    const email = (
+      await prompt({
+        title: "Share game",
+        label: "Recipient account email",
+        placeholder: "operator@example.com",
+        inputType: "email",
+        submitLabel: "Share copy"
+      })
+    )?.trim();
     if (!email) return;
     if (!requireSavedState()) return;
     if (pendingSoccerTextUpdateRef.current) applyPendingSoccerTextUpdate();
@@ -2235,45 +2358,105 @@ export function PresetEditor() {
           <h1>{preset.name}</h1>
           <p className="muted preset-meta">
             <span>{preset.type === "soccer" ? "soccer game" : `${preset.type} production`}</span>
-            <button className="inline-copy-button" type="button" onClick={() => void copyOverlayUrl()}><Copy size={14} /> Copy output URL</button>
+            <button className="inline-copy-button" type="button" onClick={() => void copyOverlayUrl()}>
+              <Copy size={14} /> Copy output URL
+            </button>
           </p>
         </div>
         <div className="status-row">
           <span className={`status-pill ${connection === "connected" ? "ok" : "warn"}`}>{connection}</span>
           <span className="status-pill ok">{preset.overlayClientCount || 0} overlay clients</span>
-          <button className="button" type="button" disabled={mutationBusy || autosaveFailed || historyIndex <= 0} onClick={() => void restoreHistory("undo")}>Undo</button>
-          <button className="button" type="button" disabled={mutationBusy || autosaveFailed || historyIndex >= history.length - 1} onClick={() => void restoreHistory("redo")}>Redo</button>
+          <button className="button" type="button" disabled={mutationBusy || autosaveFailed || historyIndex <= 0} onClick={() => void restoreHistory("undo")}>
+            Undo
+          </button>
+          <button
+            className="button"
+            type="button"
+            disabled={mutationBusy || autosaveFailed || historyIndex >= history.length - 1}
+            onClick={() => void restoreHistory("redo")}
+          >
+            Redo
+          </button>
         </div>
       </div>
 
       <div className="control-row editor-tools" aria-label="Game tools">
-        <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Test output</a>
-        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void duplicatePreset()}><Copy size={15} /> Duplicate</button>
-        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void sharePreset()}><Share2 size={15} /> Share</button>
-        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void rotateActionKey()}><KeyRound size={15} /> Rotate action key</button>
-        <button className="button" type="button" onClick={() => debugEvents ? setDebugEvents(null) : void loadDebugEvents()}><Bug size={15} /> {debugEvents ? "Hide events" : "Event log"}</button>
-        <button className="button danger" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void runAction("clear")}><ShieldAlert size={15} /> Panic clear</button>
+        <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer">
+          <ExternalLink size={15} /> Test output
+        </a>
+        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void duplicatePreset()}>
+          <Copy size={15} /> Duplicate
+        </button>
+        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void sharePreset()}>
+          <Share2 size={15} /> Share
+        </button>
+        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void rotateActionKey()}>
+          <KeyRound size={15} /> Rotate action key
+        </button>
+        <button className="button" type="button" onClick={() => (debugEvents ? setDebugEvents(null) : void loadDebugEvents())}>
+          <Bug size={15} /> {debugEvents ? "Hide events" : "Event log"}
+        </button>
+        <button className="button danger" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void runAction("clear")}>
+          <ShieldAlert size={15} /> Panic clear
+        </button>
       </div>
 
-      {showConnectionWarning ? <div className="error" role="alert">Backend or overlay WebSocket is disconnected. The overlay will keep showing its last known state.</div> : null}
-      {preset.stateRecovered ? <div className="error" role="alert">Stored state was corrupt and a safe default was loaded. Review this game before going live, then save to replace the damaged state.</div> : null}
-      {notice ? <div className="notice" role="status">{notice}</div> : null}
+      {showConnectionWarning ? (
+        <div className="error" role="alert">
+          Backend or overlay WebSocket is disconnected. The overlay will keep showing its last known state.
+        </div>
+      ) : null}
+      {preset.stateRecovered ? (
+        <div className="error" role="alert">
+          Stored state was corrupt and a safe default was loaded. Review this game before going live, then save to replace the damaged state.
+        </div>
+      ) : null}
+      {notice ? (
+        <div className="notice" role="status">
+          {notice}
+        </div>
+      ) : null}
       {error ? (
         <div className="error" role="alert">
           <span>{error}</span>
-          {revisionConflict ? <button className="button" type="button" onClick={() => setReloadKey((value) => value + 1)}>Reload latest</button> : null}
-          {autosaveFailed && !revisionConflict ? <button className="button" type="button" onClick={retryCurrentSave}>Retry save</button> : null}
+          {revisionConflict ? (
+            <button className="button" type="button" onClick={() => setReloadKey((value) => value + 1)}>
+              Reload latest
+            </button>
+          ) : null}
+          {autosaveFailed && !revisionConflict ? (
+            <button className="button" type="button" onClick={retryCurrentSave}>
+              Retry save
+            </button>
+          ) : null}
         </div>
       ) : null}
       {actionKey ? (
         <div className="notice action-key-notice" role="status">
-          <span><strong>New action key:</strong> <code>{actionKey}</code>. Copy it now; it will not be shown again.</span>
-          <button className="button" type="button" onClick={() => void navigator.clipboard.writeText(actionKey).then(() => setNotice("Action key copied.")).catch(() => setError("Could not copy action key."))}><Copy size={14} /> Copy key</button>
-          <button className="button" type="button" onClick={() => setActionKey(null)}>Dismiss</button>
+          <span>
+            <strong>New action key:</strong> <code>{actionKey}</code>. Copy it now; it will not be shown again.
+          </span>
+          <button
+            className="button"
+            type="button"
+            onClick={() =>
+              void navigator.clipboard
+                .writeText(actionKey)
+                .then(() => setNotice("Action key copied."))
+                .catch(() => setError("Could not copy action key."))
+            }
+          >
+            <Copy size={14} /> Copy key
+          </button>
+          <button className="button" type="button" onClick={() => setActionKey(null)}>
+            Dismiss
+          </button>
         </div>
       ) : null}
       {debugEvents ? <PresetEventLog events={debugEvents} onRefresh={() => void loadDebugEvents()} /> : null}
-      <span className="visually-hidden" role="status">{mutationBusy ? "Saving game" : "Game controls ready"}</span>
+      <span className="visually-hidden" role="status">
+        {mutationBusy ? "Saving game" : "Game controls ready"}
+      </span>
 
       <div className={`editor-layout ${isSoccerEditor ? "live-editor-layout" : ""}`} inert={mutationBusy} aria-busy={mutationBusy}>
         {soccerState ? (
@@ -2302,21 +2485,23 @@ export function PresetEditor() {
           </>
         ) : (
           <>
-          <section className="preview-column">
-            <div className="preview-workspace">
-              <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} surface={soccerPreviewSurface} />
-            </div>
-          </section>
-          <aside className="inspector">
-            {tabButtons}
-            {preset.type === "church" && isChurchState(preset.state) ? (
-              <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} runAction={runAction} />
-            ) : null}
-            {preset.type === "custom" ? (
-              <div className="notice" role="status">Custom presets are read-only in this release. Existing output data is preserved.</div>
-            ) : null}
-            {selectedElement ? <ElementInspector state={preset.state} element={selectedElement} commitState={commitState} /> : null}
-          </aside>
+            <section className="preview-column">
+              <div className="preview-workspace">
+                <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} surface={soccerPreviewSurface} />
+              </div>
+            </section>
+            <aside className="inspector">
+              {tabButtons}
+              {preset.type === "church" && isChurchState(preset.state) ? (
+                <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} runAction={runAction} />
+              ) : null}
+              {preset.type === "custom" ? (
+                <div className="notice" role="status">
+                  Custom presets are read-only in this release. Existing output data is preserved.
+                </div>
+              ) : null}
+              {selectedElement ? <ElementInspector state={preset.state} element={selectedElement} commitState={commitState} /> : null}
+            </aside>
           </>
         )}
       </div>
@@ -2327,12 +2512,7 @@ export function PresetEditor() {
 function OutputPreviewFrame({ src, title, surface }: { src: string; title: string; surface: SoccerState["soccerPackage"]["surface"] }) {
   return (
     <div className={`preview-frame preview-surface-${surface}`}>
-      <iframe
-        className="output-preview-iframe"
-        src={previewOverlaySrc(src)}
-        title={title}
-        loading="eager"
-      />
+      <iframe className="output-preview-iframe" src={previewOverlaySrc(src)} title={title} loading="eager" />
     </div>
   );
 }
@@ -2345,18 +2525,25 @@ function PresetEventLog({ events, onRefresh }: { events: PresetEvent[]; onRefres
           <h2>Event log</h2>
           <p className="muted">Latest {events.length} persisted game events.</p>
         </div>
-        <button className="button" type="button" onClick={onRefresh}>Refresh</button>
+        <button className="button" type="button" onClick={onRefresh}>
+          Refresh
+        </button>
       </div>
       {events.length ? (
         <ol className="event-log-list">
           {events.map((event) => (
             <li key={event.id}>
-              <span><strong>{event.type}</strong><time dateTime={event.created_at}>{formatEventTime(event.created_at)}</time></span>
+              <span>
+                <strong>{event.type}</strong>
+                <time dateTime={event.created_at}>{formatEventTime(event.created_at)}</time>
+              </span>
               <code>{formatEventPayload(event.payload_json)}</code>
             </li>
           ))}
         </ol>
-      ) : <p className="muted">No events have been recorded for this game.</p>}
+      ) : (
+        <p className="muted">No events have been recorded for this game.</p>
+      )}
     </section>
   );
 }
@@ -2469,10 +2656,14 @@ function SoccerControls({
               </label>
               <label className="field">
                 <span>Scheduled</span>
-                <input type="datetime-local" value={dateTimeLocalValue(state.scheduledAt)} onChange={(event) => {
-                  const nextDate = new Date(event.target.value);
-                  if (!Number.isNaN(nextDate.getTime())) updateGameInfo({ scheduledAt: nextDate.toISOString() });
-                }} />
+                <input
+                  type="datetime-local"
+                  value={dateTimeLocalValue(state.scheduledAt)}
+                  onChange={(event) => {
+                    const nextDate = new Date(event.target.value);
+                    if (!Number.isNaN(nextDate.getTime())) updateGameInfo({ scheduledAt: nextDate.toISOString() });
+                  }}
+                />
               </label>
             </div>
           </div>
@@ -2483,11 +2674,27 @@ function SoccerControls({
               <h2>Teams</h2>
               <p className="muted">Saved teams are copied into this game, so game-day edits stay local to this game.</p>
             </div>
-            <button className="button" type="button" onClick={swapTeams}>Swap teams</button>
+            <button className="button" type="button" onClick={swapTeams}>
+              Swap teams
+            </button>
           </div>
           <div className="two-col">
-            <TeamAssignmentCard side="home" team={state.home} teams={teams} onSelect={(id) => applySavedTeam("home", id)} onClear={() => clearTeam("home")} onRefresh={() => refreshTeam("home")} />
-            <TeamAssignmentCard side="away" team={state.away} teams={teams} onSelect={(id) => applySavedTeam("away", id)} onClear={() => clearTeam("away")} onRefresh={() => refreshTeam("away")} />
+            <TeamAssignmentCard
+              side="home"
+              team={state.home}
+              teams={teams}
+              onSelect={(id) => applySavedTeam("home", id)}
+              onClear={() => clearTeam("home")}
+              onRefresh={() => refreshTeam("home")}
+            />
+            <TeamAssignmentCard
+              side="away"
+              team={state.away}
+              teams={teams}
+              onSelect={(id) => applySavedTeam("away", id)}
+              onClear={() => clearTeam("away")}
+              onRefresh={() => refreshTeam("away")}
+            />
           </div>
         </div>
         <TeamPanel title="Home team" side="home" team={state.home} media={media} onChange={(patch) => updateTeam("home", patch)} />
@@ -2595,21 +2802,31 @@ function SoccerLiveSetupPanel({
     <section className="control-section live-setup-panel">
       <div className="panel-heading">
         <h2>Match setup</h2>
-        <button className="button" type="button" onClick={swapTeams}>Swap teams</button>
+        <button className="button" type="button" onClick={swapTeams}>
+          Swap teams
+        </button>
       </div>
       <div className="two-col">
         <label className="field">
           <span>Home team</span>
           <select value={homeMatch?.id ?? ""} onChange={(event) => applySavedTeam("home", event.target.value)}>
             <option value="">{teams.length ? "Select saved team" : "No saved teams"}</option>
-            {teams.map((item) => <option key={item.id} value={item.id}>{item.fullName}</option>)}
+            {teams.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.fullName}
+              </option>
+            ))}
           </select>
         </label>
         <label className="field">
           <span>Away team</span>
           <select value={awayMatch?.id ?? ""} onChange={(event) => applySavedTeam("away", event.target.value)}>
             <option value="">{teams.length ? "Select saved team" : "No saved teams"}</option>
-            {teams.map((item) => <option key={item.id} value={item.id}>{item.fullName}</option>)}
+            {teams.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.fullName}
+              </option>
+            ))}
           </select>
         </label>
       </div>
@@ -2690,13 +2907,23 @@ function SoccerPackageSetupPanel({
               </select>
             </label>
             <label className="control-row">
-              <input type="checkbox" checked={state.soccerPackage.packageBackground} onChange={(event) => updatePackage({ packageBackground: event.target.checked })} />
+              <input
+                type="checkbox"
+                checked={state.soccerPackage.packageBackground}
+                onChange={(event) => updatePackage({ packageBackground: event.target.checked })}
+              />
               Package background
             </label>
           </div>
           <label className="field">
             <span>Background opacity</span>
-            <input type="range" min="0" max="100" value={Math.round(state.soccerPackage.packageBackgroundOpacity * 100)} onChange={(event) => updatePackage({ packageBackgroundOpacity: Number(event.target.value) / 100 })} />
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(state.soccerPackage.packageBackgroundOpacity * 100)}
+              onChange={(event) => updatePackage({ packageBackgroundOpacity: Number(event.target.value) / 100 })}
+            />
           </label>
         </div>
       </section>
@@ -2706,7 +2933,12 @@ function SoccerPackageSetupPanel({
           {soccerPackageColorFields[packageName].map((field) => (
             <label key={field.key} className="field color-swatch-field package-color-field">
               <span>{field.label}</span>
-              <input type="color" value={activeColors[field.key]} onInput={(event) => updateColor(field.key, event.currentTarget.value)} onChange={(event) => updateColor(field.key, event.target.value)} />
+              <input
+                type="color"
+                value={activeColors[field.key]}
+                onInput={(event) => updateColor(field.key, event.currentTarget.value)}
+                onChange={(event) => updateColor(field.key, event.target.value)}
+              />
             </label>
           ))}
         </div>
@@ -2715,7 +2947,13 @@ function SoccerPackageSetupPanel({
   );
 }
 
-function SoccerMatchupTextPanel({ state, commitMatchState }: { state: SoccerState; commitMatchState: (state: SoccerState, changedFields: SoccerTextAnimationField[]) => void }) {
+function SoccerMatchupTextPanel({
+  state,
+  commitMatchState
+}: {
+  state: SoccerState;
+  commitMatchState: (state: SoccerState, changedFields: SoccerTextAnimationField[]) => void;
+}) {
   function update(patch: Partial<Pick<SoccerState, "gameTitle" | "productionName">>, changedFields: SoccerTextAnimationField[]) {
     commitMatchState({ ...state, ...patch }, changedFields);
   }
@@ -2737,30 +2975,37 @@ function SoccerMatchupTextPanel({ state, commitMatchState }: { state: SoccerStat
   );
 }
 
-function SoccerTextBugPanel({ state, updatePackage }: { state: SoccerState; updatePackage: (patch: Partial<SoccerState["soccerPackage"]>, changedFields?: SoccerTextAnimationField[]) => void }) {
+function SoccerTextBugPanel({
+  state,
+  updatePackage
+}: {
+  state: SoccerState;
+  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>, changedFields?: SoccerTextAnimationField[]) => void;
+}) {
   return (
     <section className="control-section">
       <h2>Text bugs</h2>
       <div className="form-grid">
-        <label className="field"><span>1-line text</span><input value={state.soccerPackage.oneLineText} onChange={(event) => updatePackage({ oneLineText: event.target.value }, ["one-line"])} /></label>
+        <label className="field">
+          <span>1-line text</span>
+          <input value={state.soccerPackage.oneLineText} onChange={(event) => updatePackage({ oneLineText: event.target.value }, ["one-line"])} />
+        </label>
         <PositionSelect value={state.soccerPackage.oneLinePosition} onChange={(value) => updatePackage({ oneLinePosition: value })} />
-        <label className="field"><span>2-line top</span><input value={state.soccerPackage.twoLineTextA} onChange={(event) => updatePackage({ twoLineTextA: event.target.value }, ["two-line-a"])} /></label>
-        <label className="field"><span>2-line bottom</span><input value={state.soccerPackage.twoLineTextB} onChange={(event) => updatePackage({ twoLineTextB: event.target.value }, ["two-line-b"])} /></label>
+        <label className="field">
+          <span>2-line top</span>
+          <input value={state.soccerPackage.twoLineTextA} onChange={(event) => updatePackage({ twoLineTextA: event.target.value }, ["two-line-a"])} />
+        </label>
+        <label className="field">
+          <span>2-line bottom</span>
+          <input value={state.soccerPackage.twoLineTextB} onChange={(event) => updatePackage({ twoLineTextB: event.target.value }, ["two-line-b"])} />
+        </label>
         <PositionSelect value={state.soccerPackage.twoLinePosition} onChange={(value) => updatePackage({ twoLinePosition: value })} />
       </div>
     </section>
   );
 }
 
-export function SyncedTimeInput({
-  seconds,
-  disabled = false,
-  onCommit
-}: {
-  seconds: number;
-  disabled?: boolean;
-  onCommit: (seconds: number) => void;
-}) {
+export function SyncedTimeInput({ seconds, disabled = false, onCommit }: { seconds: number; disabled?: boolean; onCommit: (seconds: number) => void }) {
   const formatted = formatClock(seconds);
   const [draft, setDraft] = useState(formatted);
   const [invalid, setInvalid] = useState(false);
@@ -2780,7 +3025,9 @@ export function SyncedTimeInput({
       inputMode="numeric"
       aria-invalid={invalid || undefined}
       title={invalid ? "Enter seconds or a time in M:SS format" : undefined}
-      onFocus={() => { focusedRef.current = true; }}
+      onFocus={() => {
+        focusedRef.current = true;
+      }}
       onChange={(event) => {
         setDraft(event.target.value);
         setInvalid(false);
@@ -2839,22 +3086,38 @@ function SoccerCountdownPanel({
             title={state.soccerPackage.countdown.running ? "Stop countdown" : "Start countdown"}
             onClick={() => void runAction("countdown-toggle")}
           >
-            {state.soccerPackage.countdown.running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
+            {state.soccerPackage.countdown.running ? (
+              <Square size={14} fill="currentColor" strokeWidth={0} />
+            ) : (
+              <Play size={14} fill="currentColor" strokeWidth={0} />
+            )}
           </button>
-          <button className="button" type="button" onClick={() => startPresetCountdown(300)}>5:00</button>
-          <button className="button" type="button" onClick={() => startPresetCountdown(600)}>10:00</button>
-          <button className="button" type="button" onClick={() => void runAction("countdown-reset")}>Reset</button>
+          <button className="button" type="button" onClick={() => startPresetCountdown(300)}>
+            5:00
+          </button>
+          <button className="button" type="button" onClick={() => startPresetCountdown(600)}>
+            10:00
+          </button>
+          <button className="button" type="button" onClick={() => void runAction("countdown-reset")}>
+            Reset
+          </button>
         </div>
         <div className="two-col">
           <label className="field">
             <span>Custom length</span>
-            <SyncedTimeInput seconds={state.soccerPackage.countdown.resetSeconds} onCommit={(seconds) => {
-              updateCountdown({ seconds, resetSeconds: seconds, running: false, startedAtMs: null });
-            }} />
+            <SyncedTimeInput
+              seconds={state.soccerPackage.countdown.resetSeconds}
+              onCommit={(seconds) => {
+                updateCountdown({ seconds, resetSeconds: seconds, running: false, startedAtMs: null });
+              }}
+            />
           </label>
           <label className="field">
             <span>Mode</span>
-            <select value={state.soccerPackage.countdown.mode} onChange={(event) => updateCountdown({ mode: event.target.value as SoccerState["soccerPackage"]["countdown"]["mode"] })}>
+            <select
+              value={state.soccerPackage.countdown.mode}
+              onChange={(event) => updateCountdown({ mode: event.target.value as SoccerState["soccerPackage"]["countdown"]["mode"] })}
+            >
               <option value="full">Full page</option>
               <option value="small">Small</option>
             </select>
@@ -2862,8 +3125,16 @@ function SoccerCountdownPanel({
         </div>
         <label className="field">
           <span>Position</span>
-          <select value={state.soccerPackage.countdown.position} disabled={state.soccerPackage.countdown.mode !== "small"} onChange={(event) => updateCountdown({ position: event.target.value as PositionPreset })}>
-            {positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+          <select
+            value={state.soccerPackage.countdown.position}
+            disabled={state.soccerPackage.countdown.mode !== "small"}
+            onChange={(event) => updateCountdown({ position: event.target.value as PositionPreset })}
+          >
+            {positionOptions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
           </select>
         </label>
         <label className="field">
@@ -2889,8 +3160,18 @@ function SoccerScoreClockPanel({
       <section className="score-clock-section">
         <h2>Score</h2>
         <div className="two-col">
-          <ScoreControls label={state.home.abbreviation} score={state.score.home} plus={() => runAction("home-score-plus")} minus={() => runAction("home-score-minus")} />
-          <ScoreControls label={state.away.abbreviation} score={state.score.away} plus={() => runAction("away-score-plus")} minus={() => runAction("away-score-minus")} />
+          <ScoreControls
+            label={state.home.abbreviation}
+            score={state.score.home}
+            plus={() => runAction("home-score-plus")}
+            minus={() => runAction("home-score-minus")}
+          />
+          <ScoreControls
+            label={state.away.abbreviation}
+            score={state.score.away}
+            plus={() => runAction("away-score-plus")}
+            minus={() => runAction("away-score-minus")}
+          />
         </div>
       </section>
       <section className="score-clock-section">
@@ -2905,7 +3186,9 @@ function SoccerScoreClockPanel({
           >
             {state.clock.running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
           </button>
-          <button className="button" type="button" onClick={() => runAction("clock-reset")}><RotateCcw size={15} /> Reset</button>
+          <button className="button" type="button" onClick={() => runAction("clock-reset")}>
+            <RotateCcw size={15} /> Reset
+          </button>
         </div>
         <div className="form-grid">
           <label className="field">
@@ -2929,11 +3212,17 @@ function SoccerScoreClockPanel({
             <div className="clock-toggle-inline">
               <label className="custom-checkbox-control" aria-label="Enable stop at">
                 <input type="checkbox" checked={state.clock.stopAtEnabled} onChange={(event) => updateClock({ stopAtEnabled: event.target.checked })} />
-                <span className="custom-checkbox-glyph" aria-hidden="true"><Check size={10} /></span>
+                <span className="custom-checkbox-glyph" aria-hidden="true">
+                  <Check size={10} />
+                </span>
               </label>
               <label className="field">
                 <span>Stop at</span>
-                <SyncedTimeInput seconds={state.clock.stopAtSeconds} disabled={!state.clock.stopAtEnabled} onCommit={(seconds) => updateClock({ stopAtSeconds: seconds })} />
+                <SyncedTimeInput
+                  seconds={state.clock.stopAtSeconds}
+                  disabled={!state.clock.stopAtEnabled}
+                  onCommit={(seconds) => updateClock({ stopAtSeconds: seconds })}
+                />
               </label>
             </div>
           </div>
@@ -2941,11 +3230,19 @@ function SoccerScoreClockPanel({
             <div className="clock-toggle-inline">
               <label className="custom-checkbox-control" aria-label="Enable stoppage time">
                 <input type="checkbox" checked={state.clock.showStoppage} onChange={(event) => updateClock({ showStoppage: event.target.checked })} />
-                <span className="custom-checkbox-glyph" aria-hidden="true"><Check size={10} /></span>
+                <span className="custom-checkbox-glyph" aria-hidden="true">
+                  <Check size={10} />
+                </span>
               </label>
               <label className="field">
                 <span>Stoppage minutes</span>
-                <input type="number" min="0" value={state.clock.stoppageMinutes} disabled={!state.clock.showStoppage} onChange={(event) => updateClock({ stoppageMinutes: Math.max(0, Number(event.target.value)) })} />
+                <input
+                  type="number"
+                  min="0"
+                  value={state.clock.stoppageMinutes}
+                  disabled={!state.clock.showStoppage}
+                  onChange={(event) => updateClock({ stoppageMinutes: Math.max(0, Number(event.target.value)) })}
+                />
               </label>
             </div>
           </div>
@@ -2963,8 +3260,12 @@ function ScoreControls({ label, score, plus, minus }: { label: string; score: nu
         <strong>{score}</strong>
       </div>
       <div className="score-control-actions">
-        <button className="button primary" type="button" onClick={plus} aria-label={`Add point to ${label}`}><Plus size={16} /> 1</button>
-        <button className="button" type="button" onClick={minus} aria-label={`Subtract point from ${label}`}>−1</button>
+        <button className="button primary" type="button" onClick={plus} aria-label={`Add point to ${label}`}>
+          <Plus size={16} /> 1
+        </button>
+        <button className="button" type="button" onClick={minus} aria-label={`Subtract point from ${label}`}>
+          −1
+        </button>
       </div>
     </div>
   );
@@ -3032,15 +3333,31 @@ function SoccerOperationsPanel({
         {(["shots", "fouls", "cards"] as SoccerStatKey[]).map((stat) => (
           <div className="soccer-stat-row" key={stat}>
             <strong>{stat[0].toUpperCase() + stat.slice(1)}</strong>
-            <StatStepper label={`${state.home.abbreviation} ${stat}`} value={state.stats[stat].home} decrement={() => updateStat(stat, "home", -1)} increment={() => updateStat(stat, "home", 1)} />
-            <StatStepper label={`${state.away.abbreviation} ${stat}`} value={state.stats[stat].away} decrement={() => updateStat(stat, "away", -1)} increment={() => updateStat(stat, "away", 1)} />
+            <StatStepper
+              label={`${state.home.abbreviation} ${stat}`}
+              value={state.stats[stat].home}
+              decrement={() => updateStat(stat, "home", -1)}
+              increment={() => updateStat(stat, "home", 1)}
+            />
+            <StatStepper
+              label={`${state.away.abbreviation} ${stat}`}
+              value={state.stats[stat].away}
+              decrement={() => updateStat(stat, "away", -1)}
+              increment={() => updateStat(stat, "away", 1)}
+            />
           </div>
         ))}
       </div>
       <div className="form-grid temporary-graphic-fields">
         <div className="two-col">
-          <label className="field"><span>Graphic title (optional)</span><input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} /></label>
-          <label className="field"><span>Subtitle / player (optional)</span><input value={subtitle} maxLength={500} onChange={(event) => setSubtitle(event.target.value)} /></label>
+          <label className="field">
+            <span>Graphic title (optional)</span>
+            <input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Subtitle / player (optional)</span>
+            <input value={subtitle} maxLength={500} onChange={(event) => setSubtitle(event.target.value)} />
+          </label>
         </div>
         <label className="field">
           <span>Team</span>
@@ -3050,16 +3367,36 @@ function SoccerOperationsPanel({
           </select>
         </label>
         <div className="control-row temporary-graphic-actions">
-          <button className="button primary" type="button" onClick={() => trigger("trigger-goal")}>Goal</button>
-          <button className="button" type="button" onClick={() => trigger("trigger-yellow-card")}>Yellow card</button>
-          <button className="button" type="button" onClick={() => trigger("trigger-red-card")}>Red card</button>
-          <button className="button" type="button" onClick={() => trigger("trigger-substitution")}>Substitution</button>
-          <button className="button" type="button" onClick={() => trigger("trigger-lineups")}>Lineup</button>
-          <button className="button" type="button" onClick={() => trigger("trigger-sponsor")}>Sponsor</button>
-          <button className="button" type="button" onClick={() => trigger("trigger-lower-third")}>Lower third</button>
-          <button className="button" type="button" onClick={() => trigger("trigger-halftime")}>Halftime</button>
-          <button className="button" type="button" onClick={() => trigger("trigger-full-time")}>Full time</button>
-          <button className="button danger" type="button" onClick={() => void runAction("clear")}>Clear graphics</button>
+          <button className="button primary" type="button" onClick={() => trigger("trigger-goal")}>
+            Goal
+          </button>
+          <button className="button" type="button" onClick={() => trigger("trigger-yellow-card")}>
+            Yellow card
+          </button>
+          <button className="button" type="button" onClick={() => trigger("trigger-red-card")}>
+            Red card
+          </button>
+          <button className="button" type="button" onClick={() => trigger("trigger-substitution")}>
+            Substitution
+          </button>
+          <button className="button" type="button" onClick={() => trigger("trigger-lineups")}>
+            Lineup
+          </button>
+          <button className="button" type="button" onClick={() => trigger("trigger-sponsor")}>
+            Sponsor
+          </button>
+          <button className="button" type="button" onClick={() => trigger("trigger-lower-third")}>
+            Lower third
+          </button>
+          <button className="button" type="button" onClick={() => trigger("trigger-halftime")}>
+            Halftime
+          </button>
+          <button className="button" type="button" onClick={() => trigger("trigger-full-time")}>
+            Full time
+          </button>
+          <button className="button danger" type="button" onClick={() => void runAction("clear")}>
+            Clear graphics
+          </button>
         </div>
       </div>
     </section>
@@ -3070,9 +3407,13 @@ function StatStepper({ label, value, decrement, increment }: { label: string; va
   return (
     <div className="stat-stepper">
       <span>{label}</span>
-      <button className="button" type="button" aria-label={`Subtract one from ${label}`} disabled={value <= 0} onClick={decrement}>−</button>
+      <button className="button" type="button" aria-label={`Subtract one from ${label}`} disabled={value <= 0} onClick={decrement}>
+        −
+      </button>
       <strong>{value}</strong>
-      <button className="button" type="button" aria-label={`Add one to ${label}`} onClick={increment}>+</button>
+      <button className="button" type="button" aria-label={`Add one to ${label}`} onClick={increment}>
+        +
+      </button>
     </div>
   );
 }
@@ -3106,18 +3447,31 @@ function SoccerPackageStylePanel({ state, updatePackage }: { state: SoccerState;
       <div className="form-grid">
         <label className="field">
           <span>Overlay package</span>
-          <select value={state.soccerPackage.overlayPackage} onChange={(event) => updatePackage({ overlayPackage: event.target.value as SoccerState["soccerPackage"]["overlayPackage"] })}>
+          <select
+            value={state.soccerPackage.overlayPackage}
+            onChange={(event) => updatePackage({ overlayPackage: event.target.value as SoccerState["soccerPackage"]["overlayPackage"] })}
+          >
             <option value="classic">Classic</option>
             <option value="rounded">Rounded</option>
           </select>
         </label>
         <label className="control-row">
-          <input type="checkbox" checked={state.soccerPackage.packageBackground} onChange={(event) => updatePackage({ packageBackground: event.target.checked })} />
+          <input
+            type="checkbox"
+            checked={state.soccerPackage.packageBackground}
+            onChange={(event) => updatePackage({ packageBackground: event.target.checked })}
+          />
           Package background
         </label>
         <label className="field">
           <span>Background opacity</span>
-          <input type="range" min="0" max="100" value={Math.round(state.soccerPackage.packageBackgroundOpacity * 100)} onChange={(event) => updatePackage({ packageBackgroundOpacity: Number(event.target.value) / 100 })} />
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={Math.round(state.soccerPackage.packageBackgroundOpacity * 100)}
+            onChange={(event) => updatePackage({ packageBackgroundOpacity: Number(event.target.value) / 100 })}
+          />
         </label>
       </div>
     </div>
@@ -3171,7 +3525,11 @@ function SoccerLabOverlayControls({
               title={state.soccerPackage.activeOverlay === overlay ? "Stop overlay" : "Play overlay"}
               onClick={() => takeOverlay(overlay)}
             >
-              {state.soccerPackage.activeOverlay === overlay ? <Square size={12} fill="currentColor" strokeWidth={0} /> : <Play size={12} fill="currentColor" strokeWidth={0} />}
+              {state.soccerPackage.activeOverlay === overlay ? (
+                <Square size={12} fill="currentColor" strokeWidth={0} />
+              ) : (
+                <Play size={12} fill="currentColor" strokeWidth={0} />
+              )}
             </button>
           </div>
         ))}
@@ -3187,7 +3545,11 @@ function PositionSelect({ value, onChange }: { value: PositionPreset; onChange: 
     <label className="field">
       <span>Position</span>
       <select value={value} onChange={(event) => onChange(event.target.value as PositionPreset)}>
-        {positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+        {positionOptions.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
       </select>
     </label>
   );
@@ -3224,19 +3586,29 @@ function TeamAssignmentCard({
         <span>
           <small>{side}</small>
           <strong>{team.fullName}</strong>
-          <em>{team.abbreviation} · {formatRecord(team.record)} · {team.roster.length} roster</em>
+          <em>
+            {team.abbreviation} · {formatRecord(team.record)} · {team.roster.length} roster
+          </em>
         </span>
       </div>
       <label className="field">
         <span>Assign saved team</span>
         <select value="" onChange={(event) => onSelect(event.target.value)}>
           <option value="">Select saved team</option>
-          {teams.map((item) => <option key={item.id} value={item.id}>{item.fullName}</option>)}
+          {teams.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.fullName}
+            </option>
+          ))}
         </select>
       </label>
       <div className="control-row">
-        <button className="button" type="button" onClick={onRefresh} disabled={!match}>Refresh from saved</button>
-        <button className="button" type="button" onClick={onClear}>Clear team</button>
+        <button className="button" type="button" onClick={onRefresh} disabled={!match}>
+          Refresh from saved
+        </button>
+        <button className="button" type="button" onClick={onClear}>
+          Clear team
+        </button>
       </div>
       <p className="muted">{match ? `Snapshot from ${match.fullName}.` : "No saved team match for refresh."}</p>
     </section>
@@ -3322,8 +3694,17 @@ export function TeamFields({
   return (
     <div className="form-grid">
       <div className="two-col">
-        <label className="field"><span>Team name</span><input value={team.fullName} onChange={(e) => onChange({ fullName: e.target.value })} /></label>
-        <label className="field"><span>Abbreviation</span><input value={team.abbreviation} onChange={(e) => onChange({ abbreviation: e.target.value.toUpperCase().slice(0, 5), shortName: e.target.value.toUpperCase().slice(0, 5) })} /></label>
+        <label className="field">
+          <span>Team name</span>
+          <input value={team.fullName} onChange={(e) => onChange({ fullName: e.target.value })} />
+        </label>
+        <label className="field">
+          <span>Abbreviation</span>
+          <input
+            value={team.abbreviation}
+            onChange={(e) => onChange({ abbreviation: e.target.value.toUpperCase().slice(0, 5), shortName: e.target.value.toUpperCase().slice(0, 5) })}
+          />
+        </label>
       </div>
       <div className="record-color-row">
         <label className="field">
@@ -3335,8 +3716,28 @@ export function TeamFields({
           />
         </label>
         <div className="color-swatch-group" aria-label="Team colors">
-          <label className="field color-swatch-field"><span>Primary</span><input type="color" value={team.primaryColor} onChange={(e) => { colorsEditedRef.current = true; onChange({ primaryColor: e.target.value }); }} /></label>
-          <label className="field color-swatch-field"><span>Secondary</span><input type="color" value={team.secondaryColor} onChange={(e) => { colorsEditedRef.current = true; onChange({ secondaryColor: e.target.value }); }} /></label>
+          <label className="field color-swatch-field">
+            <span>Primary</span>
+            <input
+              type="color"
+              value={team.primaryColor}
+              onChange={(e) => {
+                colorsEditedRef.current = true;
+                onChange({ primaryColor: e.target.value });
+              }}
+            />
+          </label>
+          <label className="field color-swatch-field">
+            <span>Secondary</span>
+            <input
+              type="color"
+              value={team.secondaryColor}
+              onChange={(e) => {
+                colorsEditedRef.current = true;
+                onChange({ secondaryColor: e.target.value });
+              }}
+            />
+          </label>
         </div>
       </div>
       <div className="field">
@@ -3364,7 +3765,11 @@ export function TeamFields({
             }}
           />
         </label>
-        {logoError ? <p className="field-error" role="alert">{logoError}</p> : null}
+        {logoError ? (
+          <p className="field-error" role="alert">
+            {logoError}
+          </p>
+        ) : null}
         <select
           aria-label="Choose existing logo from media library"
           value={team.logoMediaId || ""}
@@ -3374,7 +3779,11 @@ export function TeamFields({
           }}
         >
           <option value="">No logo</option>
-          {media.map((item) => <option key={item.id} value={item.id}>{item.originalFilename}</option>)}
+          {media.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.originalFilename}
+            </option>
+          ))}
         </select>
       </div>
       <div className="image-crop-controls">
@@ -3399,7 +3808,13 @@ export function TeamFields({
           <NumberField label="Y" value={team.imageCrop.y} onChange={(value) => onChange({ imageCrop: { ...team.imageCrop, y: value } })} />
           <label className="field">
             <span>Zoom</span>
-            <input type="number" min="0.25" step="0.05" value={team.imageCrop.zoom} onChange={(event) => onChange({ imageCrop: { ...team.imageCrop, zoom: Math.max(0.25, Number(event.target.value)) } })} />
+            <input
+              type="number"
+              min="0.25"
+              step="0.05"
+              value={team.imageCrop.zoom}
+              onChange={(event) => onChange({ imageCrop: { ...team.imageCrop, zoom: Math.max(0.25, Number(event.target.value)) } })}
+            />
           </label>
         </div>
       </div>
@@ -3407,7 +3822,10 @@ export function TeamFields({
         <span>Roster</span>
         <textarea className="roster-textarea" value={team.rosterText} onChange={(e) => onChange({ rosterText: e.target.value })} placeholder="10 Max Grenham" />
       </label>
-      <label className="field"><span>Coach</span><input value={team.coach} onChange={(e) => onChange({ coach: e.target.value })} /></label>
+      <label className="field">
+        <span>Coach</span>
+        <input value={team.coach} onChange={(e) => onChange({ coach: e.target.value })} />
+      </label>
     </div>
   );
 }
@@ -3429,7 +3847,9 @@ function TeamPanel({
     <div className="panel">
       <h2>{title}</h2>
       <TeamFields team={team} media={media} onChange={onChange} />
-      <p className="muted" style={{ marginTop: 10 }}>{side === "home" ? "Home" : "Away"} roster lines are parsed into lineup entries automatically.</p>
+      <p className="muted" style={{ marginTop: 10 }}>
+        {side === "home" ? "Home" : "Away"} roster lines are parsed into lineup entries automatically.
+      </p>
     </div>
   );
 }
@@ -3440,17 +3860,34 @@ function StylePanel({ state, commitState }: { state: SoccerState | ChurchState; 
     <div className="panel">
       <h2>Global style</h2>
       <div className="form-grid">
-        <label className="field"><span>Font</span><input value={state.style.font} onChange={(e) => commitState({ ...state, style: { ...state.style, font: e.target.value } })} /></label>
-        <label className="field"><span>Accent</span><input type="color" value={state.style.accentColor} onChange={(e) => commitState({ ...state, style: { ...state.style, accentColor: e.target.value } })} /></label>
+        <label className="field">
+          <span>Font</span>
+          <input value={state.style.font} onChange={(e) => commitState({ ...state, style: { ...state.style, font: e.target.value } })} />
+        </label>
+        <label className="field">
+          <span>Accent</span>
+          <input
+            type="color"
+            value={state.style.accentColor}
+            onChange={(e) => commitState({ ...state, style: { ...state.style, accentColor: e.target.value } })}
+          />
+        </label>
         <label className="field">
           <span>Theme</span>
           <select value={state.style.theme} onChange={(e) => commitState({ ...state, style: { ...state.style, theme: e.target.value as StyleVariant } })}>
-            {variants.map((variant) => <option key={variant} value={variant}>{variant}</option>)}
+            {variants.map((variant) => (
+              <option key={variant} value={variant}>
+                {variant}
+              </option>
+            ))}
           </select>
         </label>
         <label className="field">
           <span>Animation</span>
-          <select value={state.style.animation} onChange={(e) => commitState({ ...state, style: { ...state.style, animation: e.target.value as SoccerState["style"]["animation"] } })}>
+          <select
+            value={state.style.animation}
+            onChange={(e) => commitState({ ...state, style: { ...state.style, animation: e.target.value as SoccerState["style"]["animation"] } })}
+          >
             <option value="subtle">subtle</option>
             <option value="standard">standard</option>
             <option value="flashy">flashy</option>
@@ -3515,7 +3952,11 @@ export function ChurchControls({
         <h2>Output</h2>
         <div className="form-grid">
           <label className="control-row">
-            <input type="checkbox" checked={state.elements.fullscreenSlide.visible} onChange={(event) => setElementVisible("fullscreenSlide", event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={state.elements.fullscreenSlide.visible}
+              onChange={(event) => setElementVisible("fullscreenSlide", event.target.checked)}
+            />
             <span>Show full-screen slide</span>
           </label>
           <label className="control-row">
@@ -3551,33 +3992,60 @@ export function ChurchControls({
       <div className="panel">
         <h2>Slides</h2>
         <div className="control-row">
-          <button className="button" type="button" onClick={() => addSlide("text")}><Plus size={17} /> Text</button>
-          <button className="button" type="button" onClick={() => addSlide("image")}><Image size={17} /> Image</button>
+          <button className="button" type="button" onClick={() => addSlide("text")}>
+            <Plus size={17} /> Text
+          </button>
+          <button className="button" type="button" onClick={() => addSlide("image")}>
+            <Image size={17} /> Image
+          </button>
         </div>
         <div className="form-grid">
           <label className="field">
             <span>Selected slide</span>
             <select value={selected?.id || ""} onChange={(e) => commitState({ ...state, selectedSlideId: e.target.value })}>
-              {state.slides.map((slide) => <option key={slide.id} value={slide.id}>{slide.title}</option>)}
+              {state.slides.map((slide) => (
+                <option key={slide.id} value={slide.id}>
+                  {slide.title}
+                </option>
+              ))}
             </select>
           </label>
           {selected ? (
             <>
-              <label className="field"><span>Title</span><input value={selected.title} onChange={(e) => updateSlide({ ...selected, title: e.target.value })} /></label>
-              <label className="field"><span>Text</span><textarea value={selected.text} onChange={(e) => updateSlide({ ...selected, text: e.target.value })} /></label>
+              <label className="field">
+                <span>Title</span>
+                <input value={selected.title} onChange={(e) => updateSlide({ ...selected, title: e.target.value })} />
+              </label>
+              <label className="field">
+                <span>Text</span>
+                <textarea value={selected.text} onChange={(e) => updateSlide({ ...selected, text: e.target.value })} />
+              </label>
               <label className="field">
                 <span>Image/background</span>
-                <select value={selected.mediaId || ""} onChange={(e) => {
-                  const item = media.find((candidate) => candidate.id === e.target.value);
-                  updateSlide({ ...selected, mediaId: item?.id, mediaUrl: item?.url, type: item ? "image" : selected.type });
-                }}>
+                <select
+                  value={selected.mediaId || ""}
+                  onChange={(e) => {
+                    const item = media.find((candidate) => candidate.id === e.target.value);
+                    updateSlide({ ...selected, mediaId: item?.id, mediaUrl: item?.url, type: item ? "image" : selected.type });
+                  }}
+                >
                   <option value="">None</option>
-                  {media.map((item) => <option key={item.id} value={item.id}>{item.originalFilename}</option>)}
+                  {media.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.originalFilename}
+                    </option>
+                  ))}
                 </select>
               </label>
               <div className="two-col">
-                <label className="field"><span>Background</span><input type="color" value={selected.backgroundColor} onChange={(e) => updateSlide({ ...selected, backgroundColor: e.target.value })} /></label>
-                <label className="field"><span>Text color</span><input type="color" value={selected.textColor} onChange={(e) => updateSlide({ ...selected, textColor: e.target.value })} /></label>
+                <label className="field">
+                  <span>Background</span>
+                  <input type="color" value={selected.backgroundColor} onChange={(e) => updateSlide({ ...selected, backgroundColor: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>Text color</span>
+                  <input type="color" value={selected.textColor} onChange={(e) => updateSlide({ ...selected, textColor: e.target.value })} />
+                </label>
               </div>
             </>
           ) : null}
@@ -3609,8 +4077,15 @@ function ElementInspector({ state, element, commitState }: { state: PresetState;
         </label>
         <label className="field">
           <span>Position preset</span>
-          <select value={element.placement.preset} onChange={(e) => updatePlacement(placementForPreset(e.target.value as PositionPreset, element.placement.width, element.placement.height))}>
-            {["top-center", "top-left", "top-right", "bottom-center", "bottom-left", "bottom-right", "custom"].map((item) => <option key={item} value={item}>{item}</option>)}
+          <select
+            value={element.placement.preset}
+            onChange={(e) => updatePlacement(placementForPreset(e.target.value as PositionPreset, element.placement.width, element.placement.height))}
+          >
+            {["top-center", "top-left", "top-right", "bottom-center", "bottom-left", "bottom-right", "custom"].map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
           </select>
         </label>
         <div className="two-col">
@@ -3626,7 +4101,11 @@ function ElementInspector({ state, element, commitState }: { state: PresetState;
         <label className="field">
           <span>Variant</span>
           <select value={element.variant} onChange={(e) => updateElement({ variant: e.target.value as StyleVariant })}>
-            {["clean", "glass", "stripe", "broadcast", "neon"].map((variant) => <option key={variant} value={variant}>{variant}</option>)}
+            {["clean", "glass", "stripe", "broadcast", "neon"].map((variant) => (
+              <option key={variant} value={variant}>
+                {variant}
+              </option>
+            ))}
           </select>
         </label>
       </div>
@@ -3770,7 +4249,13 @@ function colorDistance(left: LogoColorSample, right: LogoColorSample): number {
 }
 
 function rgbToHex(color: Pick<LogoColorSample, "r" | "g" | "b">): string {
-  return `#${[color.r, color.g, color.b].map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0")).join("")}`;
+  return `#${[color.r, color.g, color.b]
+    .map((value) =>
+      Math.max(0, Math.min(255, Math.round(value)))
+        .toString(16)
+        .padStart(2, "0")
+    )
+    .join("")}`;
 }
 
 function rgbToHsl(r: number, g: number, b: number): { h: number; saturation: number; lightness: number } {
@@ -3820,13 +4305,18 @@ function mergeTeamPatch<T extends SoccerState["home"]>(team: T, patch: Partial<S
   return {
     ...team,
     ...patch,
-    roster: patch.rosterText !== undefined ? parseRoster(rosterText) : patch.roster ?? team.roster,
+    roster: patch.rosterText !== undefined ? parseRoster(rosterText) : (patch.roster ?? team.roster),
     record: patch.record ? { ...(team.record || { wins: 0, losses: 0, draws: 0 }), ...patch.record } : team.record
   };
 }
 
 function makeAbbreviation(name: string): string {
-  return name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3) || "TEAM";
+  return (
+    name
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 3) || "TEAM"
+  );
 }
 
 function findSavedTeamMatch(team: SoccerState["home"], teams: TeamLibraryEntry[]): TeamLibraryEntry | undefined {
@@ -3858,9 +4348,8 @@ function formatRecord(record?: SoccerState["home"]["record"]): string {
 }
 
 function soccerTeamTextFields(side: "home" | "away", state: SoccerState): SoccerTextAnimationField[] {
-  const fields: SoccerTextAnimationField[] = side === "home"
-    ? ["home-name", "home-abbrev", "home-record", "home-logo"]
-    : ["away-name", "away-abbrev", "away-record", "away-logo"];
+  const fields: SoccerTextAnimationField[] =
+    side === "home" ? ["home-name", "home-abbrev", "home-record", "home-logo"] : ["away-name", "away-abbrev", "away-record", "away-logo"];
   if (state.soccerPackage.lineupTeam === side) fields.push("lineup-title", "lineup-logo", "lineup-rows");
   return fields;
 }
@@ -3892,9 +4381,7 @@ function uniqueSoccerTextFields(fields: SoccerTextAnimationField[]): SoccerTextA
 }
 
 function parseRecordValue(value: string, fallback: SoccerState["home"]["record"]): SoccerState["home"]["record"] {
-  const [wins, losses, draws] = value
-    .split(/[/-]/)
-    .map((part) => Number.parseInt(part.trim(), 10));
+  const [wins, losses, draws] = value.split(/[/-]/).map((part) => Number.parseInt(part.trim(), 10));
   return {
     wins: Number.isFinite(wins) ? Math.max(0, wins) : fallback.wins,
     losses: Number.isFinite(losses) ? Math.max(0, losses) : fallback.losses,
@@ -3975,7 +4462,7 @@ export function MediaLibrary() {
     try {
       const results: PromiseSettledResult<{ media: MediaItem }>[] = [];
       for (let index = 0; index < selectedFiles.length; index += 2) {
-        results.push(...await Promise.allSettled(selectedFiles.slice(index, index + 2).map((file) => mediaApi.upload(file, controller.signal))));
+        results.push(...(await Promise.allSettled(selectedFiles.slice(index, index + 2).map((file) => mediaApi.upload(file, controller.signal)))));
       }
       if (controller.signal.aborted) return;
       await load(controller.signal).catch((err) => setError(err instanceof Error ? err.message : "Could not refresh media"));
@@ -4020,11 +4507,20 @@ export function MediaLibrary() {
           <h1>Media</h1>
         </div>
       </div>
-      {error ? <div className="error" role="alert">{error} <button className="button" type="button" onClick={() => void load(componentAbortRef.current?.signal)}>Retry media</button></div> : null}
+      {error ? (
+        <div className="error" role="alert">
+          {error}{" "}
+          <button className="button" type="button" onClick={() => void load(componentAbortRef.current?.signal)}>
+            Retry media
+          </button>
+        </div>
+      ) : null}
       <label
         className={`dropzone ${uploading ? "disabled" : ""}`}
         aria-disabled={uploading}
-        onDragOver={(event) => { if (!uploadingRef.current) event.preventDefault(); }}
+        onDragOver={(event) => {
+          if (!uploadingRef.current) event.preventDefault();
+        }}
         onDrop={(event) => {
           event.preventDefault();
           if (uploadingRef.current) return;
@@ -4051,16 +4547,26 @@ export function MediaLibrary() {
       <section className="media-grid" style={{ marginTop: 18 }}>
         {media.map((item) => (
           <article className="media-card" key={item.id}>
-            <div className="media-thumb"><img src={mediaApi.mediaUrl(item.thumbnailUrl || item.url)} alt={item.originalFilename} loading="lazy" decoding="async" /></div>
+            <div className="media-thumb">
+              <img src={mediaApi.mediaUrl(item.thumbnailUrl || item.url)} alt={item.originalFilename} loading="lazy" decoding="async" />
+            </div>
             <footer>
               <strong>{item.originalFilename}</strong>
-              <span className="muted">{item.width || "?"} × {item.height || "?"}</span>
-              <button className="button danger" type="button" disabled={deletingIds.has(item.id)} onClick={() => void remove(item.id)}><Trash2 size={16} /> {deletingIds.has(item.id) ? "Deleting..." : "Delete"}</button>
+              <span className="muted">
+                {item.width || "?"} × {item.height || "?"}
+              </span>
+              <button className="button danger" type="button" disabled={deletingIds.has(item.id)} onClick={() => void remove(item.id)}>
+                <Trash2 size={16} /> {deletingIds.has(item.id) ? "Deleting..." : "Delete"}
+              </button>
             </footer>
           </article>
         ))}
       </section>
-      {nextCursor ? <button className="button" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more"}</button> : null}
+      {nextCursor ? (
+        <button className="button" type="button" disabled={loadingMore} onClick={() => void loadMore()}>
+          {loadingMore ? "Loading…" : "Load more"}
+        </button>
+      ) : null}
     </>
   );
 }
@@ -4094,17 +4600,20 @@ export function OverlayPage({ test }: { test: boolean }) {
     setError(null);
     setConnection("connecting");
 
-    void overlayApi.get(requestedOverlayId, controller.signal).then((response) => {
-      if (!active || deleted || controller.signal.aborted || response.overlay.publicId !== requestedOverlayId) return;
-      const responseRevision = getPresetRevision(response.overlay) ?? -1;
-      if (socketHasUpdated && responseRevision < latestRevision) return;
-      if (socketHasUpdated && responseRevision === -1) return;
-      latestRevision = Math.max(latestRevision, responseRevision);
-      setOverlay(response.overlay);
-    }).catch((err) => {
-      if (!active || controller.signal.aborted) return;
-      setError(err instanceof Error ? err.message : "Could not load overlay");
-    });
+    void overlayApi
+      .get(requestedOverlayId, controller.signal)
+      .then((response) => {
+        if (!active || deleted || controller.signal.aborted || response.overlay.publicId !== requestedOverlayId) return;
+        const responseRevision = getPresetRevision(response.overlay) ?? -1;
+        if (socketHasUpdated && responseRevision < latestRevision) return;
+        if (socketHasUpdated && responseRevision === -1) return;
+        latestRevision = Math.max(latestRevision, responseRevision);
+        setOverlay(response.overlay);
+      })
+      .catch((err) => {
+        if (!active || controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : "Could not load overlay");
+      });
     const socket = io(WS_URL, {
       transports: ["websocket", "polling"],
       auth: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
@@ -4119,9 +4628,15 @@ export function OverlayPage({ test }: { test: boolean }) {
       setConnection("disconnected");
       socket.disconnect();
     }
-    socket.on("connect", () => { if (active) setConnection("connected"); });
-    socket.on("disconnect", () => { if (active) setConnection("disconnected"); });
-    socket.on("connect_error", () => { if (active) setConnection("disconnected"); });
+    socket.on("connect", () => {
+      if (active) setConnection("connected");
+    });
+    socket.on("disconnect", () => {
+      if (active) setConnection("disconnected");
+    });
+    socket.on("connect_error", () => {
+      if (active) setConnection("disconnected");
+    });
     socket.on("state:update", (payload: unknown) => {
       if (!active || deleted || !isPreset(payload) || payload.publicId !== requestedOverlayId) return;
       const incomingRevision = getPresetRevision(payload);
@@ -4152,14 +4667,20 @@ export function OverlayPage({ test }: { test: boolean }) {
         <div className="page-title">
           <div>
             <h1>Overlay test</h1>
-            <p className="muted">{overlayId} · {connection}</p>
+            <p className="muted">
+              {overlayId} · {connection}
+            </p>
           </div>
-          <Link className="button" to={overlay ? `/overlay/${overlay.publicId}` : "#"} target="_blank" rel="noreferrer">OBS route</Link>
+          <Link className="button" to={overlay ? `/overlay/${overlay.publicId}` : "#"} target="_blank" rel="noreferrer">
+            OBS route
+          </Link>
         </div>
-        {error ? <div className="error" role="alert">{error}</div> : null}
-        <div className="overlay-test-frame">
-          {overlay ? <OverlayRenderer type={overlay.type} state={overlay.state} safeArea /> : null}
-        </div>
+        {error ? (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        ) : null}
+        <div className="overlay-test-frame">{overlay ? <OverlayRenderer type={overlay.type} state={overlay.state} safeArea /> : null}</div>
       </div>
     );
   }
@@ -4207,11 +4728,7 @@ function allowProgrammaticNavigation(): void {
   window.dispatchEvent(new Event(ALLOW_PROGRAMMATIC_NAVIGATION_EVENT));
 }
 
-function useUnsavedNavigationBlocker(
-  hasUnsavedWork: () => boolean,
-  allowNextNavigationRef: React.MutableRefObject<boolean>,
-  message: string
-) {
+function useUnsavedNavigationBlocker(hasUnsavedWork: () => boolean, allowNextNavigationRef: React.MutableRefObject<boolean>, message: string) {
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (currentLocation.pathname === nextLocation.pathname && currentLocation.search === nextLocation.search && currentLocation.hash === nextLocation.hash) {
       return false;

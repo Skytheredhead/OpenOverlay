@@ -9,8 +9,12 @@ describe("DebouncedSerialMutationQueue", () => {
     const queue = new DebouncedSerialMutationQueue(180);
     const calls: string[] = [];
 
-    queue.schedule("preset-a", async () => { calls.push("save-a"); });
-    queue.schedule("preset-b", async () => { calls.push("save-b"); });
+    queue.schedule("preset-a", async () => {
+      calls.push("save-a");
+    });
+    queue.schedule("preset-b", async () => {
+      calls.push("save-b");
+    });
 
     await vi.advanceTimersByTimeAsync(180);
     await queue.flush();
@@ -23,12 +27,20 @@ describe("DebouncedSerialMutationQueue", () => {
     const calls: string[] = [];
     let releaseSave: (() => void) | undefined;
 
-    queue.schedule("preset-a", () => new Promise<void>((resolve) => {
-      calls.push("save");
-      releaseSave = resolve;
-    }));
-    const firstAction = queue.run(async () => { calls.push("action-1"); });
-    const secondAction = queue.run(async () => { calls.push("action-2"); });
+    queue.schedule(
+      "preset-a",
+      () =>
+        new Promise<void>((resolve) => {
+          calls.push("save");
+          releaseSave = resolve;
+        })
+    );
+    const firstAction = queue.run(async () => {
+      calls.push("action-1");
+    });
+    const secondAction = queue.run(async () => {
+      calls.push("action-2");
+    });
 
     await Promise.resolve();
     expect(calls).toEqual(["save"]);
@@ -42,8 +54,12 @@ describe("DebouncedSerialMutationQueue", () => {
     const queue = new DebouncedSerialMutationQueue(180);
     const calls: string[] = [];
 
-    queue.schedule("preset-a", async () => { calls.push("old"); });
-    queue.schedule("preset-a", async () => { calls.push("latest"); });
+    queue.schedule("preset-a", async () => {
+      calls.push("old");
+    });
+    queue.schedule("preset-a", async () => {
+      calls.push("latest");
+    });
     await vi.advanceTimersByTimeAsync(180);
     await queue.flush();
 
@@ -54,7 +70,9 @@ describe("DebouncedSerialMutationQueue", () => {
     const queue = new DebouncedSerialMutationQueue(180);
     const action = vi.fn(async () => undefined);
 
-    queue.schedule("preset-a", async () => { throw new Error("save failed"); });
+    queue.schedule("preset-a", async () => {
+      throw new Error("save failed");
+    });
     await expect(queue.run(action)).rejects.toThrow("save failed");
     expect(action).not.toHaveBeenCalled();
 
@@ -73,8 +91,12 @@ describe("DebouncedSerialMutationQueue", () => {
     await vi.advanceTimersByTimeAsync(180);
     await expect(queue.flush()).rejects.toThrow("offline");
 
-    queue.schedule("preset-a", async () => { calls.push("retry-save"); });
-    const action = queue.run(async () => { calls.push("action"); });
+    queue.schedule("preset-a", async () => {
+      calls.push("retry-save");
+    });
+    const action = queue.run(async () => {
+      calls.push("action");
+    });
     await expect(action).resolves.toBeUndefined();
     expect(calls).toEqual(["failed-save", "retry-save", "action"]);
   });
@@ -102,14 +124,20 @@ describe("KeyedSerialTaskQueue", () => {
     const calls: string[] = [];
     let releaseFirst: (() => void) | undefined;
 
-    const first = queue.run("team-a", () => new Promise<void>((resolve) => {
-      calls.push("first-start");
-      releaseFirst = () => {
-        calls.push("first-end");
-        resolve();
-      };
-    }));
-    const second = queue.run("team-a", async () => { calls.push("second"); });
+    const first = queue.run(
+      "team-a",
+      () =>
+        new Promise<void>((resolve) => {
+          calls.push("first-start");
+          releaseFirst = () => {
+            calls.push("first-end");
+            resolve();
+          };
+        })
+    );
+    const second = queue.run("team-a", async () => {
+      calls.push("second");
+    });
 
     await Promise.resolve();
     expect(calls).toEqual(["first-start"]);
@@ -121,9 +149,15 @@ describe("KeyedSerialTaskQueue", () => {
   it("continues after a failed save and does not block a different record", async () => {
     const queue = new KeyedSerialTaskQueue();
     const calls: string[] = [];
-    const failed = queue.run("team-a", async () => { throw new Error("offline"); });
-    const retry = queue.run("team-a", async () => { calls.push("retry"); });
-    const other = queue.run("team-b", async () => { calls.push("other"); });
+    const failed = queue.run("team-a", async () => {
+      throw new Error("offline");
+    });
+    const retry = queue.run("team-a", async () => {
+      calls.push("retry");
+    });
+    const other = queue.run("team-b", async () => {
+      calls.push("other");
+    });
 
     await expect(failed).rejects.toThrow("offline");
     await Promise.all([retry, other]);

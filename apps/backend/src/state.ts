@@ -49,10 +49,32 @@ export type PresetAction =
   | "clear";
 
 const presetActions = new Set<PresetAction>([
-  "home-score-plus", "home-score-minus", "away-score-plus", "away-score-minus", "clock-toggle", "clock-reset",
-  "trigger-goal", "trigger-yellow-card", "trigger-red-card", "trigger-substitution", "trigger-halftime", "trigger-full-time",
-  "trigger-lineups", "trigger-sponsor", "trigger-lower-third", "trigger-countdown", "show-overlay", "hide-overlay",
-  "select-overlay", "countdown-toggle", "countdown-start", "countdown-stop", "countdown-reset", "lineup-next", "lineup-prev", "clear"
+  "home-score-plus",
+  "home-score-minus",
+  "away-score-plus",
+  "away-score-minus",
+  "clock-toggle",
+  "clock-reset",
+  "trigger-goal",
+  "trigger-yellow-card",
+  "trigger-red-card",
+  "trigger-substitution",
+  "trigger-halftime",
+  "trigger-full-time",
+  "trigger-lineups",
+  "trigger-sponsor",
+  "trigger-lower-third",
+  "trigger-countdown",
+  "show-overlay",
+  "hide-overlay",
+  "select-overlay",
+  "countdown-toggle",
+  "countdown-start",
+  "countdown-stop",
+  "countdown-reset",
+  "lineup-next",
+  "lineup-prev",
+  "clear"
 ]);
 
 const graphicPayloadActions = new Set<PresetAction>([
@@ -87,8 +109,24 @@ const graphicPayloadFields = new Set(["title", "subtitle", "label", "team", "var
 const MAX_ACTION_PAYLOAD_BYTES = 2 * 1024;
 const forbiddenObjectKeys = new Set(["__proto__", "constructor", "prototype"]);
 const graphicKinds = new Set<GraphicKind>([
-  "goal", "yellow-card", "red-card", "substitution", "injury", "halftime", "matchup-full", "matchup-lower", "lineups",
-  "sponsor", "lower-third", "countdown", "fullscreen", "blank", "team", "both-teams", "church-slide", "church-lower-third"
+  "goal",
+  "yellow-card",
+  "red-card",
+  "substitution",
+  "injury",
+  "halftime",
+  "matchup-full",
+  "matchup-lower",
+  "lineups",
+  "sponsor",
+  "lower-third",
+  "countdown",
+  "fullscreen",
+  "blank",
+  "team",
+  "both-teams",
+  "church-slide",
+  "church-lower-third"
 ]);
 const soccerTextAnimationFields = [
   "event-title",
@@ -350,38 +388,92 @@ function applySoccerAction(state: SoccerState, action: PresetAction, payload: Re
   if (action === "trigger-goal") {
     const team = payload.team === "away" ? "away" : "home";
     const teamName = team === "away" ? next.away.shortName : next.home.shortName;
-    return withToggledGraphic(next, makeGraphic("goal", textPayload(payload.title, "GOAL"), textPayload(payload.subtitle, teamName), fullscreenPlacement, { ...payload, team }, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic("goal", textPayload(payload.title, "GOAL"), textPayload(payload.subtitle, teamName), fullscreenPlacement, { ...payload, team }, nowMs)
+    );
   }
   if (action === "trigger-yellow-card") {
-    return withToggledGraphic(next, makeGraphic("yellow-card", textPayload(payload.title, "Yellow Card"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic("yellow-card", textPayload(payload.title, "Yellow Card"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs)
+    );
   }
   if (action === "trigger-red-card") {
-    return withToggledGraphic(next, makeGraphic("red-card", textPayload(payload.title, "Red Card"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic("red-card", textPayload(payload.title, "Red Card"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs)
+    );
   }
   if (action === "trigger-substitution") {
-    return withToggledGraphic(next, makeGraphic("substitution", textPayload(payload.title, "Substitution"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic("substitution", textPayload(payload.title, "Substitution"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs)
+    );
   }
   if (action === "trigger-halftime") {
-    return withToggledGraphic(next, makeGraphic("halftime", textPayload(payload.title, "Halftime"), `${next.home.shortName} ${next.score.home} - ${next.score.away} ${next.away.shortName}`, fullscreenPlacement, payload, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic(
+        "halftime",
+        textPayload(payload.title, "Halftime"),
+        `${next.home.shortName} ${next.score.home} - ${next.score.away} ${next.away.shortName}`,
+        fullscreenPlacement,
+        payload,
+        nowMs
+      )
+    );
   }
   if (action === "trigger-full-time") {
-    return withToggledGraphic(next, makeGraphic("fullscreen", textPayload(payload.title, "Full Time"), `${next.home.shortName} ${next.score.home} - ${next.score.away} ${next.away.shortName}`, fullscreenPlacement, payload, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic(
+        "fullscreen",
+        textPayload(payload.title, "Full Time"),
+        `${next.home.shortName} ${next.score.home} - ${next.score.away} ${next.away.shortName}`,
+        fullscreenPlacement,
+        payload,
+        nowMs
+      )
+    );
   }
   if (action === "trigger-lineups") {
     const team = payload.team === "away" ? next.away : next.home;
-    const roster = team.roster.slice(0, 11).map((player) => player.number ? `#${player.number} ${player.name}` : player.name).join("  ·  ");
-    return withToggledGraphic(next, makeGraphic("lineups", textPayload(payload.title, `${team.shortName} Lineup`), textPayload(payload.subtitle, roster), fullscreenPlacement, payload, nowMs));
+    const roster = team.roster
+      .slice(0, 11)
+      .map((player) => (player.number ? `#${player.number} ${player.name}` : player.name))
+      .join("  ·  ");
+    return withToggledGraphic(
+      next,
+      makeGraphic("lineups", textPayload(payload.title, `${team.shortName} Lineup`), textPayload(payload.subtitle, roster), fullscreenPlacement, payload, nowMs)
+    );
   }
   if (action === "trigger-sponsor") {
-    return withToggledGraphic(next, makeGraphic("sponsor", textPayload(payload.title, "Sponsor"), textPayload(payload.subtitle, ""), next.elements.sponsorBug.placement, payload, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic("sponsor", textPayload(payload.title, "Sponsor"), textPayload(payload.subtitle, ""), next.elements.sponsorBug.placement, payload, nowMs)
+    );
   }
   if (action === "trigger-lower-third") {
-    return withToggledGraphic(next, makeGraphic("lower-third", textPayload(payload.title, "Lower Third"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic("lower-third", textPayload(payload.title, "Lower Third"), textPayload(payload.subtitle, ""), lowerPlacement, payload, nowMs)
+    );
   }
   if (action === "trigger-countdown") {
     next.soccerPackage = { ...next.soccerPackage, activeOverlay: "countdown-timer", selectedOverlay: "countdown-timer" };
     next.soccerPackage.countdown = startPackageCountdown(next.soccerPackage.countdown, nowMs);
-    return withToggledGraphic(next, makeGraphic("countdown", textPayload(payload.title, "Countdown"), textPayload(payload.subtitle, "Next segment"), next.elements.countdown.placement, payload, nowMs));
+    return withToggledGraphic(
+      next,
+      makeGraphic(
+        "countdown",
+        textPayload(payload.title, "Countdown"),
+        textPayload(payload.subtitle, "Next segment"),
+        next.elements.countdown.placement,
+        payload,
+        nowMs
+      )
+    );
   }
 
   if (action === "show-overlay" || action === "select-overlay") {
@@ -480,16 +572,10 @@ function applyChurchAction(state: ChurchState, action: PresetAction, payload: Re
 }
 
 function isLabOverlay(value: unknown): value is SoccerState["soccerPackage"]["selectedOverlay"] {
-  return typeof value === "string" && [
-    "full-matchup",
-    "lower-matchup",
-    "lower-result",
-    "lineup-panel",
-    "scorebug",
-    "countdown-timer",
-    "one-line-text",
-    "two-line-text"
-  ].includes(value);
+  return (
+    typeof value === "string" &&
+    ["full-matchup", "lower-matchup", "lower-result", "lineup-panel", "scorebug", "countdown-timer", "one-line-text", "two-line-text"].includes(value)
+  );
 }
 
 function startPackageCountdown(countdown: SoccerState["soccerPackage"]["countdown"], nowMs: number): SoccerState["soccerPackage"]["countdown"] {
@@ -543,16 +629,15 @@ function clearTemporaryGraphics<T extends PresetState>(state: T): T {
   };
 }
 
-function makeGraphic(
-  kind: GraphicKind,
-  title: string,
-  subtitle: string,
-  placement: Placement,
-  payload: Record<string, unknown>,
-  nowMs: number
-): ActiveGraphic {
+function makeGraphic(kind: GraphicKind, title: string, subtitle: string, placement: Placement, payload: Record<string, unknown>, nowMs: number): ActiveGraphic {
   const durationSeconds = payload.durationSeconds === undefined ? 5 : payload.durationSeconds;
-  if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || !Number.isInteger(durationSeconds) || durationSeconds < 0 || durationSeconds > 3_600) {
+  if (
+    typeof durationSeconds !== "number" ||
+    !Number.isFinite(durationSeconds) ||
+    !Number.isInteger(durationSeconds) ||
+    durationSeconds < 0 ||
+    durationSeconds > 3_600
+  ) {
     throw new PresetActionValidationError("durationSeconds must be an integer from 0 to 3600");
   }
   const durationMs = Math.max(1, durationSeconds) * 1000;
@@ -563,7 +648,14 @@ function makeGraphic(
     subtitle,
     label: typeof payload.label === "string" ? payload.label.slice(0, 200) : undefined,
     team: payload.team === "home" || payload.team === "away" || payload.team === "both" || payload.team === "none" ? payload.team : undefined,
-    variant: payload.variant === "clean" || payload.variant === "glass" || payload.variant === "stripe" || payload.variant === "broadcast" || payload.variant === "neon" ? payload.variant : "broadcast",
+    variant:
+      payload.variant === "clean" ||
+      payload.variant === "glass" ||
+      payload.variant === "stripe" ||
+      payload.variant === "broadcast" ||
+      payload.variant === "neon"
+        ? payload.variant
+        : "broadcast",
     placement,
     startedAtMs: nowMs,
     durationMs,
@@ -654,11 +746,18 @@ function assertActiveGraphic(value: unknown, path: string): void {
   }
   if (!isPlainObject(value.placement)) throw new PresetStateValidationError(`${path}.placement must be an object`);
   for (const field of ["x", "y", "width", "height", "scale"] as const) {
-    if (typeof value.placement[field] !== "number" || !Number.isFinite(value.placement[field])) throw new PresetStateValidationError(`${path}.placement.${field} must be finite`);
+    if (typeof value.placement[field] !== "number" || !Number.isFinite(value.placement[field]))
+      throw new PresetStateValidationError(`${path}.placement.${field} must be finite`);
   }
-  if (typeof value.variant !== "string" || typeof value.startedAtMs !== "number" || !Number.isFinite(value.startedAtMs) ||
-      typeof value.durationMs !== "number" || !Number.isFinite(value.durationMs) || value.durationMs < 0 ||
-      (value.expiresAtMs !== null && (typeof value.expiresAtMs !== "number" || !Number.isFinite(value.expiresAtMs)))) {
+  if (
+    typeof value.variant !== "string" ||
+    typeof value.startedAtMs !== "number" ||
+    !Number.isFinite(value.startedAtMs) ||
+    typeof value.durationMs !== "number" ||
+    !Number.isFinite(value.durationMs) ||
+    value.durationMs < 0 ||
+    (value.expiresAtMs !== null && (typeof value.expiresAtMs !== "number" || !Number.isFinite(value.expiresAtMs)))
+  ) {
     throw new PresetStateValidationError(`${path} has invalid timing or style fields`);
   }
   assertOneOf(value.variant, ["clean", "glass", "stripe", "broadcast", "neon"], `${path}.variant`);
@@ -681,16 +780,23 @@ function assertDomainConstraints(type: PresetType, state: PresetState): void {
   if (type === "soccer") {
     if (!isSoccerState(state)) throw new PresetStateValidationError("State does not match soccer preset type");
     for (const [path, value] of [
-      ["state.score.home", state.score.home], ["state.score.away", state.score.away],
-      ["state.stats.shots.home", state.stats.shots.home], ["state.stats.shots.away", state.stats.shots.away],
-      ["state.stats.fouls.home", state.stats.fouls.home], ["state.stats.fouls.away", state.stats.fouls.away],
-      ["state.stats.cards.home", state.stats.cards.home], ["state.stats.cards.away", state.stats.cards.away],
-      ["state.clock.baseSeconds", state.clock.baseSeconds], ["state.clock.resetSeconds", state.clock.resetSeconds],
-      ["state.clock.stopAtSeconds", state.clock.stopAtSeconds], ["state.clock.stoppageMinutes", state.clock.stoppageMinutes],
+      ["state.score.home", state.score.home],
+      ["state.score.away", state.score.away],
+      ["state.stats.shots.home", state.stats.shots.home],
+      ["state.stats.shots.away", state.stats.shots.away],
+      ["state.stats.fouls.home", state.stats.fouls.home],
+      ["state.stats.fouls.away", state.stats.fouls.away],
+      ["state.stats.cards.home", state.stats.cards.home],
+      ["state.stats.cards.away", state.stats.cards.away],
+      ["state.clock.baseSeconds", state.clock.baseSeconds],
+      ["state.clock.resetSeconds", state.clock.resetSeconds],
+      ["state.clock.stopAtSeconds", state.clock.stopAtSeconds],
+      ["state.clock.stoppageMinutes", state.clock.stoppageMinutes],
       ["state.soccerPackage.countdown.seconds", state.soccerPackage.countdown.seconds],
       ["state.soccerPackage.countdown.resetSeconds", state.soccerPackage.countdown.resetSeconds],
       ["state.soccerPackage.lineupPage", state.soccerPackage.lineupPage]
-    ] as Array<[string, number]>) assertNonNegativeInteger(value, path, 1_000_000);
+    ] as Array<[string, number]>)
+      assertNonNegativeInteger(value, path, 1_000_000);
     assertOneOf(state.clock.mode, ["up", "down"], "state.clock.mode");
     assertOneOf(state.soccerPackage.overlayPackage, ["rounded", "classic"], "state.soccerPackage.overlayPackage");
     if (state.soccerPackage.activeOverlay !== null) assertOneOf(state.soccerPackage.activeOverlay, labOverlays, "state.soccerPackage.activeOverlay");
@@ -703,8 +809,10 @@ function assertDomainConstraints(type: PresetType, state: PresetState): void {
     if (state.soccerPackage.textAnimation !== undefined) {
       assertSoccerTextAnimation(state.soccerPackage.textAnimation, "state.soccerPackage.textAnimation");
     }
-    if (state.soccerPackage.packageBackgroundOpacity < 0 || state.soccerPackage.packageBackgroundOpacity > 1) throw new PresetStateValidationError("state.soccerPackage.packageBackgroundOpacity must be between 0 and 1");
-    if (state.soccerPackage.scorebugWidth < 44 || state.soccerPackage.scorebugWidth > 82) throw new PresetStateValidationError("state.soccerPackage.scorebugWidth must be between 44 and 82");
+    if (state.soccerPackage.packageBackgroundOpacity < 0 || state.soccerPackage.packageBackgroundOpacity > 1)
+      throw new PresetStateValidationError("state.soccerPackage.packageBackgroundOpacity must be between 0 and 1");
+    if (state.soccerPackage.scorebugWidth < 44 || state.soccerPackage.scorebugWidth > 82)
+      throw new PresetStateValidationError("state.soccerPackage.scorebugWidth must be between 44 and 82");
     assertBoundedString(state.gameTitle, "state.gameTitle", 200);
     assertBoundedString(state.productionName, "state.productionName", 200);
     assertBoundedString(state.scheduledAt, "state.scheduledAt", 100);
@@ -760,7 +868,8 @@ function assertTeam(team: SoccerState["home"], path: string): void {
   assertBoundedString(team.schoolName, `${path}.schoolName`, 120);
   if (team.logoMediaId !== undefined) assertBoundedString(team.logoMediaId, `${path}.logoMediaId`, 200);
   if (team.logoUrl !== undefined) assertBoundedString(team.logoUrl, `${path}.logoUrl`, 2_048);
-  if (Math.abs(team.imageCrop.x) > 10_000 || Math.abs(team.imageCrop.y) > 10_000) throw new PresetStateValidationError(`${path}.imageCrop offset is out of range`);
+  if (Math.abs(team.imageCrop.x) > 10_000 || Math.abs(team.imageCrop.y) > 10_000)
+    throw new PresetStateValidationError(`${path}.imageCrop offset is out of range`);
   for (const key of ["wins", "losses", "draws"] as const) assertNonNegativeInteger(team.record[key], `${path}.record.${key}`, 1_000_000);
   if (team.imageCrop.zoom < 0.25 || team.imageCrop.zoom > 100) throw new PresetStateValidationError(`${path}.imageCrop.zoom is out of range`);
 }
@@ -802,12 +911,15 @@ function assertPlacement(placement: unknown, path: string): void {
   assertOneOf(placement.preset, ["top-center", "top-left", "top-right", "bottom-center", "bottom-left", "bottom-right", "custom"], `${path}.preset`);
   for (const key of ["width", "height"] as const) {
     const value = placement[key];
-    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > 16_384) throw new PresetStateValidationError(`${path}.${key} is out of range`);
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > 16_384)
+      throw new PresetStateValidationError(`${path}.${key} is out of range`);
   }
-  if (typeof placement.scale !== "number" || !Number.isFinite(placement.scale) || placement.scale <= 0 || placement.scale > 100) throw new PresetStateValidationError(`${path}.scale is out of range`);
+  if (typeof placement.scale !== "number" || !Number.isFinite(placement.scale) || placement.scale <= 0 || placement.scale > 100)
+    throw new PresetStateValidationError(`${path}.scale is out of range`);
   for (const key of ["x", "y"] as const) {
     const value = placement[key];
-    if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) > 100_000) throw new PresetStateValidationError(`${path}.${key} is out of range`);
+    if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) > 100_000)
+      throw new PresetStateValidationError(`${path}.${key} is out of range`);
   }
 }
 

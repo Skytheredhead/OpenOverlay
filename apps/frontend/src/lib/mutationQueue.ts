@@ -45,7 +45,10 @@ export class DebouncedSerialMutationQueue {
       await required;
       return task();
     });
-    this.tail = result.then(() => undefined, () => undefined);
+    this.tail = result.then(
+      () => undefined,
+      () => undefined
+    );
     return result;
   }
 
@@ -61,7 +64,10 @@ export class DebouncedSerialMutationQueue {
     if (!mutation) return;
 
     const result = this.tail.then(mutation.task);
-    this.tail = result.then(() => undefined, () => undefined);
+    this.tail = result.then(
+      () => undefined,
+      () => undefined
+    );
     // A later full-state snapshot supersedes an older failed snapshot. Keep the
     // newest enqueued save as the gate for the next action; `tail` still
     // guarantees that all earlier network work has settled first.
@@ -103,9 +109,7 @@ export class KeyedDebouncer {
   }
 
   flush(key?: string): void {
-    const entries = key
-      ? [...this.pending.entries()].filter(([candidate]) => candidate === key)
-      : [...this.pending.entries()];
+    const entries = key ? [...this.pending.entries()].filter(([candidate]) => candidate === key) : [...this.pending.entries()];
     for (const [candidate, pending] of entries) {
       clearTimeout(pending.timer);
       this.pending.delete(candidate);
@@ -126,7 +130,10 @@ export class KeyedSerialTaskQueue {
   run<T>(key: string, task: AsyncTask<T>): Promise<T> {
     const previous = this.tails.get(key) ?? Promise.resolve();
     const result = previous.then(task);
-    const normalized = result.then(() => undefined, () => undefined);
+    const normalized = result.then(
+      () => undefined,
+      () => undefined
+    );
     this.tails.set(key, normalized);
     void normalized.then(() => {
       if (this.tails.get(key) === normalized) this.tails.delete(key);

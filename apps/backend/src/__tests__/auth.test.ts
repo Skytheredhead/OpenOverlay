@@ -46,20 +46,14 @@ describe("auth", () => {
   });
 
   it("revokes a captured session token on logout instead of only clearing the browser cookie", async () => {
-    const signupResponse = await server.request
-      .post("/api/auth/signup")
-      .send({ email: "revoke@example.com", password: "password123" })
-      .expect(201);
+    const signupResponse = await server.request.post("/api/auth/signup").send({ email: "revoke@example.com", password: "password123" }).expect(201);
     const setCookie = signupResponse.headers["set-cookie"] as unknown as string[];
     const capturedCookie = setCookie[0]!.split(";", 1)[0]!;
 
     await server.request.post("/api/auth/logout").set("Cookie", capturedCookie).send({}).expect(200);
     await server.request.get("/api/auth/me").set("Cookie", capturedCookie).expect(401);
 
-    const login = await server.request
-      .post("/api/auth/login")
-      .send({ email: "revoke@example.com", password: "password123" })
-      .expect(200);
+    const login = await server.request.post("/api/auth/login").send({ email: "revoke@example.com", password: "password123" }).expect(200);
     const replacementCookie = (login.headers["set-cookie"] as unknown as string[])[0]!.split(";", 1)[0]!;
     await server.request.get("/api/auth/me").set("Cookie", replacementCookie).expect(200);
   });
@@ -74,16 +68,22 @@ describe("auth", () => {
 
   it("reserves login attempts before bcrypt so concurrent requests are bounded", async () => {
     await signup(server.agent, "parallel-limit@example.com");
-    const responses = await Promise.all(Array.from({ length: 10 }, () =>
-      server.request.post("/api/auth/login").send({ email: "parallel-limit@example.com", password: "wrong-password" })
-    ));
+    const responses = await Promise.all(
+      Array.from({ length: 10 }, () => server.request.post("/api/auth/login").send({ email: "parallel-limit@example.com", password: "wrong-password" }))
+    );
     expect(responses.filter((response) => response.status === 401)).toHaveLength(5);
     expect(responses.filter((response) => response.status === 429)).toHaveLength(5);
   });
 
   it("rejects passwords beyond bcrypt's 72-byte boundary", async () => {
-    await server.request.post("/api/auth/signup").send({ email: "long-ascii@example.com", password: "a".repeat(73) }).expect(400);
-    await server.request.post("/api/auth/signup").send({ email: "long-unicode@example.com", password: "😀".repeat(19) }).expect(400);
+    await server.request
+      .post("/api/auth/signup")
+      .send({ email: "long-ascii@example.com", password: "a".repeat(73) })
+      .expect(400);
+    await server.request
+      .post("/api/auth/signup")
+      .send({ email: "long-unicode@example.com", password: "😀".repeat(19) })
+      .expect(400);
   });
 
   it("maps concurrent duplicate signup to conflict instead of an internal error", async () => {
@@ -96,10 +96,7 @@ describe("auth", () => {
 
   it("stops account-backed database growth when the host free-space reserve cannot be maintained", async () => {
     server.backend.ctx.config.storageMinimumFreeBytes = Number.MAX_SAFE_INTEGER;
-    const response = await server.request
-      .post("/api/auth/signup")
-      .send({ email: "disk-reserve@example.com", password: "password123" })
-      .expect(507);
+    const response = await server.request.post("/api/auth/signup").send({ email: "disk-reserve@example.com", password: "password123" }).expect(507);
 
     expect(response.body.error).toMatch(/retain at least/);
     expect(server.backend.ctx.db.findUserByEmail("disk-reserve@example.com")).toBeUndefined();
@@ -115,18 +112,10 @@ describe("auth", () => {
   it("rejects cookie-authenticated state changes from disallowed origins", async () => {
     await signup(server.agent, "origin-check@example.com");
 
-    const rejected = await server.agent
-      .post("/api/teams")
-      .set("Origin", "https://evil.example")
-      .send({ fullName: "Evil FC", shortName: "Evil" })
-      .expect(403);
+    const rejected = await server.agent.post("/api/teams").set("Origin", "https://evil.example").send({ fullName: "Evil FC", shortName: "Evil" }).expect(403);
     expect(rejected.headers["x-content-type-options"]).toBe("nosniff");
 
-    await server.agent
-      .post("/api/teams")
-      .set("Origin", "http://localhost:5173")
-      .send({ fullName: "Local FC", shortName: "Local" })
-      .expect(201);
+    await server.agent.post("/api/teams").set("Origin", "http://localhost:5173").send({ fullName: "Local FC", shortName: "Local" }).expect(201);
   });
 
   it("fails closed for invalid environments and weak production secrets", () => {

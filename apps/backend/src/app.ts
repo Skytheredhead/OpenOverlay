@@ -23,12 +23,42 @@ import {
   type TeamLibraryEntry,
   type TeamRecord
 } from "@openoverlay/shared";
-import { AuthRateLimiter, DUMMY_PASSWORD_HASH, RateLimitError, authenticatedUser, clearSessionCookie, generateActionKey, hashActionKey, hashPassword, requireAuth, serializeUser, setSessionCookie, validateEmail, validatePassword, verifyActionKey, verifyPassword, sessionCookieName } from "./auth.js";
+import {
+  AuthRateLimiter,
+  DUMMY_PASSWORD_HASH,
+  RateLimitError,
+  authenticatedUser,
+  clearSessionCookie,
+  generateActionKey,
+  hashActionKey,
+  hashPassword,
+  requireAuth,
+  serializeUser,
+  setSessionCookie,
+  validateEmail,
+  validatePassword,
+  verifyActionKey,
+  verifyPassword,
+  sessionCookieName
+} from "./auth.js";
 import { getBuildInfo } from "./buildInfo.js";
 import { loadConfig, type AppConfig } from "./config.js";
 import { Database, RevisionConflictError, parseTeam, type MediaRow, type PendingShareRow, type PresetRow, type TeamRow, type UserRow } from "./db.js";
 import { createLogger } from "./logger.js";
-import { PresetActionValidationError, PresetStateValidationError, applyAction, cloneStateForShare, ensurePresetState, isChurchState, isPresetAction, isSoccerState, materializeState, mergePresetState, readStoredPresetState, validatePresetActionPayload } from "./state.js";
+import {
+  PresetActionValidationError,
+  PresetStateValidationError,
+  applyAction,
+  cloneStateForShare,
+  ensurePresetState,
+  isChurchState,
+  isPresetAction,
+  isSoccerState,
+  materializeState,
+  mergePresetState,
+  readStoredPresetState,
+  validatePresetActionPayload
+} from "./state.js";
 import type { AppContext } from "./types.js";
 
 export interface BackendApp {
@@ -132,9 +162,8 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
   app.use((req, res, next) => {
     const requestPath = req.path;
     res.on("finish", () => {
-      const successfulPublicRead = (req.method === "GET" || req.method === "HEAD") &&
-        res.statusCode < 400 &&
-        /^\/api(?:\/v1)?\/(?:overlay|media\/file)\//.test(requestPath);
+      const successfulPublicRead =
+        (req.method === "GET" || req.method === "HEAD") && res.statusCode < 400 && /^\/api(?:\/v1)?\/(?:overlay|media\/file)\//.test(requestPath);
       if (requestPath !== "/health" && !successfulPublicRead) {
         logger.info("http_request", { method: req.method, path: requestPath, status: res.statusCode });
       }
@@ -176,56 +205,62 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
   app.use("/api/v1", api);
   app.use("/api", api);
 
-  api.post("/auth/signup", asyncHandler(async (req, res) => {
-    const body = requestBody(req);
-    const email = validateEmail(body.email);
-    const password = validatePassword(body.password);
-    if (!email || !password) {
-      res.status(400).json({ error: "Valid email and password of at least 8 characters are required" });
-      return;
-    }
-    authRateLimiter.reserveSignup(req.ip || "unknown");
-    assertStorageHeadroom(ctx, path.dirname(ctx.config.databasePath), DATABASE_WRITE_HEADROOM_BYTES);
-    if (db.findUserByEmail(email)) {
-      res.status(409).json({ error: "An account already exists for that email" });
-      return;
-    }
-    const passwordHash = await hashPassword(password);
-    let user;
-    try {
-      user = db.createUser(email, passwordHash);
-    } catch (error) {
-      if (isUniqueEmailError(error)) {
+  api.post(
+    "/auth/signup",
+    asyncHandler(async (req, res) => {
+      const body = requestBody(req);
+      const email = validateEmail(body.email);
+      const password = validatePassword(body.password);
+      if (!email || !password) {
+        res.status(400).json({ error: "Valid email and password of at least 8 characters are required" });
+        return;
+      }
+      authRateLimiter.reserveSignup(req.ip || "unknown");
+      assertStorageHeadroom(ctx, path.dirname(ctx.config.databasePath), DATABASE_WRITE_HEADROOM_BYTES);
+      if (db.findUserByEmail(email)) {
         res.status(409).json({ error: "An account already exists for that email" });
         return;
       }
-      throw error;
-    }
-    setSessionCookie(res, ctx, user.id, user.session_version);
-    fulfillPendingShares(ctx, user);
-    res.status(201).json({ user: serializeUser({ id: user.id, email: user.email }) });
-  }));
+      const passwordHash = await hashPassword(password);
+      let user;
+      try {
+        user = db.createUser(email, passwordHash);
+      } catch (error) {
+        if (isUniqueEmailError(error)) {
+          res.status(409).json({ error: "An account already exists for that email" });
+          return;
+        }
+        throw error;
+      }
+      setSessionCookie(res, ctx, user.id, user.session_version);
+      fulfillPendingShares(ctx, user);
+      res.status(201).json({ user: serializeUser({ id: user.id, email: user.email }) });
+    })
+  );
 
-  api.post("/auth/login", asyncHandler(async (req, res) => {
-    const body = requestBody(req);
-    const email = validateEmail(body.email);
-    const password = validatePassword(body.password);
-    if (!email || !password) {
-      res.status(400).json({ error: "Valid email and password are required" });
-      return;
-    }
-    const ip = req.ip || "unknown";
-    authRateLimiter.reserveLogin(email, ip);
-    const user = db.findUserByEmail(email);
-    const passwordMatches = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
-    if (!user || !passwordMatches) {
-      res.status(401).json({ error: "Invalid email or password" });
-      return;
-    }
-    authRateLimiter.recordSuccessfulLogin(email, ip);
-    setSessionCookie(res, ctx, user.id, user.session_version);
-    res.json({ user: serializeUser({ id: user.id, email: user.email }) });
-  }));
+  api.post(
+    "/auth/login",
+    asyncHandler(async (req, res) => {
+      const body = requestBody(req);
+      const email = validateEmail(body.email);
+      const password = validatePassword(body.password);
+      if (!email || !password) {
+        res.status(400).json({ error: "Valid email and password are required" });
+        return;
+      }
+      const ip = req.ip || "unknown";
+      authRateLimiter.reserveLogin(email, ip);
+      const user = db.findUserByEmail(email);
+      const passwordMatches = await verifyPassword(password, user?.password_hash ?? DUMMY_PASSWORD_HASH);
+      if (!user || !passwordMatches) {
+        res.status(401).json({ error: "Invalid email or password" });
+        return;
+      }
+      authRateLimiter.recordSuccessfulLogin(email, ip);
+      setSessionCookie(res, ctx, user.id, user.session_version);
+      res.json({ user: serializeUser({ id: user.id, email: user.email }) });
+    })
+  );
 
   api.post("/auth/logout", (req, res) => {
     const user = authenticatedUser(req, ctx);
@@ -321,7 +356,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     const state = canonicalizeOwnedPresetMedia(
       ctx,
       req.user!.id,
-      ensurePresetState(type, name, Object.hasOwn(body, "state") ? body.state as PresetState : undefined)
+      ensurePresetState(type, name, Object.hasOwn(body, "state") ? (body.state as PresetState) : undefined)
     );
     const row = db.transaction(() => {
       const created = db.createPreset({ ownerUserId: req.user!.id, name, type, state });
@@ -418,9 +453,10 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     }
     const sourceState = readStoredPresetState(row).state;
     const recipient = db.findUserByEmail(recipientEmail);
-    const copied = recipient?.id === req.user!.id
-      ? { state: canonicalizeOwnedPresetMedia(ctx, recipient.id, cloneStateForShare(sourceState)), removed: false }
-      : cloneStateWithoutMediaReferences(sourceState);
+    const copied =
+      recipient?.id === req.user!.id
+        ? { state: canonicalizeOwnedPresetMedia(ctx, recipient.id, cloneStateForShare(sourceState)), removed: false }
+        : cloneStateWithoutMediaReferences(sourceState);
     reserveDurableShare(ctx, req.user!.id);
     const snapshot = { name: row.name, type: row.type, state: copied.state };
     let receipt: PendingShareRow;
@@ -456,7 +492,16 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     }
     reserveDurableShare(ctx, req.user!.id);
     const source = serializeTeam(row);
-    const { id: _id, revision: _revision, createdAt: _createdAt, updatedAt: _updatedAt, dataRecovered: _dataRecovered, logoMediaId: _logoMediaId, logoUrl: _logoUrl, ...snapshot } = source;
+    const {
+      id: _id,
+      revision: _revision,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      dataRecovered: _dataRecovered,
+      logoMediaId: _logoMediaId,
+      logoUrl: _logoUrl,
+      ...snapshot
+    } = source;
     const mediaReferencesRemoved = Boolean(source.logoMediaId || source.logoUrl);
     const recipient = db.findUserByEmail(recipientEmail);
     let receipt: PendingShareRow;
@@ -598,33 +643,36 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ preset: serializePreset(updated, ctx) });
   });
 
-  api.post("/presets/:id/actions/:action", asyncHandler(async (req, res) => {
-    const row = authorizePresetAction(req, ctx, routeParam(req, "id"));
-    if (!row) {
-      if (authenticatedUser(req, ctx)) res.status(404).json({ error: "Preset not found" });
-      else res.status(401).json({ error: "Authentication or valid action key required" });
-      return;
-    }
-    authRateLimiter.reserveAction(row.id, req.ip || "unknown");
-    const action = routeParam(req, "action");
-    if (!isPresetAction(action)) throw new PresetActionValidationError("Unknown preset action");
-    const body = requestBody(req);
-    const storedState = readStoredPresetState(row).state;
-    const actionPayload = validatePresetActionPayload(storedState, action, actionPayloadFields(body));
-    const state = applyAction(storedState, action, actionPayload);
-    const expectedRevision = expectedRevisionFromRequest(req, body) ?? row.revision;
-    const updated = db.transaction(() => {
-      const changed = db.updatePreset({ id: row.id, ownerUserId: row.owner_user_id, state, expectedRevision });
-      if (changed) db.logEvent({ presetId: row.id, ownerUserId: row.owner_user_id, type: `action.${action}`, payload: actionPayload });
-      return changed;
-    });
-    if (!updated) {
-      res.status(404).json({ error: "Preset not found" });
-      return;
-    }
-    ctx.realtime?.broadcastPreset(updated);
-    res.json({ preset: serializePreset(updated, ctx) });
-  }));
+  api.post(
+    "/presets/:id/actions/:action",
+    asyncHandler(async (req, res) => {
+      const row = authorizePresetAction(req, ctx, routeParam(req, "id"));
+      if (!row) {
+        if (authenticatedUser(req, ctx)) res.status(404).json({ error: "Preset not found" });
+        else res.status(401).json({ error: "Authentication or valid action key required" });
+        return;
+      }
+      authRateLimiter.reserveAction(row.id, req.ip || "unknown");
+      const action = routeParam(req, "action");
+      if (!isPresetAction(action)) throw new PresetActionValidationError("Unknown preset action");
+      const body = requestBody(req);
+      const storedState = readStoredPresetState(row).state;
+      const actionPayload = validatePresetActionPayload(storedState, action, actionPayloadFields(body));
+      const state = applyAction(storedState, action, actionPayload);
+      const expectedRevision = expectedRevisionFromRequest(req, body) ?? row.revision;
+      const updated = db.transaction(() => {
+        const changed = db.updatePreset({ id: row.id, ownerUserId: row.owner_user_id, state, expectedRevision });
+        if (changed) db.logEvent({ presetId: row.id, ownerUserId: row.owner_user_id, type: `action.${action}`, payload: actionPayload });
+        return changed;
+      });
+      if (!updated) {
+        res.status(404).json({ error: "Preset not found" });
+        return;
+      }
+      ctx.realtime?.broadcastPreset(updated);
+      res.json({ preset: serializePreset(updated, ctx) });
+    })
+  );
 
   api.get("/overlay/:publicId", (req, res) => {
     const row = db.getPresetByPublicId(routeParam(req, "publicId"));
@@ -658,43 +706,54 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     res.json({ media: page.map((row) => serializeMedia(row)), nextCursor: last ? encodeMediaCursor(last) : null });
   });
 
-  api.post("/media", requireAuth, (req, _res, next) => {
-    authRateLimiter.reserveUpload(req.user!.id, req.ip || "unknown");
-    assertMediaQuota(ctx, req.user!.id);
-    assertGlobalMediaCapacity(ctx, 0, MAX_MEDIA_UPLOAD_BYTES * MAX_CONCURRENT_MEDIA_UPLOADS * MAX_PARALLEL_BACKEND_SLOTS);
-    next();
-  }, (_req, res, next) => {
-    if (activeMediaUploads >= MAX_CONCURRENT_MEDIA_UPLOADS) {
-      throw new RateLimitError("Too many uploads are already in progress", 1);
-    }
-    activeMediaUploads += 1;
-    let released = false;
-    const release = () => {
-      if (released) return;
-      released = true;
-      activeMediaUploads = Math.max(0, activeMediaUploads - 1);
-    };
-    res.once("finish", release);
-    res.once("close", release);
-    next();
-  }, upload.single("file"), asyncHandler(async (req, res) => {
-    if (!req.file) {
-      res.status(400).json({ error: "File is required" });
-      return;
-    }
-    const media = await saveMediaUpload(ctx, req.user!.id, req.file);
-    res.status(201).json({ media: serializeMedia(media) });
-  }));
+  api.post(
+    "/media",
+    requireAuth,
+    (req, _res, next) => {
+      authRateLimiter.reserveUpload(req.user!.id, req.ip || "unknown");
+      assertMediaQuota(ctx, req.user!.id);
+      assertGlobalMediaCapacity(ctx, 0, MAX_MEDIA_UPLOAD_BYTES * MAX_CONCURRENT_MEDIA_UPLOADS * MAX_PARALLEL_BACKEND_SLOTS);
+      next();
+    },
+    (_req, res, next) => {
+      if (activeMediaUploads >= MAX_CONCURRENT_MEDIA_UPLOADS) {
+        throw new RateLimitError("Too many uploads are already in progress", 1);
+      }
+      activeMediaUploads += 1;
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        activeMediaUploads = Math.max(0, activeMediaUploads - 1);
+      };
+      res.once("finish", release);
+      res.once("close", release);
+      next();
+    },
+    upload.single("file"),
+    asyncHandler(async (req, res) => {
+      if (!req.file) {
+        res.status(400).json({ error: "File is required" });
+        return;
+      }
+      const media = await saveMediaUpload(ctx, req.user!.id, req.file);
+      res.status(201).json({ media: serializeMedia(media) });
+    })
+  );
 
-  api.delete("/media/:id", requireAuth, asyncHandler(async (req, res) => {
-    const row = db.getMediaForUser(routeParam(req, "id"), req.user!.id);
-    if (!row) {
-      res.status(404).json({ error: "Media not found" });
-      return;
-    }
-    await deleteMediaSafely(ctx, row);
-    res.json({ ok: true });
-  }));
+  api.delete(
+    "/media/:id",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const row = db.getMediaForUser(routeParam(req, "id"), req.user!.id);
+      if (!row) {
+        res.status(404).json({ error: "Media not found" });
+        return;
+      }
+      await deleteMediaSafely(ctx, row);
+      res.json({ ok: true });
+    })
+  );
 
   api.get("/media/file/:publicId", (req, res) => {
     const row = db.getMediaByPublicId(routeParam(req, "publicId"));
@@ -735,7 +794,12 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
       res.status(error.code === "LIMIT_FILE_SIZE" ? 413 : 400).json({ error: error.message });
       return;
     }
-    if (error instanceof UploadValidationError || error instanceof RequestValidationError || error instanceof PresetStateValidationError || error instanceof PresetActionValidationError) {
+    if (
+      error instanceof UploadValidationError ||
+      error instanceof RequestValidationError ||
+      error instanceof PresetStateValidationError ||
+      error instanceof PresetActionValidationError
+    ) {
       res.status(400).json({ error: error.message });
       return;
     }
@@ -773,7 +837,9 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
       return;
     }
     if (isBodyParserError(error)) {
-      res.status(error.type === "entity.too.large" ? 413 : 400).json({ error: error.type === "entity.too.large" ? "Request body is too large" : "Malformed JSON body" });
+      res
+        .status(error.type === "entity.too.large" ? 413 : 400)
+        .json({ error: error.type === "entity.too.large" ? "Request body is too large" : "Malformed JSON body" });
       return;
     }
     if (isSqliteBusyError(error)) {
@@ -860,7 +926,8 @@ function parseMediaLimit(value: unknown): number {
   if (value === undefined) return MEDIA_PAGE_SIZE;
   if (typeof value !== "string" || !/^\d+$/.test(value)) throw new RequestValidationError("Media limit must be an integer");
   const limit = Number(value);
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_MEDIA_PAGE_SIZE) throw new RequestValidationError(`Media limit must be from 1 to ${MAX_MEDIA_PAGE_SIZE}`);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_MEDIA_PAGE_SIZE)
+    throw new RequestValidationError(`Media limit must be from 1 to ${MAX_MEDIA_PAGE_SIZE}`);
   return limit;
 }
 
@@ -869,7 +936,12 @@ function parseMediaCursor(value: unknown): { createdAt: string; id: string } | u
   if (typeof value !== "string" || value.length > 512) throw new RequestValidationError("Invalid media cursor");
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { createdAt?: unknown; id?: unknown };
-    if (typeof parsed.createdAt !== "string" || !Number.isFinite(Date.parse(parsed.createdAt)) || typeof parsed.id !== "string" || !/^[0-9a-f-]{36}$/i.test(parsed.id)) {
+    if (
+      typeof parsed.createdAt !== "string" ||
+      !Number.isFinite(Date.parse(parsed.createdAt)) ||
+      typeof parsed.id !== "string" ||
+      !/^[0-9a-f-]{36}$/i.test(parsed.id)
+    ) {
       throw new Error("invalid cursor payload");
     }
     return { createdAt: parsed.createdAt, id: parsed.id };
@@ -897,14 +969,19 @@ function serializeTeam(row: TeamRow): TeamLibraryEntry {
   return { ...normalized, id: row.id, revision: row.revision, createdAt: row.created_at, updatedAt: row.updated_at, dataRecovered: dataRecovered || undefined };
 }
 
-function sanitizeTeamInput(body: Record<string, unknown>, fallback = defaultTeam("home")): Omit<TeamLibraryEntry, "id" | "revision" | "createdAt" | "updatedAt"> {
+function sanitizeTeamInput(
+  body: Record<string, unknown>,
+  fallback = defaultTeam("home")
+): Omit<TeamLibraryEntry, "id" | "revision" | "createdAt" | "updatedAt"> {
   const fullName = requiredStringField(body.fullName ?? body.name, fallback.fullName || "New Team").slice(0, 120);
   const shortName = stringField(body.shortName, fallback.shortName || fullName).slice(0, 48);
   const rosterText = capRosterText(rawStringField(body.rosterText, fallback.rosterText).slice(0, 10_000));
   return {
     fullName,
     shortName,
-    abbreviation: stringField(body.abbreviation, fallback.abbreviation || shortName.slice(0, 3)).toUpperCase().slice(0, 5),
+    abbreviation: stringField(body.abbreviation, fallback.abbreviation || shortName.slice(0, 3))
+      .toUpperCase()
+      .slice(0, 5),
     logoMediaId: Object.hasOwn(body, "logoMediaId") ? optionalStringField(body.logoMediaId) : fallback.logoMediaId,
     logoUrl: Object.hasOwn(body, "logoUrl") ? optionalStringField(body.logoUrl) : fallback.logoUrl,
     imageCrop: normalizeImageCrop(isRecord(body.imageCrop) ? body.imageCrop : fallback.imageCrop),
@@ -930,19 +1007,21 @@ interface MutableMediaReference {
 
 function canonicalizeOwnedTeamMedia(ctx: AppContext, ownerUserId: string, team: PersistableTeam): PersistableTeam {
   const next = structuredClone(team);
-  canonicalizeOwnedMediaReferences(ctx, ownerUserId, [{
-    id: next.logoMediaId,
-    url: next.logoUrl,
-    path: "team.logo",
-    clear() {
-      delete next.logoMediaId;
-      delete next.logoUrl;
-    },
-    setCanonical(id, url) {
-      next.logoMediaId = id;
-      next.logoUrl = url;
+  canonicalizeOwnedMediaReferences(ctx, ownerUserId, [
+    {
+      id: next.logoMediaId,
+      url: next.logoUrl,
+      path: "team.logo",
+      clear() {
+        delete next.logoMediaId;
+        delete next.logoUrl;
+      },
+      setCanonical(id, url) {
+        next.logoMediaId = id;
+        next.logoUrl = url;
+      }
     }
-  }]);
+  ]);
   return next;
 }
 
@@ -950,7 +1029,10 @@ function canonicalizeOwnedPresetMedia(ctx: AppContext, ownerUserId: string, stat
   const next = cloneStateForShare(state);
   const references: MutableMediaReference[] = [];
   if (isSoccerState(next)) {
-    for (const [side, team] of [["home", next.home], ["away", next.away]] as const) {
+    for (const [side, team] of [
+      ["home", next.home],
+      ["away", next.away]
+    ] as const) {
       references.push({
         id: team.logoMediaId,
         url: team.logoUrl,
@@ -1006,7 +1088,7 @@ function canonicalizeOwnedMediaReferences(ctx: AppContext, ownerUserId: string, 
   }
 
   const rows = ctx.db.getMediaForUserByIds(
-    references.flatMap((reference) => reference.id === undefined ? [] : [reference.id]),
+    references.flatMap((reference) => (reference.id === undefined ? [] : [reference.id])),
     ownerUserId
   );
   const mediaById = new Map(rows.map((row) => [row.id, row]));
@@ -1216,11 +1298,16 @@ async function saveMediaUpload(ctx: AppContext, ownerUserId: string, file: Expre
     });
   } catch (error) {
     const cleanupPaths = [stagingPath, thumbnailStagingPath, ...(published ? [filePath] : []), ...(thumbnailPublished ? [thumbnailPath] : [])];
-    await Promise.all(cleanupPaths.map(async (cleanupPath) => {
-      await fs.promises.rm(cleanupPath, { force: true }).catch((cleanupError: unknown) => {
-        ctx.logger.error("upload_cleanup_failed", { filePath: cleanupPath, error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError) });
-      });
-    }));
+    await Promise.all(
+      cleanupPaths.map(async (cleanupPath) => {
+        await fs.promises.rm(cleanupPath, { force: true }).catch((cleanupError: unknown) => {
+          ctx.logger.error("upload_cleanup_failed", {
+            filePath: cleanupPath,
+            error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+          });
+        });
+      })
+    );
     if (error instanceof StorageCapacityError) throw error;
     if (isStorageExhaustionError(error)) throw new StorageCapacityError("Media storage does not have enough capacity for this upload");
     throw error;
@@ -1317,7 +1404,11 @@ function validateSvg(buffer: Buffer): void {
   if (!/^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[^]*?-->\s*)*<svg(?:\s|>)/i.test(svg)) {
     throw new UploadValidationError("Invalid SVG");
   }
-  if (/(<!doctype|<!entity|<script|javascript:|on\w+\s*=|<foreignObject|<(?:iframe|object|embed|audio|video)\b|(?:href|src)\s*=\s*["']\s*(?:https?:|\/\/))/i.test(svg)) {
+  if (
+    /(<!doctype|<!entity|<script|javascript:|on\w+\s*=|<foreignObject|<(?:iframe|object|embed|audio|video)\b|(?:href|src)\s*=\s*["']\s*(?:https?:|\/\/))/i.test(
+      svg
+    )
+  ) {
     throw new UploadValidationError("SVG contains unsafe content");
   }
 }

@@ -30,9 +30,9 @@ describe("deployment sync check", () => {
 
   it("fails closed when the gateway identity endpoint is absent", async () => {
     const frontendUrl = await jsonServer(() => ({ build: frontendBuild("release-sha") }));
-    const backendUrl = await jsonServer((url) => url.pathname === "/health"
-      ? { ok: true, build: build("release-sha"), compatibility: compatibility() }
-      : undefined);
+    const backendUrl = await jsonServer((url) =>
+      url.pathname === "/health" ? { ok: true, build: build("release-sha"), compatibility: compatibility() } : undefined
+    );
 
     const result = await runSync(frontendUrl, backendUrl);
 
@@ -79,18 +79,23 @@ async function jsonServer(payload: (url: URL) => unknown | undefined): Promise<s
 
 function runSync(frontendUrl: string, backendUrl: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(process.execPath, [syncScript], {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        FRONTEND_URL: frontendUrl,
-        BACKEND_URL: backendUrl,
-        DEPLOYMENT_CHECK_TIMEOUT_MS: "1000"
+    execFile(
+      process.execPath,
+      [syncScript],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          FRONTEND_URL: frontendUrl,
+          BACKEND_URL: backendUrl,
+          DEPLOYMENT_CHECK_TIMEOUT_MS: "1000"
+        }
+      },
+      (error, stdout, stderr) => {
+        const code = error && "code" in error && typeof error.code === "number" ? error.code : error ? 1 : 0;
+        resolve({ code, stdout, stderr });
       }
-    }, (error, stdout, stderr) => {
-      const code = error && "code" in error && typeof error.code === "number" ? error.code : error ? 1 : 0;
-      resolve({ code, stdout, stderr });
-    });
+    );
   });
 }
 

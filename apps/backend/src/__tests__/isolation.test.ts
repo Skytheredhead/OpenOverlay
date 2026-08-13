@@ -66,7 +66,9 @@ describe("user isolation", () => {
     expect(missingResponse.body).toMatchObject({ ok: true, mediaReferencesRemoved: false, receiptId: expect.any(String) });
     expect(missingResponse.body.receiptId).not.toBe(existingResponse.body.receiptId);
 
-    const pendingRows = server.backend.ctx.db.all<{ recipient_lookup_hash: string; snapshot_json: string }>("SELECT recipient_lookup_hash, snapshot_json FROM pending_shares");
+    const pendingRows = server.backend.ctx.db.all<{ recipient_lookup_hash: string; snapshot_json: string }>(
+      "SELECT recipient_lookup_hash, snapshot_json FROM pending_shares"
+    );
     expect(pendingRows).toHaveLength(2);
     expect(JSON.stringify(pendingRows)).not.toContain("future@example.com");
     expect(JSON.stringify(pendingRows)).not.toContain("existing@example.com");

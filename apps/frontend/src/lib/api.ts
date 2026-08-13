@@ -1,8 +1,16 @@
-import { OPENOVERLAY_API_VERSION, OPENOVERLAY_REALTIME_VERSION, openOverlayCompatibility, type PresetListItem, type PresetState, type PresetSummary, type PresetType, type TeamLibraryEntry } from "@openoverlay/shared";
+import {
+  OPENOVERLAY_API_VERSION,
+  OPENOVERLAY_REALTIME_VERSION,
+  openOverlayCompatibility,
+  type PresetListItem,
+  type PresetState,
+  type PresetSummary,
+  type PresetType,
+  type TeamLibraryEntry
+} from "@openoverlay/shared";
 
-const DEFAULT_API_HOST = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"
-  ? "http://127.0.0.1:8734"
-  : window.location.origin;
+const DEFAULT_API_HOST =
+  window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost" ? "http://127.0.0.1:8734" : window.location.origin;
 const VERSIONED_API_PREFIX = `/api/${OPENOVERLAY_API_VERSION}`;
 const API_REQUEST_TIMEOUT_MS = 20_000;
 const UPLOAD_REQUEST_TIMEOUT_MS = 60_000;
@@ -87,7 +95,7 @@ const REALTIME_ERROR_MESSAGES = [
 ] as const;
 
 export interface RealtimeErrorMessage {
-  error: typeof REALTIME_ERROR_MESSAGES[number];
+  error: (typeof REALTIME_ERROR_MESSAGES)[number];
 }
 
 export class ApiError extends Error {
@@ -138,9 +146,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
       body = undefined;
     }
     if (!response.ok) {
-      const message = typeof body === "object" && body && "error" in body && typeof body.error === "string"
-        ? body.error
-        : `Request failed: ${response.status}`;
+      const message = typeof body === "object" && body && "error" in body && typeof body.error === "string" ? body.error : `Request failed: ${response.status}`;
       const error = new ApiError(message, response.status, body);
       if (response.status === 401 && shouldBroadcastAuthExpiration(path) && typeof window !== "undefined") {
         window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
@@ -186,10 +192,12 @@ export const presetApi = {
     return { preset: expectEnvelope(await api<unknown>(`/api/presets/${id}`, { method: "PATCH", body: JSON.stringify(input) }), "preset", isPreset) };
   },
   async remove(id: string, expectedRevision: number) {
-    return expectOk(await api<unknown>(`/api/presets/${id}`, {
-      method: "DELETE",
-      headers: { "If-Match": `"${expectedRevision}"` }
-    }));
+    return expectOk(
+      await api<unknown>(`/api/presets/${id}`, {
+        method: "DELETE",
+        headers: { "If-Match": `"${expectedRevision}"` }
+      })
+    );
   },
   async duplicate(id: string) {
     return { preset: expectEnvelope(await api<unknown>(`/api/presets/${id}/duplicate`, { method: "POST", body: JSON.stringify({}) }), "preset", isPreset) };
@@ -232,12 +240,13 @@ export const statusApi = {
       const responseText = await response.text();
       let body: unknown;
       try {
-        body = responseText ? JSON.parse(responseText) as unknown : undefined;
+        body = responseText ? (JSON.parse(responseText) as unknown) : undefined;
       } catch {
         throw new ApiError(`Health check returned malformed JSON (${response.status})`, response.status, responseText);
       }
       if (!response.ok) {
-        const message = typeof body === "object" && body && "error" in body && typeof body.error === "string" ? body.error : `Health check failed: ${response.status}`;
+        const message =
+          typeof body === "object" && body && "error" in body && typeof body.error === "string" ? body.error : `Health check failed: ${response.status}`;
         throw new ApiError(message, response.status, body);
       }
       if (!body || typeof body !== "object") throw new ApiError("Health check returned an empty response", response.status, body);
@@ -262,10 +271,12 @@ export const teamApi = {
     return { team: expectEnvelope(body, "team", isTeam) };
   },
   async remove(id: string, expectedRevision: number) {
-    return expectOk(await api<unknown>(`/api/teams/${id}`, {
-      method: "DELETE",
-      headers: { "If-Match": `"${expectedRevision}"` }
-    }));
+    return expectOk(
+      await api<unknown>(`/api/teams/${id}`, {
+        method: "DELETE",
+        headers: { "If-Match": `"${expectedRevision}"` }
+      })
+    );
   },
   async share(id: string, email: string) {
     return expectShareReceipt(await api<unknown>(`/api/teams/${id}/share`, { method: "POST", body: JSON.stringify({ email }) }));
@@ -298,7 +309,7 @@ export const mediaApi = {
       const responseText = await response.text();
       let body: unknown;
       try {
-        body = responseText ? JSON.parse(responseText) as unknown : undefined;
+        body = responseText ? (JSON.parse(responseText) as unknown) : undefined;
       } catch {
         throw new ApiError(`Upload returned malformed JSON (${response.status})`, response.status, responseText);
       }
@@ -342,11 +353,13 @@ function expectOk(body: unknown): { ok: true } {
 }
 
 function expectShareReceipt(body: unknown): ShareReceipt {
-  if (!isRecord(body) ||
-      Object.keys(body).length !== 3 ||
-      body.ok !== true ||
-      typeof body.mediaReferencesRemoved !== "boolean" ||
-      !isNonEmptyString(body.receiptId)) {
+  if (
+    !isRecord(body) ||
+    Object.keys(body).length !== 3 ||
+    body.ok !== true ||
+    typeof body.mediaReferencesRemoved !== "boolean" ||
+    !isNonEmptyString(body.receiptId)
+  ) {
     throw invalidResponse("Server response did not confirm the share operation", body);
   }
   return { ok: true, mediaReferencesRemoved: body.mediaReferencesRemoved, receiptId: body.receiptId };
@@ -369,105 +382,190 @@ function isUser(value: unknown): value is User {
 }
 
 export function isPreset(value: unknown): value is PresetSummary {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.publicId) &&
     typeof value.name === "string" &&
     (value.type === "soccer" || value.type === "church" || value.type === "custom") &&
-    Number.isSafeInteger(value.revision) && Number(value.revision) >= 1 &&
+    Number.isSafeInteger(value.revision) &&
+    Number(value.revision) >= 1 &&
     typeof value.updatedAt === "string" &&
     (value.overlayClientCount === undefined || isNonNegativeInteger(value.overlayClientCount)) &&
     (value.stateRecovered === undefined || typeof value.stateRecovered === "boolean") &&
-    isPresetState(value.state, value.type);
+    isPresetState(value.state, value.type)
+  );
 }
 
 export function isPresetDeletedEvent(value: unknown): value is PresetDeletedEvent {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     Object.keys(value).length === 3 &&
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.publicId) &&
-    Number.isSafeInteger(value.revision) && Number(value.revision) >= 1;
+    Number.isSafeInteger(value.revision) &&
+    Number(value.revision) >= 1
+  );
 }
 
 export function isRealtimeErrorMessage(value: unknown): value is RealtimeErrorMessage {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     Object.keys(value).length === 1 &&
     typeof value.error === "string" &&
-    REALTIME_ERROR_MESSAGES.includes(value.error as RealtimeErrorMessage["error"]);
+    REALTIME_ERROR_MESSAGES.includes(value.error as RealtimeErrorMessage["error"])
+  );
 }
 
 function isPresetListItem(value: unknown): value is PresetListItem {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.publicId) &&
     typeof value.name === "string" &&
     (value.type === "soccer" || value.type === "church" || value.type === "custom") &&
-    Number.isSafeInteger(value.revision) && Number(value.revision) >= 1 &&
+    Number.isSafeInteger(value.revision) &&
+    Number(value.revision) >= 1 &&
     typeof value.updatedAt === "string" &&
     (value.overlayClientCount === undefined || isNonNegativeInteger(value.overlayClientCount)) &&
-    value.state === undefined;
+    value.state === undefined
+  );
 }
 
 function isPresetState(value: unknown, type: PresetType): value is PresetState {
   if (!isRecord(value) || !Array.isArray(value.activeGraphics) || !value.activeGraphics.every(isActiveGraphic)) return false;
   if (type === "soccer") {
     const elements = value.elements;
-    if (!isTeamState(value.home) || !isTeamState(value.away) || !isPair(value.score) || !isRecord(value.stats) ||
-        !isPair(value.stats.shots) || !isPair(value.stats.fouls) || !isPair(value.stats.cards) || !isSoccerClock(value.clock) ||
-        !isGlobalStyle(value.style) || !isRecord(elements) ||
-        !isOverlayElement(elements.scorebug) || !isOverlayElement(elements.statBug) || !isOverlayElement(elements.sponsorBug) ||
-        !isOverlayElement(elements.lowerThird) || !isOverlayElement(elements.countdown) || !isOverlayElement(elements.fullscreen) ||
-        !isSoccerPackage(value.soccerPackage)) return false;
+    if (
+      !isTeamState(value.home) ||
+      !isTeamState(value.away) ||
+      !isPair(value.score) ||
+      !isRecord(value.stats) ||
+      !isPair(value.stats.shots) ||
+      !isPair(value.stats.fouls) ||
+      !isPair(value.stats.cards) ||
+      !isSoccerClock(value.clock) ||
+      !isGlobalStyle(value.style) ||
+      !isRecord(elements) ||
+      !isOverlayElement(elements.scorebug) ||
+      !isOverlayElement(elements.statBug) ||
+      !isOverlayElement(elements.sponsorBug) ||
+      !isOverlayElement(elements.lowerThird) ||
+      !isOverlayElement(elements.countdown) ||
+      !isOverlayElement(elements.fullscreen) ||
+      !isSoccerPackage(value.soccerPackage)
+    )
+      return false;
     return typeof value.gameTitle === "string" && typeof value.productionName === "string" && typeof value.scheduledAt === "string";
   }
   if (type === "church") {
-    return typeof value.serviceTitle === "string" && Array.isArray(value.sections) && value.sections.every((item) => typeof item === "string") &&
-      Array.isArray(value.slides) && value.slides.every(isChurchSlide) && isGlobalStyle(value.style) && isRecord(value.elements) &&
-      isOverlayElement(value.elements.lowerThird) && isOverlayElement(value.elements.countdown) && isOverlayElement(value.elements.fullscreenSlide) &&
-      (value.selectedSlideId === undefined || typeof value.selectedSlideId === "string");
+    return (
+      typeof value.serviceTitle === "string" &&
+      Array.isArray(value.sections) &&
+      value.sections.every((item) => typeof item === "string") &&
+      Array.isArray(value.slides) &&
+      value.slides.every(isChurchSlide) &&
+      isGlobalStyle(value.style) &&
+      isRecord(value.elements) &&
+      isOverlayElement(value.elements.lowerThird) &&
+      isOverlayElement(value.elements.countdown) &&
+      isOverlayElement(value.elements.fullscreenSlide) &&
+      (value.selectedSlideId === undefined || typeof value.selectedSlideId === "string")
+    );
   }
   return typeof value.title === "string" && isGlobalStyle(value.style) && Array.isArray(value.elements) && value.elements.every(isOverlayElement);
 }
 
 function isTeamState(value: unknown): boolean {
-  return isRecord(value) && typeof value.fullName === "string" && typeof value.shortName === "string" &&
-    typeof value.abbreviation === "string" && typeof value.primaryColor === "string" && typeof value.secondaryColor === "string" &&
+  return (
+    isRecord(value) &&
+    typeof value.fullName === "string" &&
+    typeof value.shortName === "string" &&
+    typeof value.abbreviation === "string" &&
+    typeof value.primaryColor === "string" &&
+    typeof value.secondaryColor === "string" &&
     (value.logoMediaId === undefined || typeof value.logoMediaId === "string") &&
     (value.logoUrl === undefined || typeof value.logoUrl === "string") &&
-    typeof value.rosterText === "string" && Array.isArray(value.roster) && value.roster.every(isRosterEntry) &&
-    typeof value.coach === "string" && typeof value.schoolName === "string" &&
-    isRecord(value.record) && isFiniteNumber(value.record.wins) && isFiniteNumber(value.record.losses) && isFiniteNumber(value.record.draws) &&
-    isRecord(value.imageCrop) && isFiniteNumber(value.imageCrop.x) && isFiniteNumber(value.imageCrop.y) && isFiniteNumber(value.imageCrop.zoom);
+    typeof value.rosterText === "string" &&
+    Array.isArray(value.roster) &&
+    value.roster.every(isRosterEntry) &&
+    typeof value.coach === "string" &&
+    typeof value.schoolName === "string" &&
+    isRecord(value.record) &&
+    isFiniteNumber(value.record.wins) &&
+    isFiniteNumber(value.record.losses) &&
+    isFiniteNumber(value.record.draws) &&
+    isRecord(value.imageCrop) &&
+    isFiniteNumber(value.imageCrop.x) &&
+    isFiniteNumber(value.imageCrop.y) &&
+    isFiniteNumber(value.imageCrop.zoom)
+  );
 }
 
 function isRosterEntry(value: unknown): boolean {
-  return isRecord(value) && isNonEmptyString(value.id) && typeof value.line === "string" && typeof value.name === "string" &&
-    typeof value.starter === "boolean" && (value.number === undefined || typeof value.number === "string") &&
-    (value.position === undefined || typeof value.position === "string");
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.id) &&
+    typeof value.line === "string" &&
+    typeof value.name === "string" &&
+    typeof value.starter === "boolean" &&
+    (value.number === undefined || typeof value.number === "string") &&
+    (value.position === undefined || typeof value.position === "string")
+  );
 }
 
 function isSoccerClock(value: unknown): boolean {
-  return isRecord(value) && (value.mode === "up" || value.mode === "down") && typeof value.running === "boolean" &&
-    isFiniteNumber(value.baseSeconds) && (value.startedAtMs === null || isFiniteNumber(value.startedAtMs)) &&
-    isFiniteNumber(value.resetSeconds) && typeof value.stopAtEnabled === "boolean" && isFiniteNumber(value.stopAtSeconds) &&
-    typeof value.showStoppage === "boolean" && isFiniteNumber(value.stoppageMinutes) && typeof value.periodLabel === "string";
+  return (
+    isRecord(value) &&
+    (value.mode === "up" || value.mode === "down") &&
+    typeof value.running === "boolean" &&
+    isFiniteNumber(value.baseSeconds) &&
+    (value.startedAtMs === null || isFiniteNumber(value.startedAtMs)) &&
+    isFiniteNumber(value.resetSeconds) &&
+    typeof value.stopAtEnabled === "boolean" &&
+    isFiniteNumber(value.stopAtSeconds) &&
+    typeof value.showStoppage === "boolean" &&
+    isFiniteNumber(value.stoppageMinutes) &&
+    typeof value.periodLabel === "string"
+  );
 }
 
 function isSoccerPackage(value: unknown): boolean {
-  if (!isRecord(value) || !isSoccerOverlayPackage(value.overlayPackage) || !isRecord(value.colorBanks) ||
-      !isColorBank(value.colorBanks.rounded, ["ink", "muted", "line", "gold", "maroon", "wine", "ivory", "sky", "blue", "red"]) ||
-      !isColorBank(value.colorBanks.classic, ["bg", "soft", "ink", "muted", "faint", "red", "rule", "panelGray"]) ||
-      (value.textAnimation !== undefined && !isSoccerTextAnimation(value.textAnimation)) ||
-      (value.activeOverlay !== null && !isSoccerLabOverlay(value.activeOverlay)) || !isSoccerLabOverlay(value.selectedOverlay) ||
-      !isOneOf(value.surface, ["pitch", "checker", "studio"]) || typeof value.packageBackground !== "boolean" ||
-      !isFiniteNumber(value.packageBackgroundOpacity) || !isOneOf(value.scorebugLayout, ["horizontal", "vertical"]) || !isFiniteNumber(value.scorebugWidth) ||
-      !isOneOf(value.lowerResultState, ["HALF", "FINAL"]) || typeof value.oneLineText !== "string" || !isPositionPreset(value.oneLinePosition) ||
-      typeof value.twoLineTextA !== "string" || typeof value.twoLineTextB !== "string" || !isPositionPreset(value.twoLinePosition) ||
-      (value.lineupTeam !== "home" && value.lineupTeam !== "away") || !isNonNegativeInteger(value.lineupPage) || !isRecord(value.countdown)) return false;
+  if (
+    !isRecord(value) ||
+    !isSoccerOverlayPackage(value.overlayPackage) ||
+    !isRecord(value.colorBanks) ||
+    !isColorBank(value.colorBanks.rounded, ["ink", "muted", "line", "gold", "maroon", "wine", "ivory", "sky", "blue", "red"]) ||
+    !isColorBank(value.colorBanks.classic, ["bg", "soft", "ink", "muted", "faint", "red", "rule", "panelGray"]) ||
+    (value.textAnimation !== undefined && !isSoccerTextAnimation(value.textAnimation)) ||
+    (value.activeOverlay !== null && !isSoccerLabOverlay(value.activeOverlay)) ||
+    !isSoccerLabOverlay(value.selectedOverlay) ||
+    !isOneOf(value.surface, ["pitch", "checker", "studio"]) ||
+    typeof value.packageBackground !== "boolean" ||
+    !isFiniteNumber(value.packageBackgroundOpacity) ||
+    !isOneOf(value.scorebugLayout, ["horizontal", "vertical"]) ||
+    !isFiniteNumber(value.scorebugWidth) ||
+    !isOneOf(value.lowerResultState, ["HALF", "FINAL"]) ||
+    typeof value.oneLineText !== "string" ||
+    !isPositionPreset(value.oneLinePosition) ||
+    typeof value.twoLineTextA !== "string" ||
+    typeof value.twoLineTextB !== "string" ||
+    !isPositionPreset(value.twoLinePosition) ||
+    (value.lineupTeam !== "home" && value.lineupTeam !== "away") ||
+    !isNonNegativeInteger(value.lineupPage) ||
+    !isRecord(value.countdown)
+  )
+    return false;
   const countdown = value.countdown;
-  return isFiniteNumber(countdown.seconds) && isFiniteNumber(countdown.resetSeconds) && typeof countdown.running === "boolean" &&
-    (countdown.startedAtMs === null || isFiniteNumber(countdown.startedAtMs)) && isOneOf(countdown.mode, ["full", "small"]) &&
-    isPositionPreset(countdown.position) && typeof countdown.label === "string";
+  return (
+    isFiniteNumber(countdown.seconds) &&
+    isFiniteNumber(countdown.resetSeconds) &&
+    typeof countdown.running === "boolean" &&
+    (countdown.startedAtMs === null || isFiniteNumber(countdown.startedAtMs)) &&
+    isOneOf(countdown.mode, ["full", "small"]) &&
+    isPositionPreset(countdown.position) &&
+    typeof countdown.label === "string"
+  );
 }
 
 function isSoccerOverlayPackage(value: unknown): boolean {
@@ -479,48 +577,126 @@ function isSoccerLabOverlay(value: unknown): boolean {
 }
 
 function isSoccerTextAnimation(value: unknown): boolean {
-  return isRecord(value) && isFiniteNumber(value.id) && Array.isArray(value.fields) && value.fields.every((field) =>
-    isOneOf(field, ["event-title", "production-name", "home-name", "away-name", "home-abbrev", "away-abbrev", "home-record", "away-record", "home-logo", "away-logo", "home-score", "away-score", "lineup-title", "lineup-logo", "lineup-rows", "one-line", "two-line-a", "two-line-b"])
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.id) &&
+    Array.isArray(value.fields) &&
+    value.fields.every((field) =>
+      isOneOf(field, [
+        "event-title",
+        "production-name",
+        "home-name",
+        "away-name",
+        "home-abbrev",
+        "away-abbrev",
+        "home-record",
+        "away-record",
+        "home-logo",
+        "away-logo",
+        "home-score",
+        "away-score",
+        "lineup-title",
+        "lineup-logo",
+        "lineup-rows",
+        "one-line",
+        "two-line-a",
+        "two-line-b"
+      ])
+    )
   );
 }
 
 function isColorBank(value: unknown, requiredKeys: readonly string[]): boolean {
-  return isRecord(value) && requiredKeys.every((key) => typeof value[key] === "string") &&
-    Object.values(value).every((color) => typeof color === "string");
+  return isRecord(value) && requiredKeys.every((key) => typeof value[key] === "string") && Object.values(value).every((color) => typeof color === "string");
 }
 
 function isGlobalStyle(value: unknown): boolean {
-  return isRecord(value) && typeof value.font === "string" && typeof value.accentColor === "string" &&
-    isOneOf(value.backgroundMode, ["transparent", "solid", "checker"]) && typeof value.backgroundColor === "string" &&
-    isStyleVariant(value.theme) && isOneOf(value.animation, ["subtle", "standard", "flashy"]);
+  return (
+    isRecord(value) &&
+    typeof value.font === "string" &&
+    typeof value.accentColor === "string" &&
+    isOneOf(value.backgroundMode, ["transparent", "solid", "checker"]) &&
+    typeof value.backgroundColor === "string" &&
+    isStyleVariant(value.theme) &&
+    isOneOf(value.animation, ["subtle", "standard", "flashy"])
+  );
 }
 
 function isOverlayElement(value: unknown): boolean {
-  return isRecord(value) && isNonEmptyString(value.id) && typeof value.visible === "boolean" && isStyleVariant(value.variant) &&
-    (value.accentColor === undefined || typeof value.accentColor === "string") && (value.font === undefined || typeof value.font === "string") &&
-    isPlacement(value.placement);
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.id) &&
+    typeof value.visible === "boolean" &&
+    isStyleVariant(value.variant) &&
+    (value.accentColor === undefined || typeof value.accentColor === "string") &&
+    (value.font === undefined || typeof value.font === "string") &&
+    isPlacement(value.placement)
+  );
 }
 
 function isPlacement(value: unknown): boolean {
-  return isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y) && isFiniteNumber(value.width) &&
-    isFiniteNumber(value.height) && isFiniteNumber(value.scale) && isPositionPreset(value.preset);
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height) &&
+    isFiniteNumber(value.scale) &&
+    isPositionPreset(value.preset)
+  );
 }
 
 function isActiveGraphic(value: unknown): boolean {
-  return isRecord(value) && isNonEmptyString(value.id) && isOneOf(value.kind, ["goal", "yellow-card", "red-card", "substitution", "injury", "halftime", "matchup-full", "matchup-lower", "lineups", "sponsor", "lower-third", "countdown", "fullscreen", "blank", "team", "both-teams", "church-slide", "church-lower-third"]) &&
-    typeof value.title === "string" && (value.subtitle === undefined || typeof value.subtitle === "string") &&
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.id) &&
+    isOneOf(value.kind, [
+      "goal",
+      "yellow-card",
+      "red-card",
+      "substitution",
+      "injury",
+      "halftime",
+      "matchup-full",
+      "matchup-lower",
+      "lineups",
+      "sponsor",
+      "lower-third",
+      "countdown",
+      "fullscreen",
+      "blank",
+      "team",
+      "both-teams",
+      "church-slide",
+      "church-lower-third"
+    ]) &&
+    typeof value.title === "string" &&
+    (value.subtitle === undefined || typeof value.subtitle === "string") &&
     (value.label === undefined || typeof value.label === "string") &&
     (value.team === undefined || isOneOf(value.team, ["home", "away", "both", "none"])) &&
-    isStyleVariant(value.variant) && isPlacement(value.placement) && isFiniteNumber(value.startedAtMs) &&
-    isFiniteNumber(value.durationMs) && (value.expiresAtMs === null || isFiniteNumber(value.expiresAtMs)) &&
-    (value.payload === undefined || isRecord(value.payload));
+    isStyleVariant(value.variant) &&
+    isPlacement(value.placement) &&
+    isFiniteNumber(value.startedAtMs) &&
+    isFiniteNumber(value.durationMs) &&
+    (value.expiresAtMs === null || isFiniteNumber(value.expiresAtMs)) &&
+    (value.payload === undefined || isRecord(value.payload))
+  );
 }
 
 function isChurchSlide(value: unknown): boolean {
-  return isRecord(value) && isNonEmptyString(value.id) && typeof value.title === "string" &&
-    (value.type === "text" || value.type === "image") && typeof value.text === "string" && typeof value.section === "string" &&
-    (value.mediaId === undefined || typeof value.mediaId === "string") && (value.mediaUrl === undefined || typeof value.mediaUrl === "string") &&
-    typeof value.backgroundColor === "string" && typeof value.textColor === "string" && isStyleVariant(value.variant);
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.id) &&
+    typeof value.title === "string" &&
+    (value.type === "text" || value.type === "image") &&
+    typeof value.text === "string" &&
+    typeof value.section === "string" &&
+    (value.mediaId === undefined || typeof value.mediaId === "string") &&
+    (value.mediaUrl === undefined || typeof value.mediaUrl === "string") &&
+    typeof value.backgroundColor === "string" &&
+    typeof value.textColor === "string" &&
+    isStyleVariant(value.variant)
+  );
 }
 
 function isPositionPreset(value: unknown): boolean {
@@ -548,15 +724,21 @@ function isNonNegativeInteger(value: unknown): value is number {
 }
 
 function isTeam(value: unknown): value is TeamLibraryEntry {
-  return isRecord(value) && isTeamState(value) &&
+  return (
+    isRecord(value) &&
+    isTeamState(value) &&
     isNonEmptyString(value.id) &&
-    Number.isSafeInteger(value.revision) && Number(value.revision) >= 1 &&
-    typeof value.createdAt === "string" && typeof value.updatedAt === "string" &&
-    (value.dataRecovered === undefined || typeof value.dataRecovered === "boolean");
+    Number.isSafeInteger(value.revision) &&
+    Number(value.revision) >= 1 &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string" &&
+    (value.dataRecovered === undefined || typeof value.dataRecovered === "boolean")
+  );
 }
 
 function isMedia(value: unknown): value is MediaItem {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.publicId) &&
     isNonEmptyString(value.filename) &&
@@ -567,25 +749,30 @@ function isMedia(value: unknown): value is MediaItem {
     (value.height === null || isFiniteNumber(value.height)) &&
     typeof value.createdAt === "string" &&
     isNonEmptyString(value.url) &&
-    (value.thumbnailUrl === undefined || isNonEmptyString(value.thumbnailUrl));
+    (value.thumbnailUrl === undefined || isNonEmptyString(value.thumbnailUrl))
+  );
 }
 
 function isPresetEvent(value: unknown): value is PresetEvent {
-  return isRecord(value) &&
+  return (
+    isRecord(value) &&
     isNonEmptyString(value.id) &&
     isNonEmptyString(value.preset_id) &&
     isNonEmptyString(value.owner_user_id) &&
     typeof value.type === "string" &&
     typeof value.payload_json === "string" &&
-    typeof value.created_at === "string";
+    typeof value.created_at === "string"
+  );
 }
 
-async function withRequestTimeout<T>(callerSignal: AbortSignal | null | undefined, timeoutMs: number, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+async function withRequestTimeout<T>(
+  callerSignal: AbortSignal | null | undefined,
+  timeoutMs: number,
+  operation: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
   const timeoutController = new AbortController();
   const timeout = window.setTimeout(() => timeoutController.abort(), timeoutMs);
-  const signal = callerSignal
-    ? AbortSignal.any([callerSignal, timeoutController.signal])
-    : timeoutController.signal;
+  const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutController.signal]) : timeoutController.signal;
   try {
     return await operation(signal);
   } catch (error) {

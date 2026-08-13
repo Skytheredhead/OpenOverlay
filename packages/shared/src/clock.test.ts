@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { computeClockSeconds, createDefaultSoccerState, defaultClock, formatClock, normalizeSoccerState, parseClockTime, pauseClock, resetClock, setClockSeconds, startClock, tryParseClockTime } from "./index.js";
+import {
+  computeClockSeconds,
+  createDefaultSoccerState,
+  defaultClock,
+  formatClock,
+  normalizeSoccerState,
+  parseClockTime,
+  pauseClock,
+  resetClock,
+  setClockSeconds,
+  startClock,
+  tryParseClockTime
+} from "./index.js";
 
 describe("soccer clock", () => {
   it("counts up and respects stop-at when enabled", () => {

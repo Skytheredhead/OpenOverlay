@@ -20,6 +20,9 @@
     "backup:verify": "node scripts/openoverlay-backup.mjs verify",
     "media:audit": "node scripts/openoverlay-backup.mjs media-audit",
     "restore:verify": "node scripts/openoverlay-backup.mjs restore-verify",
+    "lint": "eslint apps packages",
+    "format:check": "prettier --check .",
+    "coverage": "npm run test --workspaces --if-present -- --coverage",
     "seed": "npm run seed --workspace @openoverlay/backend"
   },
   "engines": {

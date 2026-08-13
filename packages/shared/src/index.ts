@@ -2,14 +2,7 @@ export * from "./compatibility.js";
 
 export type PresetType = "soccer" | "church" | "custom";
 export type ResolutionKey = "1280x720" | "1920x1080" | "2560x1440" | "3840x2160";
-export type PositionPreset =
-  | "top-center"
-  | "top-left"
-  | "top-right"
-  | "bottom-center"
-  | "bottom-left"
-  | "bottom-right"
-  | "custom";
+export type PositionPreset = "top-center" | "top-left" | "top-right" | "bottom-center" | "bottom-left" | "bottom-right" | "custom";
 
 export type StyleVariant = "clean" | "glass" | "stripe" | "broadcast" | "neon";
 export type AnimationIntensity = "subtle" | "standard" | "flashy";
@@ -494,7 +487,10 @@ export function createDefaultSoccerState(name = "Soccer"): SoccerState {
       sponsorBug: defaultElement("sponsorBug", "bottom-right", 260, 86, "clean"),
       lowerThird: defaultElement("lowerThird", "bottom-left", 760, 126, "stripe"),
       countdown: defaultElement("countdown", "bottom-center", 520, 126, "neon"),
-      fullscreen: { ...defaultElement("fullscreen", "custom", 1920, 1080, "broadcast"), placement: { x: 0, y: 0, width: 1920, height: 1080, scale: 1, preset: "custom" } }
+      fullscreen: {
+        ...defaultElement("fullscreen", "custom", 1920, 1080, "broadcast"),
+        placement: { x: 0, y: 0, width: 1920, height: 1080, scale: 1, preset: "custom" }
+      }
     },
     activeGraphics: []
   };
@@ -528,7 +524,11 @@ export function normalizeSoccerPackageState(packageState: Partial<SoccerOverlayP
     ...packageState,
     overlayPackage: packageState?.overlayPackage === "rounded" ? "rounded" : "classic",
     colorBanks,
-    activeOverlay: isSoccerLabOverlay(packageState?.activeOverlay) ? packageState.activeOverlay : packageState?.activeOverlay === null ? null : fallback.activeOverlay,
+    activeOverlay: isSoccerLabOverlay(packageState?.activeOverlay)
+      ? packageState.activeOverlay
+      : packageState?.activeOverlay === null
+        ? null
+        : fallback.activeOverlay,
     selectedOverlay: isSoccerLabOverlay(packageState?.selectedOverlay) ? packageState.selectedOverlay : fallback.selectedOverlay,
     surface: packageState?.surface === "checker" || packageState?.surface === "studio" ? packageState.surface : "pitch",
     packageBackgroundOpacity: clamp(finiteNumber(packageState?.packageBackgroundOpacity, fallback.packageBackgroundOpacity), 0, 1),
@@ -553,7 +553,10 @@ export function normalizeSoccerPackageState(packageState: Partial<SoccerOverlayP
   };
 }
 
-function normalizeSoccerPackageColorBanks(colorBanks: Partial<SoccerPackageColorBanks> | undefined, fallback: SoccerPackageColorBanks): SoccerPackageColorBanks {
+function normalizeSoccerPackageColorBanks(
+  colorBanks: Partial<SoccerPackageColorBanks> | undefined,
+  fallback: SoccerPackageColorBanks
+): SoccerPackageColorBanks {
   return {
     classic: normalizeColorBank(colorBanks?.classic, fallback.classic),
     rounded: normalizeColorBank(colorBanks?.rounded, fallback.rounded)
@@ -586,12 +589,7 @@ export function normalizeChurchState(state: ChurchState): ChurchState {
   const fullscreen = state.elements.fullscreenSlide;
   const placement = fullscreen.placement;
   const hasLegacyFullscreenOffset =
-    placement.preset === "custom" &&
-    placement.x === 0 &&
-    placement.y === 42 &&
-    placement.width === 1920 &&
-    placement.height === 1080 &&
-    placement.scale === 1;
+    placement.preset === "custom" && placement.x === 0 && placement.y === 42 && placement.width === 1920 && placement.height === 1080 && placement.scale === 1;
 
   if (!hasLegacyFullscreenOffset) return state;
 
@@ -656,16 +654,10 @@ export function createDefaultPresetState(type: PresetType, name: string): Preset
 }
 
 function isSoccerLabOverlay(value: unknown): value is SoccerLabOverlay {
-  return typeof value === "string" && [
-    "full-matchup",
-    "lower-matchup",
-    "lower-result",
-    "lineup-panel",
-    "scorebug",
-    "countdown-timer",
-    "one-line-text",
-    "two-line-text"
-  ].includes(value);
+  return (
+    typeof value === "string" &&
+    ["full-matchup", "lower-matchup", "lower-result", "lineup-panel", "scorebug", "countdown-timer", "one-line-text", "two-line-text"].includes(value)
+  );
 }
 
 function isPositionPreset(value: unknown): value is PositionPreset {
@@ -710,11 +702,7 @@ export function pauseClock(clock: SoccerClockState, nowMs = Date.now()): SoccerC
 
 export function startClock(clock: SoccerClockState, nowMs = Date.now()): SoccerClockState {
   let nextClock = clock;
-  if (
-    clock.mode === "down" &&
-    clock.stopAtEnabled &&
-    clock.stopAtSeconds >= computeClockSeconds(clock, nowMs)
-  ) {
+  if (clock.mode === "down" && clock.stopAtEnabled && clock.stopAtSeconds >= computeClockSeconds(clock, nowMs)) {
     nextClock = { ...clock, stopAtSeconds: 0 };
   }
   if (nextClock.running) return nextClock;

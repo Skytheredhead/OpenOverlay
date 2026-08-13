@@ -179,13 +179,7 @@ export class Database {
     this.run("UPDATE users SET session_version = session_version + 1 WHERE id = ?", [id]);
   }
 
-  createPreset(input: {
-    ownerUserId: string;
-    name: string;
-    type: PresetType;
-    state: PresetState;
-    actionKeyHash?: string | null;
-  }): PresetRow {
+  createPreset(input: { ownerUserId: string; name: string; type: PresetType; state: PresetState; actionKeyHash?: string | null }): PresetRow {
     const now = new Date().toISOString();
     const row: PresetRow = {
       id: randomUUID(),
@@ -424,8 +418,10 @@ export class Database {
   }
 
   listMediaPaths(): string[] {
-    return this.all<{ path: string; thumbnail_path: string | null }>("SELECT path, thumbnail_path FROM media")
-      .flatMap((row) => [row.path, ...(row.thumbnail_path ? [row.thumbnail_path] : [])]);
+    return this.all<{ path: string; thumbnail_path: string | null }>("SELECT path, thumbnail_path FROM media").flatMap((row) => [
+      row.path,
+      ...(row.thumbnail_path ? [row.thumbnail_path] : [])
+    ]);
   }
 
   getMediaUsageForUser(ownerUserId: string): { itemCount: number; sizeBytes: number } {
@@ -509,10 +505,11 @@ export class Database {
   }
 
   getEventLog(presetId: string, ownerUserId: string, limit = 100): EventLogRow[] {
-    return this.all<EventLogRow>(
-      "SELECT * FROM event_logs WHERE preset_id = ? AND owner_user_id = ? ORDER BY created_at DESC LIMIT ?",
-      [presetId, ownerUserId, limit]
-    );
+    return this.all<EventLogRow>("SELECT * FROM event_logs WHERE preset_id = ? AND owner_user_id = ? ORDER BY created_at DESC LIMIT ?", [
+      presetId,
+      ownerUserId,
+      limit
+    ]);
   }
 
   createPendingShare(input: {
@@ -546,19 +543,34 @@ export class Database {
   }
 
   countOutstandingShares(senderUserId: string): number {
-    return Number(this.get<{ count: number }>("SELECT COUNT(*) AS count FROM pending_shares WHERE sender_user_id = ? AND status = 'pending' AND expires_at > ?", [senderUserId, new Date().toISOString()])?.count || 0);
+    return Number(
+      this.get<{ count: number }>("SELECT COUNT(*) AS count FROM pending_shares WHERE sender_user_id = ? AND status = 'pending' AND expires_at > ?", [
+        senderUserId,
+        new Date().toISOString()
+      ])?.count || 0
+    );
   }
 
   countRecentShareRequests(senderUserId: string, since: string): number {
-    return Number(this.get<{ count: number }>("SELECT COUNT(*) AS count FROM pending_shares WHERE sender_user_id = ? AND created_at >= ?", [senderUserId, since])?.count || 0);
+    return Number(
+      this.get<{ count: number }>("SELECT COUNT(*) AS count FROM pending_shares WHERE sender_user_id = ? AND created_at >= ?", [senderUserId, since])?.count ||
+        0
+    );
   }
 
   listPendingSharesForHash(recipientLookupHash: string): PendingShareRow[] {
-    return this.all<PendingShareRow>("SELECT * FROM pending_shares WHERE recipient_lookup_hash = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at, id", [recipientLookupHash, new Date().toISOString()]);
+    return this.all<PendingShareRow>(
+      "SELECT * FROM pending_shares WHERE recipient_lookup_hash = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at, id",
+      [recipientLookupHash, new Date().toISOString()]
+    );
   }
 
   fulfillPendingShare(id: string, recipientUserId: string): void {
-    this.run("UPDATE pending_shares SET status = 'fulfilled', recipient_user_id = ?, fulfilled_at = ? WHERE id = ? AND status = 'pending'", [recipientUserId, new Date().toISOString(), id]);
+    this.run("UPDATE pending_shares SET status = 'fulfilled', recipient_user_id = ?, fulfilled_at = ? WHERE id = ? AND status = 'pending'", [
+      recipientUserId,
+      new Date().toISOString(),
+      id
+    ]);
   }
 
   expirePendingShares(): void {
@@ -590,16 +602,12 @@ export class Database {
   }
 
   private isNewerSchemaReadable(appliedVersion: number): boolean {
-    const compatibilityTable = this.get<{ name: string }>(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_compatibility'"
-    );
+    const compatibilityTable = this.get<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_compatibility'");
     if (!compatibilityTable) return false;
-    const compatibility = this.get<{ min_reader_version: number }>(
-      "SELECT min_reader_version FROM schema_compatibility WHERE schema_version = ?",
-      [appliedVersion]
-    );
-    return Number.isSafeInteger(compatibility?.min_reader_version) &&
-      Number(compatibility?.min_reader_version) <= CURRENT_READER_VERSION;
+    const compatibility = this.get<{ min_reader_version: number }>("SELECT min_reader_version FROM schema_compatibility WHERE schema_version = ?", [
+      appliedVersion
+    ]);
+    return Number.isSafeInteger(compatibility?.min_reader_version) && Number(compatibility?.min_reader_version) <= CURRENT_READER_VERSION;
   }
 
   private applyInitialSchema(): void {
@@ -729,7 +737,12 @@ export class Database {
       if (!mediaColumns.has(name)) this.db.exec(`ALTER TABLE media ADD COLUMN ${name} ${type}`);
     }
     const now = new Date().toISOString();
-    this.run("INSERT OR REPLACE INTO schema_compatibility (schema_version, writer_version, min_reader_version, updated_at) VALUES (?, ?, ?, ?)", [3, 3, 2, now]);
+    this.run("INSERT OR REPLACE INTO schema_compatibility (schema_version, writer_version, min_reader_version, updated_at) VALUES (?, ?, ?, ?)", [
+      3,
+      3,
+      2,
+      now
+    ]);
     this.run("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", [3, now]);
   }
 }

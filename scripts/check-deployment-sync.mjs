@@ -33,8 +33,10 @@ try {
     process.exit(1);
   }
 
-  if ((requiredApiVersion && !backendApiVersions.includes(requiredApiVersion)) ||
-      (requiredRealtimeVersion && !backendRealtimeVersions.includes(requiredRealtimeVersion))) {
+  if (
+    (requiredApiVersion && !backendApiVersions.includes(requiredApiVersion)) ||
+    (requiredRealtimeVersion && !backendRealtimeVersions.includes(requiredRealtimeVersion))
+  ) {
     console.error("Frontend and backend API/realtime versions are incompatible.");
     console.error(`Frontend requires: api=${requiredApiVersion || "unknown"} realtime=${requiredRealtimeVersion || "unknown"}`);
     console.error(`Backend supports:  api=${backendApiVersions.join(",") || "unknown"} realtime=${backendRealtimeVersions.join(",") || "unknown"}`);

@@ -35,7 +35,7 @@ describe("backend gateway", () => {
     const response = await fetch(`http://127.0.0.1:${gatewayPort}/_openoverlay/gateway?cache-bust=1`);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    const body = await response.json() as Record<string, unknown>;
+    const body = (await response.json()) as Record<string, unknown>;
     expect(body).toMatchObject({ ok: true, activeBuild: { commit: "active-sha" } });
     expect(body).toHaveProperty("gatewayBuild");
     expect(body).not.toHaveProperty("activeSlot");
@@ -236,12 +236,7 @@ async function testConfig(port: number): Promise<AppConfig> {
 
 type HealthMode = boolean | "hang";
 
-function startFakeBackend(
-  _slot: BackendSlot,
-  env: NodeJS.ProcessEnv,
-  marker: string,
-  healthMode: HealthMode | (() => HealthMode) = true
-): ChildProcess {
+function startFakeBackend(_slot: BackendSlot, env: NodeJS.ProcessEnv, marker: string, healthMode: HealthMode | (() => HealthMode) = true): ChildProcess {
   const child = new EventEmitter() as ChildProcess;
   (child as ChildProcess & { killed: boolean }).killed = false;
   const server = http.createServer((req, res) => {
@@ -249,14 +244,16 @@ function startFakeBackend(
       const current = typeof healthMode === "function" ? healthMode() : healthMode;
       if (current === "hang") return;
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({
-        ok: current,
-        build: { commit: marker, commitShort: marker, version: "0.1.0" },
-        compatibility: {
-          api: { current: "v1", supported: ["v1"] },
-          realtime: { current: "v1", supported: ["v1"] }
-        }
-      }));
+      res.end(
+        JSON.stringify({
+          ok: current,
+          build: { commit: marker, commitShort: marker, version: "0.1.0" },
+          compatibility: {
+            api: { current: "v1", supported: ["v1"] },
+            realtime: { current: "v1", supported: ["v1"] }
+          }
+        })
+      );
       return;
     }
     if (req.url === "/hang" || req.url === "/mutate-hang") return;
@@ -315,7 +312,9 @@ async function controlStatus(socketPath: string): Promise<Record<string, any>> {
     let body = "";
     socket.setEncoding("utf8");
     socket.on("connect", () => socket.write("status\n"));
-    socket.on("data", (chunk) => { body += chunk; });
+    socket.on("data", (chunk) => {
+      body += chunk;
+    });
     socket.on("end", () => {
       try {
         resolve((JSON.parse(body) as { status: Record<string, any> }).status);
@@ -350,7 +349,9 @@ function fetchPartialResponse(port: number, requestPath: string): Promise<{ stat
         resolve({ status: response.statusCode || 0, body, aborted });
       };
       response.setEncoding("utf8");
-      response.on("data", (chunk) => { body += chunk; });
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
       response.on("aborted", () => finish(true));
       response.on("error", () => finish(true));
       response.on("end", () => finish(false));

@@ -22,12 +22,22 @@ describe("SyncedTimeInput", () => {
     const input = screen.getByLabelText("Clock");
     expect(input).toHaveValue("01:15");
 
-    rerender(<label>Clock<SyncedTimeInput seconds={30} onCommit={onCommit} /></label>);
+    rerender(
+      <label>
+        Clock
+        <SyncedTimeInput seconds={30} onCommit={onCommit} />
+      </label>
+    );
     expect(input).toHaveValue("00:30");
 
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "02:00" } });
-    rerender(<label>Clock<SyncedTimeInput seconds={10} onCommit={onCommit} /></label>);
+    rerender(
+      <label>
+        Clock
+        <SyncedTimeInput seconds={10} onCommit={onCommit} />
+      </label>
+    );
     expect(input).toHaveValue("02:00");
 
     fireEvent.blur(input);
@@ -36,7 +46,12 @@ describe("SyncedTimeInput", () => {
 
   it("keeps malformed text visible and does not silently commit zero", () => {
     const onCommit = vi.fn();
-    render(<label>Clock<SyncedTimeInput seconds={75} onCommit={onCommit} /></label>);
+    render(
+      <label>
+        Clock
+        <SyncedTimeInput seconds={75} onCommit={onCommit} />
+      </label>
+    );
     const input = screen.getByLabelText("Clock");
 
     fireEvent.focus(input);
@@ -87,11 +102,13 @@ describe("ChurchControls", () => {
     render(<ChurchControls state={state} media={[]} tab="slides" commitState={commitState} runAction={vi.fn(async () => undefined)} />);
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Show full-screen slide" }));
-    expect(commitState).toHaveBeenCalledWith(expect.objectContaining({
-      elements: expect.objectContaining({
-        fullscreenSlide: expect.objectContaining({ visible: false })
+    expect(commitState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        elements: expect.objectContaining({
+          fullscreenSlide: expect.objectContaining({ visible: false })
+        })
       })
-    }));
+    );
   });
 });
 
@@ -109,9 +126,7 @@ describe("MediaLibrary", () => {
     const refreshedList = deferred<{ media: MediaItem[]; nextCursor: string | null }>();
     const upload = deferred<{ media: MediaItem }>();
     const item = mediaFixture();
-    vi.spyOn(mediaApi, "list")
-      .mockReturnValueOnce(initialList.promise)
-      .mockReturnValueOnce(refreshedList.promise);
+    vi.spyOn(mediaApi, "list").mockReturnValueOnce(initialList.promise).mockReturnValueOnce(refreshedList.promise);
     const uploadSpy = vi.spyOn(mediaApi, "upload").mockReturnValue(upload.promise);
 
     const { unmount } = render(<MediaLibrary />);
@@ -143,13 +158,13 @@ describe("AuthProvider", () => {
   it("ignores an older failed session probe after a newer refresh succeeds", async () => {
     const olderProbe = deferred<{ user: User }>();
     const freshUser: User = { id: "user-fresh", email: "operator@example.com" };
-    vi.spyOn(authApi, "me")
-      .mockReturnValueOnce(olderProbe.promise)
-      .mockResolvedValueOnce({ user: freshUser });
+    vi.spyOn(authApi, "me").mockReturnValueOnce(olderProbe.promise).mockResolvedValueOnce({ user: freshUser });
 
     render(
       <MemoryRouter initialEntries={["/dash"]}>
-        <AuthProvider><AuthHarness /></AuthProvider>
+        <AuthProvider>
+          <AuthHarness />
+        </AuthProvider>
       </MemoryRouter>
     );
 
@@ -180,9 +195,16 @@ describe("sidebar destructive concurrency", () => {
     const getSpy = vi.spyOn(presetApi, "get");
     const removeSpy = vi.spyOn(presetApi, "remove").mockResolvedValue({ ok: true });
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false }))
+    );
 
-    render(<MemoryRouter initialEntries={["/dash"]}><App /></MemoryRouter>);
+    render(
+      <MemoryRouter initialEntries={["/dash"]}>
+        <App />
+      </MemoryRouter>
+    );
 
     const sidebarGame = await screen.findByRole("link", { name: game.name });
     fireEvent.contextMenu(sidebarGame);
@@ -197,9 +219,11 @@ function AuthHarness() {
   const { user, loading, error, refresh } = useAuth();
   return (
     <div>
-      <p>{loading ? "loading" : user?.email ?? "signed out"}</p>
+      <p>{loading ? "loading" : (user?.email ?? "signed out")}</p>
       {error ? <p>{error}</p> : null}
-      <button type="button" onClick={() => void refresh()}>Refresh session</button>
+      <button type="button" onClick={() => void refresh()}>
+        Refresh session
+      </button>
     </div>
   );
 }

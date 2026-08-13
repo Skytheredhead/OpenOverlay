@@ -82,10 +82,19 @@ describe("preset deletion realtime handling", () => {
     });
     vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
     vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
-    const router = createMemoryRouter([{
-      path: "/dash/presets/:presetId",
-      element: <PromptDialogProvider><PresetEditor /></PromptDialogProvider>
-    }], { initialEntries: ["/dash/presets/preset-1"] });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/dash/presets/:presetId",
+          element: (
+            <PromptDialogProvider>
+              <PresetEditor />
+            </PromptDialogProvider>
+          )
+        }
+      ],
+      { initialEntries: ["/dash/presets/preset-1"] }
+    );
 
     render(<RouterProvider router={router} />);
     await waitFor(() => expect(socketHarness.sockets).toHaveLength(1));
@@ -138,10 +147,19 @@ describe("preset deletion realtime handling", () => {
     vi.spyOn(presetApi, "get").mockResolvedValue({ preset: presetFixture() });
     vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
     vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
-    const router = createMemoryRouter([{
-      path: "/dash/presets/:presetId",
-      element: <PromptDialogProvider><PresetEditor /></PromptDialogProvider>
-    }], { initialEntries: ["/dash/presets/preset-1"] });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/dash/presets/:presetId",
+          element: (
+            <PromptDialogProvider>
+              <PresetEditor />
+            </PromptDialogProvider>
+          )
+        }
+      ],
+      { initialEntries: ["/dash/presets/preset-1"] }
+    );
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "Realtime Game" })).toBeVisible();

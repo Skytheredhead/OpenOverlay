@@ -11,7 +11,9 @@ try {
   const limit = Number(process.env.THUMBNAIL_BACKFILL_LIMIT || 100);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) throw new Error("THUMBNAIL_BACKFILL_LIMIT must be from 1 to 1000");
   const database = new DatabaseSync(databasePath);
-  const rows = database.prepare("SELECT id, path FROM media WHERE thumbnail_path IS NULL AND mime_type != 'image/svg+xml' ORDER BY created_at, id LIMIT ?").all(limit);
+  const rows = database
+    .prepare("SELECT id, path FROM media WHERE thumbnail_path IS NULL AND mime_type != 'image/svg+xml' ORDER BY created_at, id LIMIT ?")
+    .all(limit);
   let completed = 0;
   for (const row of rows) {
     const source = path.resolve(String(row.path));
@@ -26,7 +28,10 @@ try {
         .webp({ quality: 82, effort: 4 })
         .toFile(temporary);
       fs.renameSync(temporary, destination);
-      database.prepare("UPDATE media SET thumbnail_path = ?, thumbnail_width = ?, thumbnail_height = ?, thumbnail_mime_type = 'image/webp', thumbnail_size_bytes = ? WHERE id = ? AND thumbnail_path IS NULL")
+      database
+        .prepare(
+          "UPDATE media SET thumbnail_path = ?, thumbnail_width = ?, thumbnail_height = ?, thumbnail_mime_type = 'image/webp', thumbnail_size_bytes = ? WHERE id = ? AND thumbnail_path IS NULL"
+        )
         .run(destination, info.width, info.height, info.size, row.id);
       completed += 1;
     } finally {

@@ -31,9 +31,11 @@ export function resolveBuildCommit(
   environment: NodeJS.ProcessEnv = process.env,
   gitCommitReader: () => string | null = gitCommit
 ): string | null {
-  return artifactCommit(moduleDir) ||
+  return (
+    artifactCommit(moduleDir) ||
     firstNonEmpty(environment.OPENOVERLAY_GIT_SHA, environment.GIT_COMMIT_SHA, environment.VERCEL_GIT_COMMIT_SHA) ||
-    (path.basename(moduleDir) === "src" ? gitCommitReader() : null);
+    (path.basename(moduleDir) === "src" ? gitCommitReader() : null)
+  );
 }
 
 function artifactCommit(moduleDir: string): string | null {

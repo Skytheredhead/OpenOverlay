@@ -49,12 +49,12 @@ export function OverlayRenderer({ type, state, transparent = true, safeArea = fa
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: BASE_WIDTH, height: BASE_HEIGHT });
   const [now, setNow] = useState(Date.now());
-  const soccerNeedsClockTick = type === "soccer" && isSoccerState(state) && (
-    (state.clock.running && !clockIsAtStop(state.clock, now)) ||
-    (state.soccerPackage.countdown.running && packageCountdownSeconds(state.soccerPackage.countdown, now) > 0)
-  );
-  const needsClockTick = state.activeGraphics.some((graphic) => graphic.expiresAtMs !== null && graphic.expiresAtMs > now) ||
-    soccerNeedsClockTick;
+  const soccerNeedsClockTick =
+    type === "soccer" &&
+    isSoccerState(state) &&
+    ((state.clock.running && !clockIsAtStop(state.clock, now)) ||
+      (state.soccerPackage.countdown.running && packageCountdownSeconds(state.soccerPackage.countdown, now) > 0));
+  const needsClockTick = state.activeGraphics.some((graphic) => graphic.expiresAtMs !== null && graphic.expiresAtMs > now) || soccerNeedsClockTick;
 
   useEffect(() => {
     if (!needsClockTick) return;
@@ -92,15 +92,13 @@ export function OverlayRenderer({ type, state, transparent = true, safeArea = fa
         {type === "soccer" && isSoccerState(state) ? (
           <SoccerOverlay state={state} now={now} transparent={transparent} interactive={interactive} onDragStart={onDragStart} />
         ) : null}
-        {type === "church" && isChurchState(state) ? (
-          <ChurchOverlay state={state} now={now} interactive={interactive} onDragStart={onDragStart} />
-        ) : null}
+        {type === "church" && isChurchState(state) ? <ChurchOverlay state={state} now={now} interactive={interactive} onDragStart={onDragStart} /> : null}
         {state.activeGraphics
           .filter((graphic) => graphic.expiresAtMs === null || graphic.expiresAtMs > now)
           .filter((graphic) => !(type === "church" && isChurchManagedGraphic(graphic)))
           .map((graphic) => (
-          <TemporaryGraphic key={graphic.id} graphic={graphic} />
-        ))}
+            <TemporaryGraphic key={graphic.id} graphic={graphic} />
+          ))}
       </div>
     </div>
   );
@@ -154,7 +152,7 @@ function SoccerOverlay({
       setTimerActivatingOverlay(null);
       setRenderedActiveOverlay(currentOverlay);
       setEnteringOverlay(null);
-      setExitingOverlay((current) => current === currentOverlay ? null : current);
+      setExitingOverlay((current) => (current === currentOverlay ? null : current));
       return;
     }
 
@@ -166,7 +164,7 @@ function SoccerOverlay({
       setRenderedActiveOverlay(targetOverlay);
       setEnteringOverlay(targetOverlay);
       scheduleTransitionStep(() => {
-        setEnteringOverlay((current) => current === targetOverlay ? null : current);
+        setEnteringOverlay((current) => (current === targetOverlay ? null : current));
         currentOverlayRef.current = targetOverlay;
         transitionRunningRef.current = false;
         processPendingOverlay();
@@ -180,7 +178,7 @@ function SoccerOverlay({
       setRenderedActiveOverlay(null);
       setExitingOverlay(currentOverlay);
       scheduleTransitionStep(() => {
-        setExitingOverlay((current) => current === currentOverlay ? null : current);
+        setExitingOverlay((current) => (current === currentOverlay ? null : current));
         currentOverlayRef.current = null;
         transitionRunningRef.current = false;
         processPendingOverlay();
@@ -189,9 +187,7 @@ function SoccerOverlay({
     }
 
     if (currentOverlay && targetOverlay) {
-      const shouldHandoffCountdown = targetOverlay === "countdown-timer" &&
-        timerRunningRef.current &&
-        SOCCER_CLOCKABLE_OVERLAYS.has(currentOverlay);
+      const shouldHandoffCountdown = targetOverlay === "countdown-timer" && timerRunningRef.current && SOCCER_CLOCKABLE_OVERLAYS.has(currentOverlay);
 
       if (shouldHandoffCountdown) {
         setRenderedActiveOverlay(currentOverlay);
@@ -206,8 +202,8 @@ function SoccerOverlay({
           setEnteringOverlay(targetOverlay);
         }, SOCCER_COUNTDOWN_HANDOFF_MS);
         scheduleTransitionStep(() => {
-          setExitingOverlay((current) => current === currentOverlay ? null : current);
-          setEnteringOverlay((current) => current === targetOverlay ? null : current);
+          setExitingOverlay((current) => (current === currentOverlay ? null : current));
+          setEnteringOverlay((current) => (current === targetOverlay ? null : current));
           currentOverlayRef.current = targetOverlay;
           transitionRunningRef.current = false;
           processPendingOverlay();
@@ -220,14 +216,14 @@ function SoccerOverlay({
       setRenderedActiveOverlay(null);
       setExitingOverlay(currentOverlay);
       scheduleTransitionStep(() => {
-        setExitingOverlay((current) => current === currentOverlay ? null : current);
+        setExitingOverlay((current) => (current === currentOverlay ? null : current));
       }, SOCCER_EXIT_MS);
       scheduleTransitionStep(() => {
         setRenderedActiveOverlay(targetOverlay);
         setEnteringOverlay(targetOverlay);
       }, SOCCER_SWITCH_ENTER_DELAY_MS);
       scheduleTransitionStep(() => {
-        setEnteringOverlay((current) => current === targetOverlay ? null : current);
+        setEnteringOverlay((current) => (current === targetOverlay ? null : current));
         currentOverlayRef.current = targetOverlay;
         transitionRunningRef.current = false;
         processPendingOverlay();
@@ -252,7 +248,7 @@ function SoccerOverlay({
     if (!activeOverlay || transitionRunningRef.current) return;
     transitionRunningRef.current = true;
     scheduleTransitionStep(() => {
-      setEnteringOverlay((current) => current === activeOverlay ? null : current);
+      setEnteringOverlay((current) => (current === activeOverlay ? null : current));
       currentOverlayRef.current = activeOverlay;
       transitionRunningRef.current = false;
       processPendingOverlay();
@@ -271,7 +267,7 @@ function SoccerOverlay({
     if (!animation || animation.id === previousTextAnimationIdRef.current) return;
     previousTextAnimationIdRef.current = animation.id;
     setActiveTextAnimation(animation);
-    const timeout = window.setTimeout(() => setActiveTextAnimation((current) => current?.id === animation.id ? null : current), 520);
+    const timeout = window.setTimeout(() => setActiveTextAnimation((current) => (current?.id === animation.id ? null : current)), 520);
     return () => window.clearTimeout(timeout);
   }, [soccer.textAnimation]);
 
@@ -281,34 +277,45 @@ function SoccerOverlay({
       <Positioned element={state.elements.fullscreen} interactive={interactive} onDragStart={onDragStart}>
         <LabFrame cssUrl={labCssUrl}>
           <div
-          id="stage"
-          className={[
-            "broadcast-frame",
-            `surface-${soccer.surface}`,
-            activeClass,
-            transparent ? "is-transparent" : "",
-            timerRunning ? "timer-running" : "",
-            timerActivatingOverlay ? "timer-activating" : "",
-            countdownSeconds >= 3600 ? "countdown-has-hours" : "",
-            soccer.lowerResultState === "FINAL" ? "result-final" : "",
-            soccer.packageBackground ? "" : "background-off"
-          ].filter(Boolean).join(" ")}
-          style={{
-            ...soccerPackageColorVars(soccer.overlayPackage, packageColors),
-            "--package-bg-opacity": soccer.packageBackgroundOpacity,
-            "--scorebug-width": `${soccer.scorebugWidth}%`
-          } as React.CSSProperties}
-        >
-          {exitingOverlay && exitingOverlay !== renderedActiveOverlay ? (
-            <div className="overlay-layer overlay-layer-exiting" style={{ ...overlayLayerStyle, zIndex: 3 }}>
-              {renderSoccerLabOverlay(exitingOverlay, "exiting", state, now, countdownSeconds, [])}
-            </div>
-          ) : null}
-          {renderedActiveOverlay ? (
-            <div className="overlay-layer overlay-layer-active" style={{ ...overlayLayerStyle, zIndex: 4 }}>
-              {renderSoccerLabOverlay(renderedActiveOverlay, enteringOverlay === renderedActiveOverlay ? "entering" : "live", state, now, countdownSeconds, activeTextAnimation?.fields ?? [])}
-            </div>
-          ) : null}
+            id="stage"
+            className={[
+              "broadcast-frame",
+              `surface-${soccer.surface}`,
+              activeClass,
+              transparent ? "is-transparent" : "",
+              timerRunning ? "timer-running" : "",
+              timerActivatingOverlay ? "timer-activating" : "",
+              countdownSeconds >= 3600 ? "countdown-has-hours" : "",
+              soccer.lowerResultState === "FINAL" ? "result-final" : "",
+              soccer.packageBackground ? "" : "background-off"
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={
+              {
+                ...soccerPackageColorVars(soccer.overlayPackage, packageColors),
+                "--package-bg-opacity": soccer.packageBackgroundOpacity,
+                "--scorebug-width": `${soccer.scorebugWidth}%`
+              } as React.CSSProperties
+            }
+          >
+            {exitingOverlay && exitingOverlay !== renderedActiveOverlay ? (
+              <div className="overlay-layer overlay-layer-exiting" style={{ ...overlayLayerStyle, zIndex: 3 }}>
+                {renderSoccerLabOverlay(exitingOverlay, "exiting", state, now, countdownSeconds, [])}
+              </div>
+            ) : null}
+            {renderedActiveOverlay ? (
+              <div className="overlay-layer overlay-layer-active" style={{ ...overlayLayerStyle, zIndex: 4 }}>
+                {renderSoccerLabOverlay(
+                  renderedActiveOverlay,
+                  enteringOverlay === renderedActiveOverlay ? "entering" : "live",
+                  state,
+                  now,
+                  countdownSeconds,
+                  activeTextAnimation?.fields ?? []
+                )}
+              </div>
+            ) : null}
           </div>
         </LabFrame>
       </Positioned>
@@ -326,7 +333,13 @@ function SoccerOverlay({
 }
 
 function StatLine({ label, home, away }: { label: string; home: number; away: number }) {
-  return <div className="stat-line"><span>{label}</span><strong>{home}</strong><em>{away}</em></div>;
+  return (
+    <div className="stat-line">
+      <span>{label}</span>
+      <strong>{home}</strong>
+      <em>{away}</em>
+    </div>
+  );
 }
 
 function soccerPackageColorVars(packageName: SoccerState["soccerPackage"]["overlayPackage"], colors: SoccerPackageColorBank): React.CSSProperties {
@@ -364,7 +377,14 @@ function soccerPackageColorVars(packageName: SoccerState["soccerPackage"]["overl
   } as React.CSSProperties;
 }
 
-function renderSoccerLabOverlay(overlay: SoccerLabOverlay, phase: ActiveOverlayPhase, state: SoccerState, now: number, countdownSeconds: number, textAnimationFields: TextAnimationFields) {
+function renderSoccerLabOverlay(
+  overlay: SoccerLabOverlay,
+  phase: ActiveOverlayPhase,
+  state: SoccerState,
+  now: number,
+  countdownSeconds: number,
+  textAnimationFields: TextAnimationFields
+) {
   const key = `${phase}-${overlay}`;
   switch (overlay) {
     case "full-matchup":
@@ -417,16 +437,8 @@ function LabFrame({ cssUrl, children }: { cssUrl: string; children: React.ReactN
 
   return (
     <div className="lab-frame-host">
-      <iframe
-        ref={frameRef}
-        className="lab-frame"
-        title="Soccer overlay package"
-        scrolling="no"
-        srcDoc={frameDocument}
-      />
-      {body
-        ? createPortal(children, body)
-        : null}
+      <iframe ref={frameRef} className="lab-frame" title="Soccer overlay package" scrolling="no" srcDoc={frameDocument} />
+      {body ? createPortal(children, body) : null}
     </div>
   );
 }
@@ -500,13 +512,14 @@ function ChurchOverlay({
 }) {
   const church = normalizeChurchState(state);
   const slide = church.slides.find((item) => item.id === church.selectedSlideId) || church.slides[0];
-  const lowerThird = [...church.activeGraphics].reverse().find((graphic) =>
-    (graphic.kind === "church-lower-third" || graphic.kind === "lower-third") &&
-    (graphic.expiresAtMs === null || graphic.expiresAtMs > now)
-  );
-  const countdown = [...church.activeGraphics].reverse().find((graphic) =>
-    graphic.kind === "countdown" && (graphic.expiresAtMs === null || graphic.expiresAtMs > now)
-  );
+  const lowerThird = [...church.activeGraphics]
+    .reverse()
+    .find(
+      (graphic) => (graphic.kind === "church-lower-third" || graphic.kind === "lower-third") && (graphic.expiresAtMs === null || graphic.expiresAtMs > now)
+    );
+  const countdown = [...church.activeGraphics]
+    .reverse()
+    .find((graphic) => graphic.kind === "countdown" && (graphic.expiresAtMs === null || graphic.expiresAtMs > now));
   const countdownSeconds = countdown
     ? countdown.expiresAtMs === null
       ? Math.max(0, Math.ceil(countdown.durationMs / 1000))
@@ -516,7 +529,10 @@ function ChurchOverlay({
     <>
       {slide && church.elements.fullscreenSlide.visible ? (
         <Positioned element={church.elements.fullscreenSlide} interactive={interactive} onDragStart={onDragStart}>
-          <div className={`church-slide variant-${slide.variant}`} style={{ background: slide.backgroundColor, color: slide.textColor, fontFamily: church.style.font }}>
+          <div
+            className={`church-slide variant-${slide.variant}`}
+            style={{ background: slide.backgroundColor, color: slide.textColor, fontFamily: church.style.font }}
+          >
             {slide.mediaUrl ? <img src={mediaApi.mediaUrl(slide.mediaUrl)} alt="" /> : null}
             <div className="church-slide-text">{slide.text}</div>
           </div>
@@ -575,7 +591,17 @@ function Positioned({
   );
 }
 
-function FullMatchup({ state, countdownSeconds, phase, textAnimationFields }: { state: SoccerState; countdownSeconds: number; phase: ActiveOverlayPhase; textAnimationFields: TextAnimationFields }) {
+function FullMatchup({
+  state,
+  countdownSeconds,
+  phase,
+  textAnimationFields
+}: {
+  state: SoccerState;
+  countdownSeconds: number;
+  phase: ActiveOverlayPhase;
+  textAnimationFields: TextAnimationFields;
+}) {
   return (
     <article className={labOverlayClass("overlay-full-matchup", phase)} aria-label="Full page matchup">
       <PackageBackground enabled={state.soccerPackage.packageBackground} />
@@ -609,15 +635,29 @@ function FullTeam({ team, side, textAnimationFields }: { team: SoccerState["home
     <section className={`full-team ${side}`}>
       {side === "home" ? <TeamImage team={team} className={`team-logo ${textUpdateClass(textAnimationFields, logoField)}`} /> : null}
       <div className="team-copy">
-        <span className={textUpdateClass(textAnimationFields, nameField)} data-bind-team>{team.fullName}</span>
-        <small className={textUpdateClass(textAnimationFields, recordField)} data-bind-team>{formatRecord(team.record)}</small>
+        <span className={textUpdateClass(textAnimationFields, nameField)} data-bind-team>
+          {team.fullName}
+        </span>
+        <small className={textUpdateClass(textAnimationFields, recordField)} data-bind-team>
+          {formatRecord(team.record)}
+        </small>
       </div>
       {side === "away" ? <TeamImage team={team} className={`team-logo ${textUpdateClass(textAnimationFields, logoField)}`} /> : null}
     </section>
   );
 }
 
-function LowerMatchup({ state, countdownSeconds, phase, textAnimationFields }: { state: SoccerState; countdownSeconds: number; phase: ActiveOverlayPhase; textAnimationFields: TextAnimationFields }) {
+function LowerMatchup({
+  state,
+  countdownSeconds,
+  phase,
+  textAnimationFields
+}: {
+  state: SoccerState;
+  countdownSeconds: number;
+  phase: ActiveOverlayPhase;
+  textAnimationFields: TextAnimationFields;
+}) {
   return (
     <article className={labOverlayClass("overlay-lower-matchup", phase)} aria-label="Lower matchup">
       <div className="lower-shell">
@@ -630,7 +670,10 @@ function LowerMatchup({ state, countdownSeconds, phase, textAnimationFields }: {
           <LowerTeam team={state.home} side="home" textAnimationFields={textAnimationFields} />
           <strong className="lower-match-center">
             <span className="lower-versus">VS</span>
-            <span className="lower-match-countdown lower-countdown"><em>Countdown</em><b>{formatPackageTime(countdownSeconds)}</b></span>
+            <span className="lower-match-countdown lower-countdown">
+              <em>Countdown</em>
+              <b>{formatPackageTime(countdownSeconds)}</b>
+            </span>
           </strong>
           <LowerTeam team={state.away} side="away" textAnimationFields={textAnimationFields} />
         </div>
@@ -646,13 +689,30 @@ function LowerTeam({ team, side, textAnimationFields }: { team: SoccerState["hom
   return (
     <section className={`lower-team ${side}`}>
       {side === "home" ? <TeamImage team={team} className={`team-logo ${textUpdateClass(textAnimationFields, logoField)}`} /> : null}
-      <div><b className={textUpdateClass(textAnimationFields, nameField)} data-bind-team>{team.fullName}</b><span className={textUpdateClass(textAnimationFields, recordField)} data-bind-team>{formatRecord(team.record)}</span></div>
+      <div>
+        <b className={textUpdateClass(textAnimationFields, nameField)} data-bind-team>
+          {team.fullName}
+        </b>
+        <span className={textUpdateClass(textAnimationFields, recordField)} data-bind-team>
+          {formatRecord(team.record)}
+        </span>
+      </div>
       {side === "away" ? <TeamImage team={team} className={`team-logo ${textUpdateClass(textAnimationFields, logoField)}`} /> : null}
     </section>
   );
 }
 
-function LowerResult({ state, countdownSeconds, phase, textAnimationFields }: { state: SoccerState; countdownSeconds: number; phase: ActiveOverlayPhase; textAnimationFields: TextAnimationFields }) {
+function LowerResult({
+  state,
+  countdownSeconds,
+  phase,
+  textAnimationFields
+}: {
+  state: SoccerState;
+  countdownSeconds: number;
+  phase: ActiveOverlayPhase;
+  textAnimationFields: TextAnimationFields;
+}) {
   return (
     <article className={labOverlayClass("overlay-lower-result", phase)} aria-label="Lower matchup with score">
       <div className="lower-shell">
@@ -664,13 +724,25 @@ function LowerResult({ state, countdownSeconds, phase, textAnimationFields }: { 
           <span className="lower-row-shadow" aria-hidden="true" />
           <section className="lower-result-team lower-result-home">
             <TeamImage team={state.home} className={`team-logo ${textUpdateClass(textAnimationFields, "home-logo")}`} />
-            <b className={textUpdateClass(textAnimationFields, "home-abbrev")} data-bind-team>{state.home.abbreviation}</b>
+            <b className={textUpdateClass(textAnimationFields, "home-abbrev")} data-bind-team>
+              {state.home.abbreviation}
+            </b>
           </section>
-          <strong className={`lower-result-score ${scoreUpdateClass(textAnimationFields, "home-score")}`} data-bind-score>{state.score.home}</strong>
-          <div className="lower-result-state"><span>{state.soccerPackage.lowerResultState}</span><b>{formatPackageTime(countdownSeconds)}</b><em>Back in</em></div>
-          <strong className={`lower-result-score ${scoreUpdateClass(textAnimationFields, "away-score")}`} data-bind-score>{state.score.away}</strong>
+          <strong className={`lower-result-score ${scoreUpdateClass(textAnimationFields, "home-score")}`} data-bind-score>
+            {state.score.home}
+          </strong>
+          <div className="lower-result-state">
+            <span>{state.soccerPackage.lowerResultState}</span>
+            <b>{formatPackageTime(countdownSeconds)}</b>
+            <em>Back in</em>
+          </div>
+          <strong className={`lower-result-score ${scoreUpdateClass(textAnimationFields, "away-score")}`} data-bind-score>
+            {state.score.away}
+          </strong>
           <section className="lower-result-team lower-result-away">
-            <b className={textUpdateClass(textAnimationFields, "away-abbrev")} data-bind-team>{state.away.abbreviation}</b>
+            <b className={textUpdateClass(textAnimationFields, "away-abbrev")} data-bind-team>
+              {state.away.abbreviation}
+            </b>
             <TeamImage team={state.away} className={`team-logo ${textUpdateClass(textAnimationFields, "away-logo")}`} />
           </section>
         </div>
@@ -690,30 +762,58 @@ function LineupPanel({ state, phase, textAnimationFields }: { state: SoccerState
     <article className={labOverlayClass("overlay-lineup", phase)} aria-label="Lineup panel">
       <span className="lineup-shadow" aria-hidden="true" />
       <div className="lineup-head">
-        <span className={textUpdateClass(textAnimationFields, "lineup-title")} data-bind-lineup-title>{team.fullName}</span>
+        <span className={textUpdateClass(textAnimationFields, "lineup-title")} data-bind-lineup-title>
+          {team.fullName}
+        </span>
         <TeamImage team={team} className={`team-logo lineup-logo ${textUpdateClass(textAnimationFields, "lineup-logo")}`} />
       </div>
       <ol className={`lineup-list ${textUpdateClass(textAnimationFields, "lineup-rows") ? "lineup-text-updated" : ""}`}>
-        {rows.map((player) => <li key={player.id}><b>{player.number || ""}</b><span>{player.name}</span></li>)}
+        {rows.map((player) => (
+          <li key={player.id}>
+            <b>{player.number || ""}</b>
+            <span>{player.name}</span>
+          </li>
+        ))}
       </ol>
-      <small className="lineup-page">{page + 1} / {totalPages}</small>
+      <small className="lineup-page">
+        {page + 1} / {totalPages}
+      </small>
     </article>
   );
 }
 
-function LabScorebug({ state, now, phase, textAnimationFields }: { state: SoccerState; now: number; phase: ActiveOverlayPhase; textAnimationFields: TextAnimationFields }) {
+function LabScorebug({
+  state,
+  now,
+  phase,
+  textAnimationFields
+}: {
+  state: SoccerState;
+  now: number;
+  phase: ActiveOverlayPhase;
+  textAnimationFields: TextAnimationFields;
+}) {
   const vertical = state.soccerPackage.scorebugLayout === "vertical";
   return (
-    <article
-      className={labOverlayClass("overlay-scorebug", phase, vertical ? "scorebug-vertical" : "scorebug-horizontal")}
-      aria-label="Scorebug"
-    >
+    <article className={labOverlayClass("overlay-scorebug", phase, vertical ? "scorebug-vertical" : "scorebug-horizontal")} aria-label="Scorebug">
       <span className="scorebug-shadow" aria-hidden="true" />
-      <div className={`bug-team ${textUpdateClass(textAnimationFields, "home-abbrev")}`} data-bind-team>{state.home.abbreviation}</div>
-      <div className={`bug-score ${scoreUpdateClass(textAnimationFields, "home-score")}`} data-bind-score>{state.score.home}</div>
-      <div className="bug-clock"><strong>{formatSoccerClock(state.clock, now)}</strong><em>·</em><span>{state.clock.periodLabel}</span></div>
-      <div className={`bug-score ${scoreUpdateClass(textAnimationFields, "away-score")}`} data-bind-score>{state.score.away}</div>
-      <div className={`bug-team ${textUpdateClass(textAnimationFields, "away-abbrev")}`} data-bind-team>{state.away.abbreviation}</div>
+      <div className={`bug-team ${textUpdateClass(textAnimationFields, "home-abbrev")}`} data-bind-team>
+        {state.home.abbreviation}
+      </div>
+      <div className={`bug-score ${scoreUpdateClass(textAnimationFields, "home-score")}`} data-bind-score>
+        {state.score.home}
+      </div>
+      <div className="bug-clock">
+        <strong>{formatSoccerClock(state.clock, now)}</strong>
+        <em>·</em>
+        <span>{state.clock.periodLabel}</span>
+      </div>
+      <div className={`bug-score ${scoreUpdateClass(textAnimationFields, "away-score")}`} data-bind-score>
+        {state.score.away}
+      </div>
+      <div className={`bug-team ${textUpdateClass(textAnimationFields, "away-abbrev")}`} data-bind-team>
+        {state.away.abbreviation}
+      </div>
     </article>
   );
 }
@@ -737,20 +837,23 @@ function CountdownOverlay({ state, countdownSeconds, phase }: { state: SoccerSta
       const deltaY = previousLayout.rect.top - nextRect.top;
       const scaleX = previousLayout.rect.width / Math.max(1, nextRect.width);
       const scaleY = previousLayout.rect.height / Math.max(1, nextRect.height);
-      layoutAnimationRef.current = card.animate([
+      layoutAnimationRef.current = card.animate(
+        [
+          {
+            transform: `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`,
+            transformOrigin: "top left"
+          },
+          {
+            transform: "translate(0, 0) scale(1)",
+            transformOrigin: "top left"
+          }
+        ],
         {
-          transform: `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`,
-          transformOrigin: "top left"
-        },
-        {
-          transform: "translate(0, 0) scale(1)",
-          transformOrigin: "top left"
+          duration: 680,
+          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+          fill: "both"
         }
-      ], {
-        duration: 680,
-        easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-        fill: "both"
-      });
+      );
       layoutAnimationRef.current.onfinish = () => {
         layoutAnimationRef.current = null;
       };
@@ -769,27 +872,43 @@ function CountdownOverlay({ state, countdownSeconds, phase }: { state: SoccerSta
       aria-label="Countdown timer"
     >
       <PackageBackground enabled={!small && state.soccerPackage.packageBackground} />
-      <div ref={cardRef} className="timer-card"><span className="timer-card-shadow" aria-hidden="true" /><span>{label}</span><strong className="timer-value">{formatPackageTime(countdownSeconds)}</strong></div>
+      <div ref={cardRef} className="timer-card">
+        <span className="timer-card-shadow" aria-hidden="true" />
+        <span>{label}</span>
+        <strong className="timer-value">{formatPackageTime(countdownSeconds)}</strong>
+      </div>
     </article>
   );
 }
 
 function OneLineText({ state, phase, textAnimationFields }: { state: SoccerState; phase: ActiveOverlayPhase; textAnimationFields: TextAnimationFields }) {
   return (
-    <article className={labOverlayClass("overlay-text-bug", phase, `one-line-text position-${state.soccerPackage.oneLinePosition}`)} aria-label="One line text bug">
+    <article
+      className={labOverlayClass("overlay-text-bug", phase, `one-line-text position-${state.soccerPackage.oneLinePosition}`)}
+      aria-label="One line text bug"
+    >
       <span className="text-bug-shadow" aria-hidden="true" />
-      <div className={textUpdateClass(textAnimationFields, "one-line")} data-bind-text-one><span>{state.soccerPackage.oneLineText}</span></div>
+      <div className={textUpdateClass(textAnimationFields, "one-line")} data-bind-text-one>
+        <span>{state.soccerPackage.oneLineText}</span>
+      </div>
     </article>
   );
 }
 
 function TwoLineText({ state, phase, textAnimationFields }: { state: SoccerState; phase: ActiveOverlayPhase; textAnimationFields: TextAnimationFields }) {
   return (
-    <article className={labOverlayClass("overlay-text-bug", phase, `two-line-text position-${state.soccerPackage.twoLinePosition}`)} aria-label="Two line text bug">
+    <article
+      className={labOverlayClass("overlay-text-bug", phase, `two-line-text position-${state.soccerPackage.twoLinePosition}`)}
+      aria-label="Two line text bug"
+    >
       <span className="text-bug-shadow" aria-hidden="true" />
       <div>
-        <strong className={textUpdateClass(textAnimationFields, "two-line-a")} data-bind-text-two-a>{state.soccerPackage.twoLineTextA}</strong>
-        <span className={textUpdateClass(textAnimationFields, "two-line-b")} data-bind-text-two-b>{state.soccerPackage.twoLineTextB}</span>
+        <strong className={textUpdateClass(textAnimationFields, "two-line-a")} data-bind-text-two-a>
+          {state.soccerPackage.twoLineTextA}
+        </strong>
+        <span className={textUpdateClass(textAnimationFields, "two-line-b")} data-bind-text-two-b>
+          {state.soccerPackage.twoLineTextB}
+        </span>
       </div>
     </article>
   );
@@ -802,7 +921,11 @@ function PackageBackground({ enabled }: { enabled: boolean }) {
 function TeamImage({ team, className }: { team: SoccerState["home"]; className: string }) {
   const crop = team.imageCrop || { x: 0, y: 0, zoom: 1 };
   return (
-    <div className={className} data-bind-team-logo style={{ "--team-primary": team.primaryColor, "--team-secondary": team.secondaryColor } as React.CSSProperties}>
+    <div
+      className={className}
+      data-bind-team-logo
+      style={{ "--team-primary": team.primaryColor, "--team-secondary": team.secondaryColor } as React.CSSProperties}
+    >
       {team.logoUrl ? (
         <img
           src={mediaApi.mediaUrl(team.logoUrl)}

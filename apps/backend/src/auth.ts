@@ -19,7 +19,10 @@ interface RateBucket {
 }
 
 export class RateLimitError extends Error {
-  constructor(message: string, public readonly retryAfterSeconds: number) {
+  constructor(
+    message: string,
+    public readonly retryAfterSeconds: number
+  ) {
     super(message);
     this.name = "RateLimitError";
   }
@@ -95,8 +98,16 @@ export function verifySessionToken(token: string | undefined, secret: string, no
   if (!safeEqual(signature, expected)) return null;
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as SessionPayload;
-    if (typeof payload.sub !== "string" || !payload.sub || typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp <= nowSeconds ||
-      !Number.isSafeInteger(payload.ver) || payload.ver < 1) return null;
+    if (
+      typeof payload.sub !== "string" ||
+      !payload.sub ||
+      typeof payload.exp !== "number" ||
+      !Number.isFinite(payload.exp) ||
+      payload.exp <= nowSeconds ||
+      !Number.isSafeInteger(payload.ver) ||
+      payload.ver < 1
+    )
+      return null;
     return payload;
   } catch {
     return null;
@@ -193,14 +204,7 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-function consumeRate(
-  buckets: Map<string, RateBucket>,
-  key: string,
-  limit: number,
-  windowMs: number,
-  now: number,
-  message: string
-): void {
+function consumeRate(buckets: Map<string, RateBucket>, key: string, limit: number, windowMs: number, now: number, message: string): void {
   pruneBuckets(buckets, now);
   const current = buckets.get(key);
   if (current && current.resetAt > now && current.count >= limit) {

@@ -113,9 +113,7 @@ export function createLogger(logFile: string, options: LoggerOptions = {}): Logg
     info: (message, meta) => write("info", message, meta),
     warn: (message, meta) => write("warn", message, meta),
     error: (message, meta) => write("error", message, meta),
-    flush: () => pendingWrites === 0 && !rotationRequested
-      ? Promise.resolve()
-      : new Promise<void>((resolve) => flushWaiters.push(resolve))
+    flush: () => (pendingWrites === 0 && !rotationRequested ? Promise.resolve() : new Promise<void>((resolve) => flushWaiters.push(resolve)))
   };
 }
 

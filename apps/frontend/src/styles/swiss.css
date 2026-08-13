@@ -132,7 +132,9 @@ body {
   min-height: 30px;
   padding: 0 12px;
   box-shadow: none;
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .button:hover {
@@ -844,16 +846,12 @@ body {
   gap: 14px;
   padding: 24px;
   text-align: left;
-  background:
-    linear-gradient(90deg, var(--sw-red) 0 5px, transparent 5px),
-    color-mix(in srgb, var(--sw-bg) 96%, var(--sw-ink) 4%);
+  background: linear-gradient(90deg, var(--sw-red) 0 5px, transparent 5px), color-mix(in srgb, var(--sw-bg) 96%, var(--sw-ink) 4%);
 }
 
 .preset-card-new:hover,
 .preset-card-new:focus-visible {
-  background:
-    linear-gradient(90deg, var(--sw-red) 0 8px, transparent 8px),
-    color-mix(in srgb, var(--sw-bg) 90%, var(--sw-ink) 10%);
+  background: linear-gradient(90deg, var(--sw-red) 0 8px, transparent 8px), color-mix(in srgb, var(--sw-bg) 90%, var(--sw-ink) 10%);
 }
 
 .new-game-card-icon {
@@ -882,9 +880,7 @@ body {
   gap: 0;
   padding: 0;
   overflow: hidden;
-  background:
-    linear-gradient(90deg, var(--sw-red) 0 5px, transparent 5px),
-    var(--sw-bg);
+  background: linear-gradient(90deg, var(--sw-red) 0 5px, transparent 5px), var(--sw-bg);
 }
 
 .game-card-body {
@@ -952,7 +948,10 @@ body {
   color: var(--sw-on-red);
   box-sizing: border-box;
   text-decoration: none;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
 }
 
 .game-card-play svg {

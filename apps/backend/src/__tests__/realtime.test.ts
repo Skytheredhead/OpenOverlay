@@ -239,10 +239,12 @@ describe("realtime overlay clients", () => {
     await waitForSocket(socket, "connect");
     const disconnected = waitForSocket(socket, "disconnect");
 
-    await expect(Promise.race([
-      Promise.all([closeBackendServer(testServer.server, testServer.hub), disconnected]).then(() => undefined),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Backend shutdown remained blocked by an upgraded socket")), 1_000))
-    ])).resolves.toBeUndefined();
+    await expect(
+      Promise.race([
+        Promise.all([closeBackendServer(testServer.server, testServer.hub), disconnected]).then(() => undefined),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Backend shutdown remained blocked by an upgraded socket")), 1_000))
+      ])
+    ).resolves.toBeUndefined();
     expect(socket.connected).toBe(false);
     servers.splice(servers.indexOf(testServer), 1);
     testServer.app.close();

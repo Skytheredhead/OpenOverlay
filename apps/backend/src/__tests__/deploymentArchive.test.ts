@@ -79,6 +79,9 @@ function writeString(buffer: Buffer, offset: number, length: number, value: stri
 }
 
 function writeOctal(buffer: Buffer, offset: number, length: number, value: number): void {
-  const encoded = value.toString(8).padStart(length - 1, "0").slice(-(length - 1));
+  const encoded = value
+    .toString(8)
+    .padStart(length - 1, "0")
+    .slice(-(length - 1));
   buffer.write(`${encoded}\0`, offset, length, "ascii");
 }

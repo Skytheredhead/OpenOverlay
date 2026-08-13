@@ -137,7 +137,11 @@ describe("backend state actions", () => {
     });
     expect(() => validatePresetState("soccer", "Graphic boundary", valid)).not.toThrow();
 
-    for (const [field, value] of [["team", "visitor"], ["payload", []], ["payload", null]] as const) {
+    for (const [field, value] of [
+      ["team", "visitor"],
+      ["payload", []],
+      ["payload", null]
+    ] as const) {
       const state = structuredClone(valid);
       (state.activeGraphics[0] as unknown as Record<string, unknown>)[field] = value;
       expect(() => validatePresetState("soccer", "Graphic boundary", state)).toThrow();

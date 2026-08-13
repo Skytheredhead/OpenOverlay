@@ -183,7 +183,9 @@ async function verifyRestore(options) {
     stdio: ["ignore", "pipe", "pipe"]
   });
   let stderr = "";
-  child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+  child.stderr?.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
   try {
     await waitForHealth(port, manifest.buildSha);
     const email = `restore-${randomUUID()}@example.invalid`;
@@ -230,20 +232,25 @@ async function activateRestore(options) {
 }
 
 function readMediaRows(db) {
-  const columns = new Set(db.prepare("PRAGMA table_info(media)").all().map((column) => String(column.name)));
-  const thumbnailFields = ["thumbnail_path", "thumbnail_size_bytes"].every((field) => columns.has(field))
-    ? ", thumbnail_path, thumbnail_size_bytes"
-    : "";
+  const columns = new Set(
+    db
+      .prepare("PRAGMA table_info(media)")
+      .all()
+      .map((column) => String(column.name))
+  );
+  const thumbnailFields = ["thumbnail_path", "thumbnail_size_bytes"].every((field) => columns.has(field)) ? ", thumbnail_path, thumbnail_size_bytes" : "";
   return db.prepare(`SELECT id, path, size_bytes${thumbnailFields} FROM media ORDER BY created_at, id`).all();
 }
 
 function mediaFilesForRow(row) {
-  const files = [{
-    kind: "original",
-    originalPath: String(row.path),
-    expectedBytes: Number(row.size_bytes),
-    backupName: `${String(row.id)}-original-${path.basename(String(row.path))}`
-  }];
+  const files = [
+    {
+      kind: "original",
+      originalPath: String(row.path),
+      expectedBytes: Number(row.size_bytes),
+      backupName: `${String(row.id)}-original-${path.basename(String(row.path))}`
+    }
+  ];
   if (row.thumbnail_path) {
     files.push({
       kind: "thumbnail",
@@ -261,7 +268,10 @@ function resolveMediaSource(originalPath, uploadDir) {
   if (isRegularFile(normalized)) return normalized;
   const directory = path.dirname(normalized);
   const prefix = `${path.basename(normalized)}.deleting-`;
-  const tombstones = fs.readdirSync(directory).filter((name) => name.startsWith(prefix)).sort();
+  const tombstones = fs
+    .readdirSync(directory)
+    .filter((name) => name.startsWith(prefix))
+    .sort();
   if (tombstones.length !== 1) throw new Error(`Missing media bytes for ${originalPath}`);
   const tombstone = path.join(directory, tombstones[0]);
   if (!isRegularFile(tombstone)) throw new Error(`Invalid media tombstone for ${originalPath}`);

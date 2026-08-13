@@ -37,22 +37,24 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 920 } }
     }
   ],
-  webServer: skipWebServers ? undefined : [
-    {
-      command: `mkdir -p ${shellQuote(path.dirname(dbPath))} ${shellQuote(uploadDirectory)} ${shellQuote(path.dirname(logFile))} && env NODE_ENV=test HOST=127.0.0.1 PORT=${backendPort} DATABASE_PATH=${shellQuote(dbPath)} UPLOAD_DIR=${shellQuote(uploadDirectory)} MEDIA_GLOBAL_MAX_BYTES=10737418240 STORAGE_MINIMUM_FREE_BYTES=0 LOG_FILE=${shellQuote(logFile)} JWT_SECRET=e2e-secret CORS_ORIGINS=${shellQuote(corsOrigins(frontendUrl))} npm run dev --workspace @openoverlay/backend`,
-      cwd: repositoryRoot,
-      url: backendHealthUrl,
-      reuseExistingServer,
-      timeout: 20_000
-    },
-    {
-      command: `env VITE_API_BASE_URL=${shellQuote(backendUrl)} VITE_WS_URL=${shellQuote(websocketUrl)} npm run dev --workspace @openoverlay/frontend -- --port ${frontendPort} --strictPort`,
-      cwd: repositoryRoot,
-      url: frontendUrl,
-      reuseExistingServer,
-      timeout: 20_000
-    }
-  ]
+  webServer: skipWebServers
+    ? undefined
+    : [
+        {
+          command: `mkdir -p ${shellQuote(path.dirname(dbPath))} ${shellQuote(uploadDirectory)} ${shellQuote(path.dirname(logFile))} && env NODE_ENV=test HOST=127.0.0.1 PORT=${backendPort} DATABASE_PATH=${shellQuote(dbPath)} UPLOAD_DIR=${shellQuote(uploadDirectory)} MEDIA_GLOBAL_MAX_BYTES=10737418240 STORAGE_MINIMUM_FREE_BYTES=0 LOG_FILE=${shellQuote(logFile)} JWT_SECRET=e2e-secret CORS_ORIGINS=${shellQuote(corsOrigins(frontendUrl))} npm run dev --workspace @openoverlay/backend`,
+          cwd: repositoryRoot,
+          url: backendHealthUrl,
+          reuseExistingServer,
+          timeout: 20_000
+        },
+        {
+          command: `env VITE_API_BASE_URL=${shellQuote(backendUrl)} VITE_WS_URL=${shellQuote(websocketUrl)} npm run dev --workspace @openoverlay/frontend -- --port ${frontendPort} --strictPort`,
+          cwd: repositoryRoot,
+          url: frontendUrl,
+          reuseExistingServer,
+          timeout: 20_000
+        }
+      ]
 });
 
 function readPort(name: string, fallback: number): number {

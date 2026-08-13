@@ -5,10 +5,13 @@ export function useDebouncedCallback<T extends (...args: never[]) => void>(callb
   const latest = useRef(callback);
   latest.current = callback;
 
-  return useCallback(((...args: Parameters<T>) => {
-    window.clearTimeout(timeout.current);
-    timeout.current = window.setTimeout(() => latest.current(...args), delayMs);
-  }) as T, [delayMs]);
+  return useCallback(
+    ((...args: Parameters<T>) => {
+      window.clearTimeout(timeout.current);
+      timeout.current = window.setTimeout(() => latest.current(...args), delayMs);
+    }) as T,
+    [delayMs]
+  );
 }
 
 export function useLocalStorage<T>(key: string, fallback: T) {

@@ -61,6 +61,12 @@ function validateEnvironment(overrides: Record<string, string> = {}) {
     COOKIE_DOMAIN: "",
     ...overrides
   };
-  fs.writeFileSync(file, `${Object.entries(values).map(([key, value]) => `${key}=${value}`).join("\n")}\n`, { mode: 0o600 });
+  fs.writeFileSync(
+    file,
+    `${Object.entries(values)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n")}\n`,
+    { mode: 0o600 }
+  );
   return spawnSync(process.execPath, [validator, file, "8734"], { cwd: repoRoot, encoding: "utf8" });
 }

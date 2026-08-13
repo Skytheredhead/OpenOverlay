@@ -18,11 +18,16 @@ describe("backup and restore evidence", () => {
     const fixture = createFixture();
     const result = runBackup([
       "create",
-      "--kind", "predeploy",
-      "--root", fixture.backupRoot,
-      "--database", fixture.databasePath,
-      "--uploads", fixture.uploadDir,
-      "--build-sha", "a".repeat(40)
+      "--kind",
+      "predeploy",
+      "--root",
+      fixture.backupRoot,
+      "--database",
+      fixture.databasePath,
+      "--uploads",
+      fixture.uploadDir,
+      "--build-sha",
+      "a".repeat(40)
     ]);
     expect(result.status).toBe(0);
     const created = JSON.parse(result.stdout.trim()) as { snapshot: string; mediaFiles: number };
@@ -42,14 +47,21 @@ describe("backup and restore evidence", () => {
 
   it("never accepts a snapshot after database bytes are corrupted", () => {
     const fixture = createFixture();
-    const created = JSON.parse(runBackup([
-      "create",
-      "--kind", "daily",
-      "--root", fixture.backupRoot,
-      "--database", fixture.databasePath,
-      "--uploads", fixture.uploadDir,
-      "--build-sha", "b".repeat(40)
-    ]).stdout) as { snapshot: string };
+    const created = JSON.parse(
+      runBackup([
+        "create",
+        "--kind",
+        "daily",
+        "--root",
+        fixture.backupRoot,
+        "--database",
+        fixture.databasePath,
+        "--uploads",
+        fixture.uploadDir,
+        "--build-sha",
+        "b".repeat(40)
+      ]).stdout
+    ) as { snapshot: string };
     fs.appendFileSync(path.join(created.snapshot, "openoverlay.sqlite"), "corruption");
 
     const verified = runBackup(["verify", "--snapshot", created.snapshot]);

@@ -56,10 +56,19 @@ function deferred<T>() {
 }
 
 function renderTeamsLibrary() {
-  const router = createMemoryRouter([{
-    path: "*",
-    element: <PromptDialogProvider><TeamsLibrary /></PromptDialogProvider>
-  }], { initialEntries: ["/dash/teams"] });
+  const router = createMemoryRouter(
+    [
+      {
+        path: "*",
+        element: (
+          <PromptDialogProvider>
+            <TeamsLibrary />
+          </PromptDialogProvider>
+        )
+      }
+    ],
+    { initialEntries: ["/dash/teams"] }
+  );
   return render(<RouterProvider router={router} />);
 }
 
@@ -69,13 +78,15 @@ describe("TeamsLibrary concurrency and reconciliation", () => {
     apiMocks.listMedia.mockResolvedValue({ media: [] });
     apiMocks.uploadMedia.mockResolvedValue({ media: mediaFixture() });
     apiMocks.removeTeam.mockResolvedValue({ ok: true });
-    apiMocks.patchTeam.mockImplementation((_id: string, input: TeamLibraryEntry) => Promise.resolve({
-      team: {
-        ...input,
-        revision: input.revision + 1,
-        updatedAt: "2026-08-10T12:01:00.000Z"
-      }
-    }));
+    apiMocks.patchTeam.mockImplementation((_id: string, input: TeamLibraryEntry) =>
+      Promise.resolve({
+        team: {
+          ...input,
+          revision: input.revision + 1,
+          updatedAt: "2026-08-10T12:01:00.000Z"
+        }
+      })
+    );
   });
 
   afterEach(() => {
@@ -114,11 +125,13 @@ describe("TeamsLibrary concurrency and reconciliation", () => {
 
     fireEvent.change(screen.getByRole("textbox", { name: "Coach" }), { target: { value: "Updated coach" } });
     await waitFor(() => expect(apiMocks.patchTeam).toHaveBeenCalledTimes(2), { timeout: 2_000 });
-    expect(apiMocks.patchTeam.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
-      fullName: "Remote team",
-      coach: "Updated coach",
-      revision: 2
-    }));
+    expect(apiMocks.patchTeam.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        fullName: "Remote team",
+        coach: "Updated coach",
+        revision: 2
+      })
+    );
   });
 
   it("retries a canceled pending autosave when deletion fails", async () => {
@@ -135,9 +148,11 @@ describe("TeamsLibrary concurrency and reconciliation", () => {
     await screen.findByText("Delete failed offline");
     expect(apiMocks.removeTeam).toHaveBeenCalledWith(initial.id, initial.revision);
     await waitFor(() => expect(apiMocks.patchTeam).toHaveBeenCalledOnce(), { timeout: 2_000 });
-    expect(apiMocks.patchTeam.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
-      fullName: "Unsaved local team"
-    }));
+    expect(apiMocks.patchTeam.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        fullName: "Unsaved local team"
+      })
+    );
   });
 
   it("waits for an in-flight save and deletes with the resulting server revision", async () => {

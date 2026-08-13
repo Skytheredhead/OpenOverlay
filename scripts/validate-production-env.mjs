@@ -3,11 +3,7 @@
 import fs from "node:fs";
 
 const expectedFrontendOrigin = "https://openoverlay.skylarenns.com";
-const allowedCorsOrigins = new Set([
-  expectedFrontendOrigin,
-  "http://localhost:5173",
-  "http://127.0.0.1:5173"
-]);
+const allowedCorsOrigins = new Set([expectedFrontendOrigin, "http://localhost:5173", "http://127.0.0.1:5173"]);
 
 try {
   const [file, expectedPortValue] = process.argv.slice(2);
@@ -79,11 +75,11 @@ function normalizeValue(source, lineNumber) {
   const value = source.trim();
   if (!value) return "";
   const quote = value[0];
-  if (quote === "\"" || quote === "'") {
+  if (quote === '"' || quote === "'") {
     if (value.at(-1) !== quote) throw new Error(`Unterminated quoted environment value on line ${lineNumber}`);
     return value.slice(1, -1);
   }
-  if (value.at(-1) === "\"" || value.at(-1) === "'") {
+  if (value.at(-1) === '"' || value.at(-1) === "'") {
     throw new Error(`Unexpected quote in environment value on line ${lineNumber}`);
   }
   return value;
