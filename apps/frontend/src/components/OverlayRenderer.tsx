@@ -319,26 +319,7 @@ function SoccerOverlay({
           </div>
         </LabFrame>
       </Positioned>
-      {state.elements.statBug.visible ? (
-        <Positioned element={state.elements.statBug} interactive={interactive} onDragStart={onDragStart}>
-          <div className={`statbug variant-${state.elements.statBug.variant}`}>
-            <StatLine label="Shots" home={state.stats.shots.home} away={state.stats.shots.away} />
-            <StatLine label="Fouls" home={state.stats.fouls.home} away={state.stats.fouls.away} />
-            <StatLine label="Cards" home={state.stats.cards.home} away={state.stats.cards.away} />
-          </div>
-        </Positioned>
-      ) : null}
     </>
-  );
-}
-
-function StatLine({ label, home, away }: { label: string; home: number; away: number }) {
-  return (
-    <div className="stat-line">
-      <span>{label}</span>
-      <strong>{home}</strong>
-      <em>{away}</em>
-    </div>
   );
 }
 

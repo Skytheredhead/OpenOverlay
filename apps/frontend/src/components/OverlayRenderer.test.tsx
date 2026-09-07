@@ -104,24 +104,15 @@ describe("OverlayRenderer", () => {
     expect(screen.getByRole("heading", { name: "Goal by #10" })).toBeInTheDocument();
   });
 
-  it("renders soccer stats only while the stat bug is visible", () => {
+  it("does not render the soccer stats tracker", () => {
     const state = createDefaultSoccerState("Test Match");
     state.stats.shots = { home: 7, away: 4 };
-    const { container, rerender } = render(
+    const { container } = render(
       <div style={{ width: 960, height: 540 }}>
         <OverlayRenderer type="soccer" state={state} />
       </div>
     );
 
-    expect(container.querySelector(".statbug")?.textContent).toContain("Shots74");
-
-    const hidden = structuredClone(state);
-    hidden.elements.statBug.visible = false;
-    rerender(
-      <div style={{ width: 960, height: 540 }}>
-        <OverlayRenderer type="soccer" state={hidden} />
-      </div>
-    );
     expect(container.querySelector(".statbug")).not.toBeInTheDocument();
   });
 
