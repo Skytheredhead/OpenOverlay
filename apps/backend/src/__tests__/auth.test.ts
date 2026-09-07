@@ -140,6 +140,7 @@ describe("auth", () => {
     expect(() => loadConfig({ mediaGlobalMaxBytes: 0 })).toThrow(/MEDIA_GLOBAL_MAX_BYTES must be a positive integer/);
     expect(() => loadConfig({ storageMinimumFreeBytes: -1 })).toThrow(/STORAGE_MINIMUM_FREE_BYTES must be a non-negative integer/);
     expect(() => loadConfig({ host: "" })).toThrow(/HOST must be a non-empty host/);
+    expect(loadConfig({ gatewayControlSocket: "/tmp/openoverlay-test-control.sock" }).gatewayControlSocket).toBe("/tmp/openoverlay-test-control.sock");
     expect(() => loadConfig({ corsOrigins: ["https://example.com", "https://example.com"] })).toThrow(/duplicates/);
     expect(() => loadConfig({ corsOrigins: ["https://example.com/path"] })).toThrow(/valid HTTP/);
     expect(() => loadConfig({ frontendUrl: "javascript:alert(1)" })).toThrow(/valid HTTP/);

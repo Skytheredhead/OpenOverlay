@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
@@ -94,7 +95,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     frontendUrl,
     gatewayBackendHost,
     gatewayBackendPorts,
-    gatewayControlSocket: path.resolve(overrides.gatewayControlSocket ?? process.env.GATEWAY_CONTROL_SOCKET ?? "/run/openoverlay/gateway-control.sock"),
+    gatewayControlSocket: path.resolve(overrides.gatewayControlSocket ?? process.env.GATEWAY_CONTROL_SOCKET ?? defaultGatewayControlSocket()),
     gatewaySlotStartupTimeoutMs: validatePositiveNumber(
       overrides.gatewaySlotStartupTimeoutMs ?? parsePositiveNumber(process.env.GATEWAY_SLOT_STARTUP_TIMEOUT_MS, 15_000, "GATEWAY_SLOT_STARTUP_TIMEOUT_MS"),
       "GATEWAY_SLOT_STARTUP_TIMEOUT_MS"
@@ -132,6 +133,19 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 
 function deriveShareLookupSecret(jwtSecret: string): string {
   return createHmac("sha256", jwtSecret).update("openoverlay-share-lookup-v1").digest("hex");
+}
+
+function defaultGatewayControlSocket(): string {
+  if (typeof process.getuid === "function") {
+    const userRuntimeDirectory = `/run/user/${process.getuid()}`;
+    try {
+      fs.accessSync(userRuntimeDirectory, fs.constants.W_OK);
+      return path.join(userRuntimeDirectory, "openoverlay", "gateway-control.sock");
+    } catch {
+      // Dedicated production units create /run/openoverlay with RuntimeDirectory.
+    }
+  }
+  return "/run/openoverlay/gateway-control.sock";
 }
 
 function parseEnvironment(value: string | undefined): AppConfig["env"] {
