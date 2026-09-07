@@ -152,7 +152,7 @@ npm run deploy:backend
 
 The script connects as the normal configured SSH user, fetches the exact current `origin/main` SHA, installs pinned dependencies, builds shared/backend code, restarts the user-owned backend process, and verifies `/health` reports that SHA. Local uncommitted files are irrelevant because deployment always comes from GitHub.
 
-If the new process does not become healthy, it rebuilds the previous checkout and restarts it automatically. Override `SSH_TARGET`, `REMOTE_REPO_DIR`, or `DEPLOY_SHA` only when intentionally targeting a different host, checkout, or full Git SHA.
+If the new process does not become healthy, the script rolls back automatically only when the database schema stayed unchanged. If a migration advanced the schema, it keeps the new checkout and requires forward recovery rather than starting incompatible old code. Override `SSH_TARGET`, `REMOTE_REPO_DIR`, `REMOTE_DATABASE_PATH`, or `DEPLOY_SHA` only when intentionally targeting a different host, checkout, database, or full Git SHA.
 
 `SHARE_LOOKUP_SECRET` is optional. When omitted, the backend derives a domain-separated lookup key from the required strong `JWT_SECRET`; an explicit independent 32-byte value remains supported.
 

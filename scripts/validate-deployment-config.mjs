@@ -67,6 +67,8 @@ for (const fragment of [
   "npm ci --include=dev",
   "kill -TERM",
   "wait_for_commit",
+  "schema_version",
+  "refusing incompatible source rollback",
   "rolling back"
 ]) {
   if (!backendDeploy.includes(fragment)) throw new Error(`${backendDeployFile} is missing required deployment invariant: ${fragment}`);
@@ -94,7 +96,7 @@ if (hostDeploy.includes("git pull") || hostDeploy.includes("git fetch")) {
 }
 
 console.log(`${backendUnitFile}: immutable release path and systemd hardening validated`);
-console.log(`${backendDeployFile}: direct SSH build, health check, and rollback validated`);
+console.log(`${backendDeployFile}: direct SSH build, health check, and schema-safe rollback validated`);
 console.log(`${hostDeployFile}: immutable promotion, backup, and rollback wiring validated`);
 
 function headerValue(rule, name) {
