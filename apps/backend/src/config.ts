@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 
@@ -44,7 +45,8 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   if (!jwtSecret) {
     throw new Error("JWT_SECRET is required");
   }
-  const shareLookupSecret = overrides.shareLookupSecret ?? process.env.SHARE_LOOKUP_SECRET ?? (env === "production" ? "" : "test-only-share-lookup-secret");
+  const configuredShareLookupSecret = overrides.shareLookupSecret ?? process.env.SHARE_LOOKUP_SECRET;
+  const shareLookupSecret = configuredShareLookupSecret || (env === "production" ? deriveShareLookupSecret(jwtSecret) : "test-only-share-lookup-secret");
   if (env === "production" && Buffer.byteLength(shareLookupSecret, "utf8") < 32) {
     throw new Error("SHARE_LOOKUP_SECRET must be at least 32 bytes in production");
   }
@@ -126,6 +128,10 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       "REALTIME_MAX_PAYLOAD_BYTES"
     )
   };
+}
+
+function deriveShareLookupSecret(jwtSecret: string): string {
+  return createHmac("sha256", jwtSecret).update("openoverlay-share-lookup-v1").digest("hex");
 }
 
 function parseEnvironment(value: string | undefined): AppConfig["env"] {

@@ -20,6 +20,13 @@ describe("production environment validation", () => {
     expect(result.stdout).toContain("production environment validated");
   });
 
+  it("accepts a missing share lookup secret because the backend derives one from JWT_SECRET", () => {
+    const result = validateEnvironment({ SHARE_LOOKUP_SECRET: "" });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("production environment validated");
+  });
+
   it.each([
     ["a deceptive CORS suffix", { CORS_ORIGINS: "https://openoverlay.skylarenns.com.evil" }, /CORS_ORIGINS/],
     ["an unapproved CORS origin", { CORS_ORIGINS: "https://openoverlay.skylarenns.com,https://staging.example.com" }, /CORS_ORIGINS/],
@@ -28,7 +35,6 @@ describe("production environment validation", () => {
     ["an invalid global media quota", { MEDIA_GLOBAL_MAX_BYTES: "0" }, /MEDIA_GLOBAL_MAX_BYTES/],
     ["an invalid free-space reserve", { STORAGE_MINIMUM_FREE_BYTES: "-1" }, /STORAGE_MINIMUM_FREE_BYTES/],
     ["the known development signing secret", { JWT_SECRET: "dev-only-openoverlay-session-secret-change-me" }, /development secret/],
-    ["a missing share lookup secret", { SHARE_LOOKUP_SECRET: "" }, /SHARE_LOOKUP_SECRET/],
     ["a reused share lookup secret", { SHARE_LOOKUP_SECRET: "do-not-print-this-production-secret" }, /independent/],
     ["an environment-owned runtime path", { PATH: "/custom/bin" }, /PATH must not be set/]
   ])("rejects %s without echoing secrets", (_name, overrides, expectedError) => {

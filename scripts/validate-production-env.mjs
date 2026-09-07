@@ -36,12 +36,14 @@ try {
     throw new Error("JWT_SECRET must not use a documented placeholder or development secret");
   }
 
-  const shareSecret = requiredValue(values, "SHARE_LOOKUP_SECRET");
-  if (Buffer.byteLength(shareSecret, "utf8") < 32) {
-    throw new Error("SHARE_LOOKUP_SECRET must be at least 32 bytes");
-  }
-  if (shareSecret === secret) {
-    throw new Error("SHARE_LOOKUP_SECRET must be independent from JWT_SECRET");
+  const shareSecret = values.get("SHARE_LOOKUP_SECRET") || "";
+  if (shareSecret) {
+    if (Buffer.byteLength(shareSecret, "utf8") < 32) {
+      throw new Error("SHARE_LOOKUP_SECRET must be at least 32 bytes when set");
+    }
+    if (shareSecret === secret) {
+      throw new Error("SHARE_LOOKUP_SECRET must be independent from JWT_SECRET");
+    }
   }
 
   validateCorsOrigins(requiredValue(values, "CORS_ORIGINS"));

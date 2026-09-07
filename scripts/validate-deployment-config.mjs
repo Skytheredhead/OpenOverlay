@@ -60,7 +60,15 @@ for (const line of [
 
 const backendDeployFile = "scripts/deploy-backend.sh";
 const backendDeploy = fs.readFileSync(backendDeployFile, "utf8");
-for (const fragment of ["git archive --format=tar.gz", "shasum -a 256", "ClearAllForwardings=yes", "RequestTTY=no"]) {
+for (const fragment of [
+  "git ls-remote origin refs/heads/main",
+  "git fetch origin main",
+  "git switch --detach",
+  "npm ci --include=dev",
+  "kill -TERM",
+  "wait_for_commit",
+  "rolling back"
+]) {
   if (!backendDeploy.includes(fragment)) throw new Error(`${backendDeployFile} is missing required deployment invariant: ${fragment}`);
 }
 for (const obsolete of ["SELF_UPDATE_ENABLED", "SELF_UPDATE_REPO_DIR", "GATEWAY_RELEASE_DIR"]) {
@@ -86,7 +94,7 @@ if (hostDeploy.includes("git pull") || hostDeploy.includes("git fetch")) {
 }
 
 console.log(`${backendUnitFile}: immutable release path and systemd hardening validated`);
-console.log(`${backendDeployFile}: exact-SHA archive streaming validated`);
+console.log(`${backendDeployFile}: direct SSH build, health check, and rollback validated`);
 console.log(`${hostDeployFile}: immutable promotion, backup, and rollback wiring validated`);
 
 function headerValue(rule, name) {

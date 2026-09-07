@@ -144,31 +144,17 @@ When bumping either version, update backend `/health`, frontend build metadata, 
 
 ## Backend Deployment
 
-The backend deployment script uses SSH key/config/agent auth only. It never reads local Desktop password files.
+The live backend runs from the Git checkout on `shhh.skylarenns.com`. Deploy the current GitHub `main` with:
 
 ```bash
-REMOTE_REPO_URL=git@github.com:OWNER/OpenOverlay.git bash scripts/deploy-backend.sh
+npm run deploy:backend
 ```
 
-It deploys to the first available base path:
+The script connects as the normal configured SSH user, fetches the exact current `origin/main` SHA, installs pinned dependencies, builds shared/backend code, restarts the user-owned backend process, and verifies `/health` reports that SHA. Local uncommitted files are irrelevant because deployment always comes from GitHub.
 
-1. `/home/skylarenns/Documents/GitHub`
-2. `/home/skylarenns/documents/github`
-3. Creates `/home/skylarenns/Documents/GitHub`
+If the new process does not become healthy, it rebuilds the previous checkout and restarts it automatically. Override `SSH_TARGET`, `REMOTE_REPO_DIR`, or `DEPLOY_SHA` only when intentionally targeting a different host, checkout, or full Git SHA.
 
-Final app path: `.../OpenOverlay`.
-
-The script:
-
-- Installs Git and Node.js 24 if needed
-- Backs up existing source and `/var/lib/openoverlay` to `/home/skylarenns/backups/openoverlay/YYYYMMDD-HHMMSS`
-- Keeps latest 5 backups
-- Excludes `node_modules`, `dist`, coverage, and build/test caches
-- Runs `npm ci` and `npm run build`
-- Creates `/etc/openoverlaybackend.env` with generated secrets if missing
-- Creates/enables/restarts `Openoverlaybackend.service`, which runs the local gateway on port `8734`
-- Verifies local and public health, gateway identity, and the exact deployed commit
-- Attempts Cloudflare Tunnel setup if `cloudflared` is authenticated
+`SHARE_LOOKUP_SECRET` is optional. When omitted, the backend derives a domain-separated lookup key from the required strong `JWT_SECRET`; an explicit independent 32-byte value remains supported.
 
 Manual service checks:
 
@@ -180,8 +166,6 @@ tail -n 100 /var/log/openoverlay/backend.log
 ```
 
 The frontend publishes `/build-info.json`, the backend includes build metadata in `/health`, and the gateway publishes its own and its active child's identity at `/_openoverlay/gateway`. The app warns when the frontend and backend commits differ. `npm run check:deployments` verifies that the frontend, gateway process, and active backend all report the same commit. Override the checked URLs with `FRONTEND_URL=` and `BACKEND_URL=` when needed.
-
-The backend systemd deployment also enables a gateway-managed self-updater. Once a minute, the gateway fetches `origin/main`; when a fast-forward update is available and the server checkout is clean, it pulls, runs `npm ci --include=dev`, audits dependencies, rebuilds and tests the shared/backend workspaces, starts a candidate backend on an internal slot port, verifies its health and exact commit, then promotes it. Existing WebSocket clients are disconnected so they reconnect to the promoted backend. The gateway then restarts under systemd so gateway-only changes also take effect; expect a brief connection interruption during this restart.
 
 ## Cloudflare Tunnel
 
@@ -202,7 +186,7 @@ cloudflared tunnel login
 Then rerun:
 
 ```bash
-REMOTE_REPO_URL=git@github.com:OWNER/OpenOverlay.git bash scripts/deploy-backend.sh
+npm run deploy:backend
 ```
 
 Verify:

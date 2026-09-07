@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @openoverlay/backend & npm run dev --workspace @openoverlay/frontend",
+    "deploy:backend": "bash scripts/deploy-backend.sh",
     "build": "npm run build --workspace @openoverlay/shared && npm run build --workspace @openoverlay/backend && npm run build --workspace @openoverlay/frontend",
     "test": "npm run build --workspace @openoverlay/shared && npm run test --workspaces --if-present",
     "test:backend": "npm run test --workspace @openoverlay/backend",
