@@ -31,6 +31,8 @@ import {
   OPENOVERLAY_API_VERSION,
   OPENOVERLAY_REALTIME_VERSION,
   computeClockSeconds,
+  clockIsAtStop,
+  pauseClock,
   createDefaultChurchState,
   createDefaultSoccerState,
   defaultTeamColors,
@@ -1599,6 +1601,8 @@ export function PresetEditor() {
   const navigate = useNavigate();
   const prompt = usePromptDialog();
   const [preset, setPreset] = useState<PresetSummary | null>(null);
+  // Keep the receipt anchor mounted across control-tab changes.
+  const controlTimeMs = useControlTime(preset?.serverTimeMs, null);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
   const [tab, setTab] = useState("live");
@@ -1918,6 +1922,17 @@ export function PresetEditor() {
     return broadcast?.id === response.id && broadcast.revision > response.revision ? broadcast : response;
   }, []);
 
+  const recoverMutationBroadcast = useCallback(() => {
+    // A failed response does not imply a failed commit. A validated broadcast
+    // is authoritative, except while an unsaved local draft still needs recovery.
+    const broadcast = mutationBroadcastRef.current;
+    if (autosaveFailedRef.current || !broadcast || broadcast.id !== presetRef.current?.id) return;
+    mutationBroadcastRef.current = null;
+    serverRevisionByPresetRef.current[broadcast.id] = broadcast.revision;
+    replacePreset(broadcast);
+    resetHistory(broadcast.state);
+  }, [replacePreset, resetHistory]);
+
   const commitState = useCallback(
     (nextState: PresetState, persist = true) => {
       const current = presetRef.current;
@@ -2009,6 +2024,7 @@ export function PresetEditor() {
         const accepted = reconcileMutation(response.preset);
         serverRevisionByPresetRef.current[resourceId] = accepted.revision;
         replacePreset(accepted);
+        if (accepted.revision > response.preset.revision) resetHistory(accepted.state);
       } catch (err) {
         if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
         historyIndexRef.current = previousIndex;
@@ -2020,6 +2036,7 @@ export function PresetEditor() {
           setRevisionConflict(true);
           setError("This game changed in another tab. Reload the latest version before continuing.");
         } else {
+          recoverMutationBroadcast();
           setError(err instanceof Error ? err.message : "Could not restore game history");
         }
       } finally {
@@ -2032,7 +2049,7 @@ export function PresetEditor() {
         }
       }
     },
-    [reconcileMutation, replacePreset, requireSavedState, revisionConflict]
+    [reconcileMutation, recoverMutationBroadcast, replacePreset, requireSavedState, resetHistory, revisionConflict]
   );
 
   useEffect(() => {
@@ -2084,7 +2101,8 @@ export function PresetEditor() {
       const accepted = reconcileMutation(response.preset);
       serverRevisionByPresetRef.current[resourceId] = accepted.revision;
       replacePreset(accepted);
-      appendHistory(accepted.state);
+      if (accepted.revision > response.preset.revision) resetHistory(accepted.state);
+      else appendHistory(accepted.state);
     } catch (err) {
       if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
       if (err instanceof ApiError && err.status === 409) {
@@ -2092,6 +2110,7 @@ export function PresetEditor() {
         setRevisionConflict(true);
         setError("This game changed in another tab. Reload the latest version before continuing.");
       } else {
+        recoverMutationBroadcast();
         setError(err instanceof Error ? err.message : "Game action failed");
       }
     } finally {
@@ -2493,6 +2512,7 @@ export function PresetEditor() {
             <SoccerBottomControlPanel
               key={preset.id}
               state={soccerState}
+              serverTimeMs={controlTimeMs}
               media={media}
               teams={teams}
               activeTab={tab}
@@ -2517,14 +2537,7 @@ export function PresetEditor() {
             <aside className="inspector">
               {tabButtons}
               {preset.type === "church" && isChurchState(preset.state) ? (
-                <ChurchControls
-                  state={preset.state}
-                  serverTimeMs={preset.serverTimeMs}
-                  media={media}
-                  tab={tab}
-                  commitState={commitState}
-                  runAction={runAction}
-                />
+                <ChurchControls state={preset.state} serverTimeMs={controlTimeMs} media={media} tab={tab} commitState={commitState} runAction={runAction} />
               ) : null}
               {preset.type === "custom" ? (
                 <div className="notice" role="status">
@@ -2752,6 +2765,7 @@ function SoccerControls({
 
 function SoccerBottomControlPanel({
   state,
+  serverTimeMs,
   media,
   teams,
   activeTab,
@@ -2766,6 +2780,7 @@ function SoccerBottomControlPanel({
   runAction
 }: {
   state: SoccerState;
+  serverTimeMs?: number;
   media: MediaItem[];
   teams: TeamLibraryEntry[];
   activeTab: string;
@@ -2787,7 +2802,7 @@ function SoccerBottomControlPanel({
           <SoccerLiveSetupPanel state={state} teams={teams} commitMatchState={commitMatchState} />
           <SoccerMatchupTextPanel state={state} commitMatchState={commitMatchState} />
           <SoccerTextBugPanel state={state} updatePackage={updateMatchPackage} />
-          <SoccerCountdownPanel state={state} updatePackage={updatePackage} runAction={runAction} />
+          <SoccerCountdownPanel state={state} serverTimeMs={serverTimeMs} updatePackage={updatePackage} runAction={runAction} />
         </div>
       ) : null}
       {activeTab === "setup" ? (
@@ -2798,9 +2813,9 @@ function SoccerBottomControlPanel({
       ) : null}
       {activeTab === "live" ? (
         <div className="live-control-stack">
-          <SoccerScoreClockPanel state={state} updateClock={updateClock} runAction={runAction} />
+          <SoccerScoreClockPanel state={state} serverTimeMs={serverTimeMs} updateClock={updateClock} runAction={runAction} />
           <SoccerOperationsPanel state={state} commitState={commitState} runAction={runAction} />
-          <SoccerCountdownPanel state={state} updatePackage={updatePackage} runAction={runAction} />
+          <SoccerCountdownPanel state={state} serverTimeMs={serverTimeMs} updatePackage={updatePackage} runAction={runAction} />
         </div>
       ) : null}
     </div>
@@ -3041,6 +3056,7 @@ export function SyncedTimeInput({ seconds, disabled = false, onCommit }: { secon
   const [draft, setDraft] = useState(formatted);
   const [invalid, setInvalid] = useState(false);
   const focusedRef = useRef(false);
+  const editedRef = useRef(false);
 
   useEffect(() => {
     if (!focusedRef.current) {
@@ -3058,13 +3074,20 @@ export function SyncedTimeInput({ seconds, disabled = false, onCommit }: { secon
       title={invalid ? "Enter seconds or a time in M:SS format" : undefined}
       onFocus={() => {
         focusedRef.current = true;
+        editedRef.current = false;
       }}
       onChange={(event) => {
+        editedRef.current = true;
         setDraft(event.target.value);
         setInvalid(false);
       }}
       onBlur={() => {
         focusedRef.current = false;
+        if (!editedRef.current) {
+          setDraft(formatted);
+          setInvalid(false);
+          return;
+        }
         const parsed = tryParseClockTime(draft);
         if (parsed === null) {
           setInvalid(true);
@@ -3078,15 +3101,47 @@ export function SyncedTimeInput({ seconds, disabled = false, onCommit }: { secon
   );
 }
 
-function SoccerCountdownPanel({
+// Tick only the controls that display time, using the same monotonic server
+// anchor as the overlay. Stop scheduling once a finite timer has expired.
+function useControlTime(serverTimeMs: number | undefined, deadline: number | null) {
+  const anchor = useMemo(() => ({ server: serverTimeMs ?? Date.now(), received: performance.now() }), [serverTimeMs]);
+  const [, refresh] = useState(0);
+  useEffect(() => {
+    if (deadline === null) return;
+    let timer: number | undefined;
+    const schedule = () => {
+      const remaining = deadline - (anchor.server + performance.now() - anchor.received);
+      if (remaining <= 0) return;
+      timer = window.setTimeout(
+        () => {
+          refresh((value) => value + 1);
+          schedule();
+        },
+        Math.min(250, remaining)
+      );
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, [anchor, deadline]);
+  return anchor.server + performance.now() - anchor.received;
+}
+
+export function SoccerCountdownPanel({
   state,
+  serverTimeMs,
   updatePackage,
   runAction
 }: {
   state: SoccerState;
+  serverTimeMs?: number;
   updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
+  const countdown = state.soccerPackage.countdown;
+  const deadline = countdown.running && countdown.startedAtMs !== null ? countdown.startedAtMs + countdown.seconds * 1000 : null;
+  const now = useControlTime(serverTimeMs, deadline);
+  const running = countdown.running && (deadline === null || now < deadline);
+
   function updateCountdown(patch: Partial<SoccerState["soccerPackage"]["countdown"]>) {
     updatePackage({ countdown: { ...state.soccerPackage.countdown, ...patch } });
   }
@@ -3103,15 +3158,11 @@ function SoccerCountdownPanel({
           <button
             className="button primary icon-toggle"
             type="button"
-            aria-label={state.soccerPackage.countdown.running ? "Stop countdown" : "Start countdown"}
-            title={state.soccerPackage.countdown.running ? "Stop countdown" : "Start countdown"}
+            aria-label={running ? "Stop countdown" : "Start countdown"}
+            title={running ? "Stop countdown" : "Start countdown"}
             onClick={() => void runAction("countdown-toggle")}
           >
-            {state.soccerPackage.countdown.running ? (
-              <Square size={14} fill="currentColor" strokeWidth={0} />
-            ) : (
-              <Play size={14} fill="currentColor" strokeWidth={0} />
-            )}
+            {running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
           </button>
           <button className="button" type="button" onClick={() => startPresetCountdown(300)}>
             5:00
@@ -3167,15 +3218,22 @@ function SoccerCountdownPanel({
   );
 }
 
-function SoccerScoreClockPanel({
+export function SoccerScoreClockPanel({
   state,
+  serverTimeMs,
   updateClock,
   runAction
 }: {
   state: SoccerState;
+  serverTimeMs?: number;
   updateClock: (patch: Partial<SoccerState["clock"]>) => void;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
+  const clock = state.clock;
+  const distance = clock.mode === "up" ? clock.stopAtSeconds - clock.baseSeconds : clock.baseSeconds - clock.stopAtSeconds;
+  const deadline = clock.running ? (clock.stopAtEnabled && clock.startedAtMs !== null ? clock.startedAtMs + Math.max(0, distance) * 1000 : Infinity) : null;
+  const now = useControlTime(serverTimeMs, deadline);
+  const running = clock.running && !clockIsAtStop(clock, now);
   return (
     <div className="score-clock-panel">
       <section className="score-clock-section">
@@ -3201,11 +3259,11 @@ function SoccerScoreClockPanel({
           <button
             className="button primary icon-toggle"
             type="button"
-            aria-label={state.clock.running ? "Pause clock" : "Start clock"}
-            title={state.clock.running ? "Pause clock" : "Start clock"}
+            aria-label={running ? "Pause clock" : "Start clock"}
+            title={running ? "Pause clock" : "Start clock"}
             onClick={() => runAction("clock-toggle")}
           >
-            {state.clock.running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
+            {running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
           </button>
           <button className="button" type="button" onClick={() => runAction("clock-reset")}>
             <RotateCcw size={15} /> Reset
@@ -3214,12 +3272,21 @@ function SoccerScoreClockPanel({
         <div className="form-grid">
           <label className="field">
             <span>Manual time</span>
-            <SyncedTimeInput seconds={computeClockSeconds(state.clock)} onCommit={(seconds) => updateClock(setClockSeconds(state.clock, seconds))} />
+            <SyncedTimeInput seconds={computeClockSeconds(state.clock, now)} onCommit={(seconds) => updateClock(setClockSeconds(state.clock, seconds))} />
           </label>
           <div className="two-col">
             <label className="field">
               <span>Mode</span>
-              <select value={state.clock.mode} onChange={(event) => updateClock({ mode: event.target.value as "up" | "down" })}>
+              <select
+                value={state.clock.mode}
+                title="Changing direction pauses the clock at its current time"
+                onChange={(event) => {
+                  const mode = event.target.value as "up" | "down";
+                  const paused = pauseClock(state.clock, now);
+                  const validStop = mode === "up" ? paused.stopAtSeconds >= paused.baseSeconds : paused.stopAtSeconds <= paused.baseSeconds;
+                  updateClock({ ...paused, mode, stopAtEnabled: paused.stopAtEnabled && validStop });
+                }}
+              >
                 <option value="up">Count up</option>
                 <option value="down">Count down</option>
               </select>

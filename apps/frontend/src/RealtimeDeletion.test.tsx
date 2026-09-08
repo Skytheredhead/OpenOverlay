@@ -104,6 +104,77 @@ describe("preset deletion realtime handling", () => {
     expect(document.querySelector(".score-control strong")).toHaveTextContent("2");
   });
 
+  it("accepts a committed broadcast after the action response fails", async () => {
+    vi.spyOn(presetApi, "get").mockResolvedValue({ preset: presetFixture() });
+    const pending = deferred<{ preset: PresetSummary }>();
+    vi.spyOn(presetApi, "action").mockReturnValue(pending.promise);
+    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
+    vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/dash/presets/:presetId",
+          element: (
+            <PromptDialogProvider>
+              <PresetEditor />
+            </PromptDialogProvider>
+          )
+        }
+      ],
+      { initialEntries: ["/dash/presets/preset-1"] }
+    );
+    render(<RouterProvider router={router} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add point to OOU" }));
+    await waitFor(() => expect(presetApi.action).toHaveBeenCalled());
+    const committed = presetFixture();
+    committed.revision = 3;
+    if ("score" in committed.state) committed.state.score.home = 1;
+    act(() => socketHarness.sockets[0]!.emit("preset:update", committed));
+    await act(async () => pending.reject(new Error("Response lost")));
+    expect(document.querySelector(".score-control strong")).toHaveTextContent("1");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+  });
+
+  it("discards obsolete undo history when a concurrent edit beats its acknowledgement", async () => {
+    vi.spyOn(presetApi, "get").mockResolvedValue({ preset: presetFixture() });
+    const pending = deferred<{ preset: PresetSummary }>();
+    vi.spyOn(presetApi, "action").mockReturnValue(pending.promise);
+    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
+    vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/dash/presets/:presetId",
+          element: (
+            <PromptDialogProvider>
+              <PresetEditor />
+            </PromptDialogProvider>
+          )
+        }
+      ],
+      { initialEntries: ["/dash/presets/preset-1"] }
+    );
+    render(<RouterProvider router={router} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add point to OOU" }));
+    const first = presetFixture();
+    first.revision = 3;
+    if ("score" in first.state) first.state.score.home = 1;
+    await act(async () => pending.resolve({ preset: first }));
+    const undo = deferred<{ preset: PresetSummary }>();
+    vi.spyOn(presetApi, "patch").mockReturnValue(undo.promise);
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(presetApi.patch).toHaveBeenCalled());
+    const remote = presetFixture();
+    remote.revision = 5;
+    if ("score" in remote.state) remote.state.score.home = 7;
+    act(() => socketHarness.sockets[0]!.emit("preset:update", remote));
+    const acknowledged = presetFixture();
+    acknowledged.revision = 4;
+    await act(async () => undo.resolve({ preset: acknowledged }));
+    expect(document.querySelector(".score-control strong")).toHaveTextContent("7");
+    expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+  });
+
   it("preserves a failed autosave draft when another operator broadcasts an update", async () => {
     vi.spyOn(presetApi, "get").mockResolvedValue({ preset: presetFixture() });
     vi.spyOn(presetApi, "patch").mockRejectedValue(new Error("Save failed"));

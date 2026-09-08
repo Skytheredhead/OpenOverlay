@@ -864,13 +864,11 @@ test("teams, media deletion, sharing, church output, and accessible controls wor
   await expect(page.getByRole("heading", { name: "Audit United" })).toBeHidden();
 
   await page.getByRole("link", { name: "Media", exact: true }).click();
-  await page
-    .getByLabel("Upload media files")
-    .setInputFiles({
-      name: "audit.svg",
-      mimeType: "image/svg+xml",
-      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="red"/></svg>')
-    });
+  await page.getByLabel("Upload media files").setInputFiles({
+    name: "audit.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="red"/></svg>')
+  });
   await expect(page.getByText("audit.svg")).toBeVisible();
   await checkAccessibility();
   page.once("dialog", (dialog) => dialog.accept());
@@ -911,4 +909,75 @@ test("teams, media deletion, sharing, church output, and accessible controls wor
   }
   await page.getByRole("button", { name: "Logout", exact: true }).click();
   await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
+});
+
+test("a lost action response preserves the committed score and the next action", async ({ page, context }) => {
+  let receivedCommit!: () => void;
+  const committed = new Promise<void>((resolve) => {
+    receivedCommit = resolve;
+  });
+  page.on("websocket", (socket) =>
+    socket.on("framereceived", ({ payload }) => {
+      if (typeof payload === "string" && payload.includes('"preset:update"') && payload.includes('"score":{"home":1,"away":0}')) receivedCommit();
+    })
+  );
+  await signIn(page);
+  const presetId = await createGame(page, "Lost acknowledgement");
+  const output = await context.newPage();
+  const src = (await page.locator(".output-preview-iframe").getAttribute("src"))!;
+  await output.goto(src);
+  await page.request.post(`${backendUrl}/api/v1/presets/${presetId}/actions/show-overlay`, { data: { overlay: "scorebug" } });
+  const score = output.frameLocator(".lab-frame").locator("[data-bind-score]").first();
+  await expect(score).toHaveText("0");
+  await page.route(
+    `**/presets/${presetId}/actions/home-score-plus`,
+    async (route) => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await committed;
+      await expect(score).toHaveText("1");
+      await route.abort("connectionreset");
+    },
+    { times: 1 }
+  );
+  await page.getByRole("button", { name: "Add point to OOU" }).click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator(".score-control strong").first()).toHaveText("1");
+  await page.getByRole("button", { name: "Add point to OOU" }).click();
+  await expect(score).toHaveText("2");
+  await expect(page.locator(".score-control strong").first()).toHaveText("2");
+  await page.reload();
+  await expect(page.locator(".score-control strong").first()).toHaveText("2");
+});
+
+test("server-timed soccer controls keep running through focus and tab changes", async ({ page }) => {
+  await page.addInitScript(() => {
+    const wallClock = Date.now;
+    Date.now = () => wallClock() + 120_000;
+  });
+  await signIn(page);
+  await createGame(page, "Control clock skew");
+  await page.getByRole("button", { name: "Start clock", exact: true }).click();
+  const manual = page.getByLabel("Manual time", { exact: true });
+  await expect(manual).toHaveValue(/00:0[1-3]/);
+  await manual.focus();
+  const focused = await manual.inputValue();
+  await expect
+    .poll(async () => page.frameLocator(".output-preview-iframe").frameLocator(".lab-frame").locator(".bug-clock strong").first().textContent())
+    .not.toBe(focused);
+  await page.getByRole("heading", { name: "Clock", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pause clock", exact: true })).toBeVisible();
+  await expect(manual).toHaveValue(/00:0[3-9]/);
+  const beforeSwitch = await manual.inputValue();
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByRole("button", { name: "Live", exact: true }).click();
+  await expect.poll(async () => (await manual.inputValue()) >= beforeSwitch).toBe(true);
+  const beforeModeChange = await manual.inputValue();
+  await page.getByRole("combobox", { name: "Mode", exact: true }).first().selectOption("down");
+  await expect(page.getByRole("button", { name: "Start clock", exact: true })).toBeVisible();
+  expect((await manual.inputValue()) >= beforeModeChange).toBe(true);
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+  const pausedTime = await manual.inputValue();
+  await page.reload();
+  await expect(manual).toHaveValue(pausedTime);
 });

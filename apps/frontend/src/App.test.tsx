@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultChurchState, defaultTeam, type PresetListItem } from "@openoverlay/shared";
+import { createDefaultChurchState, createDefaultSoccerState, defaultTeam, type PresetListItem } from "@openoverlay/shared";
 import { MemoryRouter } from "react-router-dom";
-import { App, AuthProvider, ChurchControls, MediaLibrary, SyncedTimeInput, TeamFields, useAuth } from "./App";
+import { App, AuthProvider, ChurchControls, SoccerCountdownPanel, SoccerScoreClockPanel, MediaLibrary, SyncedTimeInput, TeamFields, useAuth } from "./App";
 import { ApiError, authApi, mediaApi, presetApi, statusApi, type MediaItem, type User } from "./lib/api";
 
 afterEach(() => {
@@ -44,6 +44,27 @@ describe("SyncedTimeInput", () => {
     expect(onCommit).toHaveBeenCalledWith(120);
   });
 
+  it("does not rewind a running clock when focus leaves an unchanged input", () => {
+    const onCommit = vi.fn();
+    const { rerender } = render(
+      <label>
+        Clock
+        <SyncedTimeInput seconds={10} onCommit={onCommit} />
+      </label>
+    );
+    const input = screen.getByLabelText("Clock");
+    fireEvent.focus(input);
+    rerender(
+      <label>
+        Clock
+        <SyncedTimeInput seconds={15} onCommit={onCommit} />
+      </label>
+    );
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(input).toHaveValue("00:15");
+  });
+
   it("keeps malformed text visible and does not silently commit zero", () => {
     const onCommit = vi.fn();
     render(
@@ -69,6 +90,58 @@ describe("SyncedTimeInput", () => {
     expect(input).not.toHaveAttribute("aria-invalid");
     expect(onCommit).toHaveBeenCalledOnce();
     expect(onCommit).toHaveBeenCalledWith(0);
+  });
+});
+
+describe("soccer control timing", () => {
+  it("ticks server time, preserves a focused draft, and stops its timer at the clock boundary", () => {
+    vi.useFakeTimers();
+    try {
+      const state = createDefaultSoccerState("Clock");
+      state.clock = { ...state.clock, running: true, startedAtMs: 100_000, baseSeconds: 10, stopAtEnabled: true, stopAtSeconds: 13 };
+      const { unmount } = render(<SoccerScoreClockPanel state={state} serverTimeMs={100_000} updateClock={vi.fn()} runAction={vi.fn()} />);
+      const input = screen.getByLabelText("Manual time");
+      expect(input).toHaveValue("00:10");
+      void act(() => vi.advanceTimersByTime(1000));
+      expect(input).toHaveValue("00:11");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "02:00" } });
+      void act(() => vi.advanceTimersByTime(2000));
+      expect(input).toHaveValue("02:00");
+      expect(screen.getByRole("button", { name: "Start clock" })).toBeVisible();
+      expect(vi.getTimerCount()).toBe(0);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves elapsed time when changing the direction of a running clock", () => {
+    const state = createDefaultSoccerState("Direction");
+    state.clock = { ...state.clock, running: true, startedAtMs: 100_000, baseSeconds: 10, stopAtEnabled: true, stopAtSeconds: 2700 };
+    const updateClock = vi.fn();
+    const { unmount } = render(<SoccerScoreClockPanel state={state} serverTimeMs={105_000} updateClock={updateClock} runAction={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "down" } });
+    expect(updateClock).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "down", baseSeconds: 15, running: false, startedAtMs: null, stopAtEnabled: false })
+    );
+    unmount();
+  });
+
+  it("returns an expired soccer countdown to Start without a server update", () => {
+    vi.useFakeTimers();
+    try {
+      const state = createDefaultSoccerState("Countdown");
+      state.soccerPackage.countdown = { ...state.soccerPackage.countdown, running: true, startedAtMs: 100_000, seconds: 2 };
+      const { unmount } = render(<SoccerCountdownPanel state={state} serverTimeMs={100_000} updatePackage={vi.fn()} runAction={vi.fn()} />);
+      expect(screen.getByRole("button", { name: "Stop countdown" })).toBeVisible();
+      void act(() => vi.advanceTimersByTime(2000));
+      expect(screen.getByRole("button", { name: "Start countdown" })).toBeVisible();
+      expect(vi.getTimerCount()).toBe(0);
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
