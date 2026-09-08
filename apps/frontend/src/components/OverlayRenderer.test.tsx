@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultChurchState, createDefaultSoccerState } from "@openoverlay/shared";
 import { OverlayRenderer } from "./OverlayRenderer";
@@ -14,6 +14,45 @@ async function frameText(container: HTMLElement) {
 }
 
 describe("OverlayRenderer", () => {
+  it.each([100, 700])("cancels a queued entrance when graphics are cleared %i ms into a transition", async (clearAfterMs) => {
+    const state = createDefaultSoccerState("Interrupted transition");
+    const { container, rerender, unmount } = render(<OverlayRenderer type="soccer" state={state} />);
+    await frameText(container);
+    await waitFor(() => expect(Boolean(frameBody(container)?.querySelector(".overlay-entering"))).toBe(false), { timeout: 1500 });
+    vi.useFakeTimers();
+    try {
+      // Finish the initial entrance, then start switching to a scorebug.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      const next = structuredClone(state);
+      next.soccerPackage.activeOverlay = "scorebug";
+      rerender(<OverlayRenderer type="soccer" state={next} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(clearAfterMs);
+      });
+      const cleared = structuredClone(next);
+      cleared.soccerPackage.activeOverlay = null;
+      rerender(<OverlayRenderer type="soccer" state={cleared} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      expect(Boolean(frameBody(container)?.querySelector(".overlay-scorebug:not(.overlay-exiting)"))).toBe(false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(Boolean(frameBody(container)?.querySelector(".overlay-entering, .overlay-exiting"))).toBe(false);
+      rerender(<OverlayRenderer type="soccer" state={next} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(frameBody(container)?.querySelector('[aria-label="Scorebug"]')).not.toBeNull();
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("uses server time for countdowns even when the capture machine clock is wrong", () => {
     const serverTimeMs = Date.now() - 120_000;
     const state = createDefaultChurchState("Clock skew");
@@ -323,9 +362,9 @@ describe("OverlayRenderer", () => {
       </div>
     );
 
-    expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-entering")).toBeTruthy();
-    expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeFalsy();
-    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy(), { timeout: 1600 });
+    expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-entering")).toBeFalsy();
+    expect(frameBody(container)?.querySelector(".overlay-full-matchup.overlay-exiting")).toBeTruthy();
+    await waitFor(() => expect(frameBody(container)?.querySelector(".overlay-full-matchup")).toBeNull(), { timeout: 1600 });
   });
 
   it("delays the incoming soccer overlay when switching overlays", async () => {

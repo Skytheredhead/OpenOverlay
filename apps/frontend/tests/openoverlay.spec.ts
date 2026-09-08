@@ -1139,3 +1139,41 @@ test("media upload and deletion remain accurate when library refreshes fail", as
   await expect(page.getByRole("alert")).toBeHidden();
   await expect(card).toBeHidden();
 });
+
+test("panic clear cancels a queued graphic entrance in the independent browser source", async ({ page, browser }) => {
+  await signIn(page);
+  const presetId = await createGame(page, "Interrupted Broadcast");
+  const preset = (await (await page.request.get(`${backendUrl}/api/v1/presets/${presetId}`)).json()).preset;
+  const capture = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  try {
+    const output = await capture.newPage();
+    await output.goto(new URL(`/overlay/${preset.publicId}`, page.url()).href);
+    const stage = output.frameLocator(".lab-frame").locator("#stage");
+    await expect(stage.locator(".overlay-full-matchup")).toBeVisible();
+    await expect(stage.locator(".overlay-entering")).toHaveCount(0);
+    const shown = await page.request.post(`${backendUrl}/api/v1/presets/${presetId}/actions/show-overlay`, {
+      data: { overlay: "scorebug" },
+      headers: { Origin: new URL(page.url()).origin }
+    });
+    expect(shown.ok()).toBe(true);
+    await expect(stage.locator(".overlay-full-matchup.overlay-exiting")).toHaveCount(1);
+    await page.getByRole("button", { name: "Panic clear" }).click();
+    // Observe the whole transition window, including brief stale entrances.
+    const reappeared = await stage.evaluate(async (node) => {
+      let entered = false;
+      const check = () => {
+        if (node.querySelector(".overlay-scorebug:not(.overlay-exiting)")) entered = true;
+      };
+      const observer = new MutationObserver(check);
+      observer.observe(node, { subtree: true, childList: true, attributes: true });
+      check();
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+      observer.disconnect();
+      return entered;
+    });
+    expect(reappeared).toBe(false);
+    await expect(stage.locator(".overlay-scorebug, .overlay-full-matchup")).toHaveCount(0);
+  } finally {
+    await capture.close();
+  }
+});

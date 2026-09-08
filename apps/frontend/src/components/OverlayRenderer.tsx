@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   clockIsAtStop,
@@ -135,6 +135,8 @@ function SoccerOverlay({
   const [renderedActiveOverlay, setRenderedActiveOverlay] = useState<SoccerLabOverlay | null>(activeOverlay);
   const [enteringOverlay, setEnteringOverlay] = useState<SoccerLabOverlay | null>(activeOverlay);
   const [timerActivatingOverlay, setTimerActivatingOverlay] = useState<SoccerLabOverlay | null>(null);
+  const initialOverlayRef = useRef(activeOverlay);
+  const visibleOverlayRef = useRef(activeOverlay);
   const currentOverlayRef = useRef<SoccerLabOverlay | null>(activeOverlay);
   const pendingOverlayRef = useRef<SoccerLabOverlay | null>(activeOverlay);
   const transitionRunningRef = useRef(false);
@@ -145,104 +147,112 @@ function SoccerOverlay({
   const activeClass = renderedActiveOverlay ? `show-${renderedActiveOverlay}` : "show-none";
   const packageColors = soccer.colorBanks[soccer.overlayPackage];
 
-  function scheduleTransitionStep(callback: () => void, delay: number) {
+  const scheduleTransitionStep = useCallback((callback: () => void, delay: number) => {
     const timeout = window.setTimeout(() => {
       transitionTimeoutsRef.current = transitionTimeoutsRef.current.filter((item) => item !== timeout);
       callback();
     }, delay);
     transitionTimeoutsRef.current.push(timeout);
-  }
+  }, []);
 
-  function processPendingOverlay() {
-    if (transitionRunningRef.current) return;
+  const setVisibleOverlay = useCallback((overlay: SoccerLabOverlay | null) => {
+    visibleOverlayRef.current = overlay;
+    setRenderedActiveOverlay(overlay);
+  }, []);
 
-    const currentOverlay = currentOverlayRef.current;
-    const targetOverlay = pendingOverlayRef.current;
-    if (currentOverlay === targetOverlay) {
-      setTimerActivatingOverlay(null);
-      setRenderedActiveOverlay(currentOverlay);
-      setEnteringOverlay(null);
-      setExitingOverlay((current) => (current === currentOverlay ? null : current));
-      return;
-    }
+  const processPendingOverlay = useCallback(
+    function processPendingOverlay() {
+      if (transitionRunningRef.current) return;
 
-    transitionRunningRef.current = true;
-
-    if (!currentOverlay && targetOverlay) {
-      setTimerActivatingOverlay(null);
-      setExitingOverlay(null);
-      setRenderedActiveOverlay(targetOverlay);
-      setEnteringOverlay(targetOverlay);
-      scheduleTransitionStep(() => {
-        setEnteringOverlay((current) => (current === targetOverlay ? null : current));
-        currentOverlayRef.current = targetOverlay;
-        transitionRunningRef.current = false;
-        processPendingOverlay();
-      }, SOCCER_EXIT_MS);
-      return;
-    }
-
-    if (currentOverlay && !targetOverlay) {
-      setTimerActivatingOverlay(null);
-      setEnteringOverlay(null);
-      setRenderedActiveOverlay(null);
-      setExitingOverlay(currentOverlay);
-      scheduleTransitionStep(() => {
-        setExitingOverlay((current) => (current === currentOverlay ? null : current));
-        currentOverlayRef.current = null;
-        transitionRunningRef.current = false;
-        processPendingOverlay();
-      }, SOCCER_EXIT_MS);
-      return;
-    }
-
-    if (currentOverlay && targetOverlay) {
-      const shouldHandoffCountdown = targetOverlay === "countdown-timer" && timerRunningRef.current && SOCCER_CLOCKABLE_OVERLAYS.has(currentOverlay);
-
-      if (shouldHandoffCountdown) {
-        setRenderedActiveOverlay(currentOverlay);
+      const currentOverlay = currentOverlayRef.current;
+      const targetOverlay = pendingOverlayRef.current;
+      if (currentOverlay === targetOverlay) {
+        setTimerActivatingOverlay(null);
+        setVisibleOverlay(currentOverlay);
         setEnteringOverlay(null);
-        setExitingOverlay(null);
-        setTimerActivatingOverlay(currentOverlay);
+        setExitingOverlay((current) => (current === currentOverlay ? null : current));
+        return;
+      }
 
+      transitionRunningRef.current = true;
+
+      if (!currentOverlay && targetOverlay) {
+        setTimerActivatingOverlay(null);
+        setExitingOverlay(null);
+        setVisibleOverlay(targetOverlay);
+        setEnteringOverlay(targetOverlay);
         scheduleTransitionStep(() => {
-          setTimerActivatingOverlay(null);
-          setExitingOverlay(currentOverlay);
-          setRenderedActiveOverlay(targetOverlay);
-          setEnteringOverlay(targetOverlay);
-        }, SOCCER_COUNTDOWN_HANDOFF_MS);
-        scheduleTransitionStep(() => {
-          setExitingOverlay((current) => (current === currentOverlay ? null : current));
           setEnteringOverlay((current) => (current === targetOverlay ? null : current));
           currentOverlayRef.current = targetOverlay;
           transitionRunningRef.current = false;
           processPendingOverlay();
-        }, SOCCER_COUNTDOWN_HANDOFF_MS + SOCCER_EXIT_MS);
+        }, SOCCER_EXIT_MS);
         return;
       }
 
-      setTimerActivatingOverlay(null);
-      setEnteringOverlay(null);
-      setRenderedActiveOverlay(null);
-      setExitingOverlay(currentOverlay);
-      scheduleTransitionStep(() => {
-        setExitingOverlay((current) => (current === currentOverlay ? null : current));
-      }, SOCCER_EXIT_MS);
-      scheduleTransitionStep(() => {
-        setRenderedActiveOverlay(targetOverlay);
-        setEnteringOverlay(targetOverlay);
-      }, SOCCER_SWITCH_ENTER_DELAY_MS);
-      scheduleTransitionStep(() => {
-        setEnteringOverlay((current) => (current === targetOverlay ? null : current));
-        currentOverlayRef.current = targetOverlay;
-        transitionRunningRef.current = false;
-        processPendingOverlay();
-      }, SOCCER_SWITCH_ENTER_DELAY_MS + SOCCER_EXIT_MS);
-      return;
-    }
+      if (currentOverlay && !targetOverlay) {
+        setTimerActivatingOverlay(null);
+        setEnteringOverlay(null);
+        setVisibleOverlay(null);
+        setExitingOverlay(currentOverlay);
+        scheduleTransitionStep(() => {
+          setExitingOverlay((current) => (current === currentOverlay ? null : current));
+          currentOverlayRef.current = null;
+          transitionRunningRef.current = false;
+          processPendingOverlay();
+        }, SOCCER_EXIT_MS);
+        return;
+      }
 
-    transitionRunningRef.current = false;
-  }
+      if (currentOverlay && targetOverlay) {
+        const shouldHandoffCountdown = targetOverlay === "countdown-timer" && timerRunningRef.current && SOCCER_CLOCKABLE_OVERLAYS.has(currentOverlay);
+
+        if (shouldHandoffCountdown) {
+          setVisibleOverlay(currentOverlay);
+          setEnteringOverlay(null);
+          setExitingOverlay(null);
+          setTimerActivatingOverlay(currentOverlay);
+
+          scheduleTransitionStep(() => {
+            setTimerActivatingOverlay(null);
+            setExitingOverlay(currentOverlay);
+            setVisibleOverlay(targetOverlay);
+            setEnteringOverlay(targetOverlay);
+          }, SOCCER_COUNTDOWN_HANDOFF_MS);
+          scheduleTransitionStep(() => {
+            setExitingOverlay((current) => (current === currentOverlay ? null : current));
+            setEnteringOverlay((current) => (current === targetOverlay ? null : current));
+            currentOverlayRef.current = targetOverlay;
+            transitionRunningRef.current = false;
+            processPendingOverlay();
+          }, SOCCER_COUNTDOWN_HANDOFF_MS + SOCCER_EXIT_MS);
+          return;
+        }
+
+        setTimerActivatingOverlay(null);
+        setEnteringOverlay(null);
+        setVisibleOverlay(null);
+        setExitingOverlay(currentOverlay);
+        scheduleTransitionStep(() => {
+          setExitingOverlay((current) => (current === currentOverlay ? null : current));
+        }, SOCCER_EXIT_MS);
+        scheduleTransitionStep(() => {
+          setVisibleOverlay(targetOverlay);
+          setEnteringOverlay(targetOverlay);
+        }, SOCCER_SWITCH_ENTER_DELAY_MS);
+        scheduleTransitionStep(() => {
+          setEnteringOverlay((current) => (current === targetOverlay ? null : current));
+          currentOverlayRef.current = targetOverlay;
+          transitionRunningRef.current = false;
+          processPendingOverlay();
+        }, SOCCER_SWITCH_ENTER_DELAY_MS + SOCCER_EXIT_MS);
+        return;
+      }
+
+      transitionRunningRef.current = false;
+    },
+    [scheduleTransitionStep, setVisibleOverlay]
+  );
 
   useLayoutEffect(() => {
     timerRunningRef.current = timerRunning;
@@ -251,10 +261,19 @@ function SoccerOverlay({
   useLayoutEffect(() => {
     if (activeOverlay === pendingOverlayRef.current) return;
     pendingOverlayRef.current = activeOverlay;
+    if (!activeOverlay) {
+      // Clear wins over queued entrances. Exit only what is visible right now.
+      transitionTimeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout));
+      transitionTimeoutsRef.current = [];
+      transitionRunningRef.current = false;
+      currentOverlayRef.current = visibleOverlayRef.current;
+      setExitingOverlay(null);
+    }
     processPendingOverlay();
-  }, [activeOverlay]);
+  }, [activeOverlay, processPendingOverlay]);
 
   useLayoutEffect(() => {
+    const activeOverlay = initialOverlayRef.current;
     if (!activeOverlay || transitionRunningRef.current) return;
     transitionRunningRef.current = true;
     scheduleTransitionStep(() => {
@@ -263,7 +282,7 @@ function SoccerOverlay({
       transitionRunningRef.current = false;
       processPendingOverlay();
     }, SOCCER_EXIT_MS);
-  }, []);
+  }, [processPendingOverlay, scheduleTransitionStep]);
 
   useEffect(() => {
     return () => {

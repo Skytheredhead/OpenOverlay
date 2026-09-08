@@ -348,7 +348,7 @@ async function waitForConnectionCount(hub: RealtimeHub, count: number): Promise<
 }
 
 async function closeRealtimeTestServer(testServer: RealtimeTestServer): Promise<void> {
-  testServer.hub.io.close();
+  await testServer.hub.io.close();
   await new Promise<void>((resolve) => testServer.server.close(() => resolve()));
   testServer.app.close();
   fs.rmSync(testServer.dir, { recursive: true, force: true });
