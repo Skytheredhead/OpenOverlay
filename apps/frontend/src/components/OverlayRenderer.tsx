@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import {
   clockIsAtStop,
+  churchOnAirSlide,
   formatSoccerClock,
   type ActiveGraphic,
   type ChurchState,
@@ -465,6 +466,8 @@ const labHostCss = `
     height: 720px;
     margin: 0;
     overflow: hidden;
+    background: transparent !important;
+    color-scheme: light !important;
   }
 
   body {
@@ -479,7 +482,7 @@ const labHostCss = `
     --blue: #143b94;
     --red: #df1f34;
     background: transparent;
-    color-scheme: dark;
+    color-scheme: light !important;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
@@ -522,7 +525,7 @@ function ChurchOverlay({
   onDragStart?: (elementId: string, event: PointerEvent<HTMLElement>) => void;
 }) {
   const church = normalizeChurchState(state);
-  const slide = church.slides.find((item) => item.id === church.selectedSlideId) || church.slides[0];
+  const slide = churchOnAirSlide(church);
   const lowerThird = [...church.activeGraphics]
     .reverse()
     .find(
@@ -542,7 +545,7 @@ function ChurchOverlay({
         <Positioned element={church.elements.fullscreenSlide} interactive={interactive} onDragStart={onDragStart}>
           <div
             className={`church-slide variant-${slide.variant}`}
-            style={{ background: slide.backgroundColor, color: slide.textColor, fontFamily: church.style.font }}
+            style={{ background: slide.backgroundColor, color: slide.textColor, fontFamily: `${church.style.font}, Arial, sans-serif` }}
           >
             {slide.mediaUrl ? <img src={mediaApi.mediaUrl(slide.mediaUrl)} alt="" /> : null}
             <div className="church-slide-text">{slide.text}</div>
@@ -553,7 +556,7 @@ function ChurchOverlay({
         <Positioned element={church.elements.lowerThird} interactive={interactive} onDragStart={onDragStart}>
           <article
             className={`church-lower-third variant-${church.elements.lowerThird.variant}`}
-            style={{ "--church-accent": church.style.accentColor, fontFamily: church.style.font } as React.CSSProperties}
+            style={{ "--church-accent": church.style.accentColor, fontFamily: `${church.style.font}, Arial, sans-serif` } as React.CSSProperties}
           >
             <h2>{lowerThird.title}</h2>
             {lowerThird.subtitle ? <p>{lowerThird.subtitle}</p> : null}
@@ -564,7 +567,7 @@ function ChurchOverlay({
         <Positioned element={church.elements.countdown} interactive={interactive} onDragStart={onDragStart}>
           <div
             className={`countdown-element variant-${church.elements.countdown.variant}`}
-            style={{ "--church-accent": church.style.accentColor, fontFamily: church.style.font } as React.CSSProperties}
+            style={{ "--church-accent": church.style.accentColor, fontFamily: `${church.style.font}, Arial, sans-serif` } as React.CSSProperties}
             role="timer"
             aria-label={`${countdown.title}: ${formatPackageTime(countdownSeconds)}`}
           >

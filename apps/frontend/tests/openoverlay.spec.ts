@@ -112,7 +112,7 @@ async function assertNoHorizontalClipping(page: Page, width: number): Promise<vo
       )
     ]
       .filter((element) => {
-        if (element.closest("[aria-hidden='true'], [inert]")) return false;
+        if (!element.checkVisibility() || element.closest("[aria-hidden='true'], [inert]")) return false;
         const style = getComputedStyle(element);
         if (style.display === "none" || style.visibility === "hidden") return false;
         const rect = element.getBoundingClientRect();
@@ -163,6 +163,9 @@ test("new-game dialog traps keyboard focus, closes with Escape, and restores foc
   const submit = page.getByRole("button", { name: "Create game" });
   await expect(dialog).toBeVisible();
   await expect(gameName).toBeFocused();
+  await gameName.fill("");
+  await expect(submit).toBeDisabled();
+  await gameName.fill("Keyboard test");
   await expect(page.locator("#root")).toHaveAttribute("inert", "");
   await expect(page.locator("#root")).toHaveAttribute("aria-hidden", "true");
 
@@ -188,7 +191,11 @@ test("a delayed autosave remains bound to its preset during rapid route navigati
   await createGame(page, "Route Race B");
   await page.goto(`/dash/presets/${firstPresetId}`);
   await expect(page.getByRole("heading", { name: "Route Race A" })).toBeVisible();
-  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Match", exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Home team details/ })
+    .click();
 
   let delayedPatchObserved = false;
   await page.route(`**/api/v1/presets/${firstPresetId}`, async (route) => {
@@ -212,14 +219,26 @@ test("a delayed autosave remains bound to its preset during rapid route navigati
   expect((await firstSave).status()).toBe(200);
   expect(delayedPatchObserved).toBe(true);
 
-  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Match", exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Home team details/ })
+    .click();
   await expect(page.getByLabel("Team name").first()).not.toHaveValue("Route A Edited");
   await page.reload();
-  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Match", exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Home team details/ })
+    .click();
   await expect(page.getByLabel("Team name").first()).not.toHaveValue("Route A Edited");
 
   await page.goto(`/dash/presets/${firstPresetId}`);
-  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Match", exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Home team details/ })
+    .click();
   await expect(page.getByLabel("Team name").first()).toHaveValue("Route A Edited");
 });
 
@@ -250,7 +269,7 @@ test("an action waits for the pending autosave and preserves both changes", asyn
     (response) => response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/home-score-plus`)
   );
   await page.getByLabel("Period", { exact: true }).fill("RACE");
-  await page.getByRole("button", { name: "Add point to OOU" }).click();
+  await page.getByRole("button", { name: "Add point to HOME" }).click();
 
   expect((await saveResponse).status()).toBe(200);
   expect((await actionResponse).status()).toBe(200);
@@ -292,7 +311,7 @@ test("a failed autosave stays dirty and blocks actions until a successful retry"
   await expect(page.getByRole("button", { name: "Retry save" })).toBeVisible();
   expect(patchAttempts).toBe(1);
 
-  await page.getByRole("button", { name: "Add point to OOU" }).click();
+  await page.getByRole("button", { name: "Add point to HOME" }).click();
   await expect(page.getByRole("alert")).toContainText("Unsaved game changes must be saved");
   expect(actionAttempts).toBe(0);
   await expect(page.locator(".score-control").first().locator("strong")).toHaveText("0");
@@ -332,7 +351,7 @@ test("a failed autosave stays dirty and blocks actions until a successful retry"
   const actionResponse = page.waitForResponse(
     (response) => response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/home-score-plus`)
   );
-  await page.getByRole("button", { name: "Add point to OOU" }).click();
+  await page.getByRole("button", { name: "Add point to HOME" }).click();
   expect((await actionResponse).status()).toBe(200);
   expect(actionAttempts).toBe(1);
 
@@ -458,15 +477,10 @@ test("soccer operator tools update output, clear graphics, rotate keys, and expo
   await expect(gameMenu).toBeHidden();
   await expect(sidebarGame).toBeFocused();
 
-  const statSave = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().endsWith(`/api/v1/presets/${presetId}`));
-  await page.getByRole("button", { name: "Add one to OOU shots" }).click();
-  expect((await statSave).status()).toBe(200);
-  const savedStats = await page.request.get(`${backendUrl}/api/v1/presets/${presetId}`);
-  expect((await savedStats.json()).preset.state.stats.shots.home).toBe(1);
-  await expect(output.locator(".statbug")).toHaveCount(0);
-
-  await page.getByLabel("Graphic title (optional)").fill("E2E GOAL");
-  await page.getByLabel("Subtitle / player (optional)").fill("Player 9");
+  await expect(page.getByRole("button", { name: /Add one to .* shots/ })).toHaveCount(0);
+  await page.getByText("Custom text", { exact: true }).click();
+  await page.getByLabel("Graphic title", { exact: true }).fill("E2E GOAL");
+  await page.getByLabel("Subtitle / player", { exact: true }).fill("Player 9");
   const goalResponse = page.waitForResponse(
     (response) => response.request().method() === "POST" && response.url().includes(`/api/v1/presets/${presetId}/actions/trigger-goal`)
   );
@@ -490,6 +504,7 @@ test("soccer operator tools update output, clear graphics, rotate keys, and expo
   const actionKeyResponse = page.waitForResponse(
     (response) => response.request().method() === "POST" && response.url().endsWith(`/api/v1/presets/${presetId}/action-key`)
   );
+  await page.getByLabel("Game actions", { exact: true }).click();
   await page.getByRole("button", { name: "Rotate action key" }).click();
   expect((await actionKeyResponse).status()).toBe(200);
   expect(confirmMessage).toContain("Existing Stream Deck and automation keys will stop working immediately");
@@ -498,6 +513,7 @@ test("soccer operator tools update output, clear graphics, rotate keys, and expo
   const initialEventResponse = page.waitForResponse(
     (response) => response.request().method() === "GET" && response.url().endsWith(`/api/v1/presets/${presetId}/events`)
   );
+  await page.getByLabel("Game actions", { exact: true }).click();
   await page.getByRole("button", { name: "Event log" }).click();
   expect((await initialEventResponse).status()).toBe(200);
   const eventLog = page.getByRole("region", { name: "Preset event log" });
@@ -699,7 +715,7 @@ test("soccer and church workflows render in dashboard and overlay", async ({ pag
   await page.getByLabel("Game name").fill("E2E Soccer");
   await page.getByRole("button", { name: "Create game" }).click();
   await expect(page.getByRole("heading", { name: "E2E Soccer" })).toBeVisible();
-  await expect(page.getByText(/overlay clients/)).toBeVisible();
+  await expect(page.getByText(/\d+ outputs?/)).toBeVisible();
 
   await page.getByRole("link", { name: "Media" }).click();
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" fill="#0f766e"/><text x="60" y="70" text-anchor="middle" font-size="38" fill="white">OO</text></svg>`;
@@ -708,9 +724,17 @@ test("soccer and church workflows render in dashboard and overlay", async ({ pag
 
   await page.getByRole("link", { name: "Games" }).click();
   await page.getByRole("link", { name: "Open E2E Soccer" }).click();
-  await page.getByRole("button", { name: "Setup" }).click();
+  await page.getByRole("button", { name: "Match", exact: true }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Home team details/ })
+    .click();
   const saveResponse = page.waitForResponse((response) => response.request().method() === "PATCH" && /\/api\/v\d+\/presets\//.test(response.url()));
   await page.getByLabel("Team name").first().fill("Home Academy");
+  await page
+    .locator("summary")
+    .filter({ hasText: /^Away team details/ })
+    .click();
   await page.getByLabel("Team name").nth(1).fill("Away Academy");
   await page.getByLabel("Abbreviation").first().fill("HOM");
   await page.getByLabel("Abbreviation").nth(1).fill("AWY");
@@ -726,6 +750,7 @@ test("soccer and church workflows render in dashboard and overlay", async ({ pag
   await homeScore.getByRole("button", { name: "Add point to HOM" }).click();
   await page.locator(".score-control", { hasText: "AWY" }).getByRole("button", { name: "Add point to AWY" }).click();
 
+  await page.getByRole("button", { name: "Play Full page matchup", exact: true }).click();
   const previewSrc = await page.locator(".output-preview-iframe").getAttribute("src");
   expect(previewSrc).toBeTruthy();
   const overlayPage = await context.newPage();
@@ -748,9 +773,11 @@ test("soccer and church workflows render in dashboard and overlay", async ({ pag
   await page.getByLabel("Game name").fill("E2E Church");
   await page.getByRole("button", { name: "Create game" }).click();
   await expect(page.getByRole("heading", { name: "E2E Church" })).toBeVisible();
-  await page.getByRole("button", { name: "slides" }).click();
+  await page.getByRole("button", { name: "Slides" }).click();
   await page.getByRole("button", { name: "Text" }).click();
   await page.getByRole("textbox", { name: "Text", exact: true }).fill("Welcome\nE2E Service");
+  await expect(page.frameLocator(".output-preview-iframe").getByText("E2E Service")).toHaveCount(0);
+  await page.getByRole("button", { name: "Show slide", exact: true }).click();
   await expect(page.frameLocator(".output-preview-iframe").getByText("E2E Service")).toBeVisible();
 });
 
@@ -779,7 +806,7 @@ test("live output survives concurrent scores, capture clock skew, reconnect, and
     await expect(score).toHaveText("20");
     await expect(page.locator(".score-control strong").first()).toHaveText("20");
     // Browser clicks wait for the existing mutation lock; none may be lost.
-    for (let index = 0; index < 6; index += 1) await page.getByRole("button", { name: "Add point to OOU" }).click();
+    for (let index = 0; index < 6; index += 1) await page.getByRole("button", { name: "Add point to HOME" }).click();
     await expect(score).toHaveText("26");
     await output.reload();
     await expect(score).toHaveText("26");
@@ -879,7 +906,7 @@ test("teams, media deletion, sharing, church output, and accessible controls wor
   const previewWidth = (await page.locator(".preview-frame").boundingBox())!.width;
   const columnWidth = (await page.locator(".preview-column").boundingBox())!.width;
   expect(previewWidth).toBeGreaterThan(columnWidth * 0.9);
-  await page.getByLabel("Show full-screen slide").uncheck();
+  await expect(page.getByRole("button", { name: "Hide slide", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Show selected lower third" }).click();
   const output = page.frameLocator(".output-preview-iframe");
   await expect(output.locator(".church-lower-third")).toBeVisible();
@@ -896,6 +923,7 @@ test("teams, media deletion, sharing, church output, and accessible controls wor
   const recipient = await recipientContext.newPage();
   try {
     const account = await signUp(recipient, "share-recipient");
+    await page.getByLabel("Game actions", { exact: true }).click();
     await page.getByRole("button", { name: "Share", exact: true }).click();
     await page.getByLabel("Recipient account email").fill(account.email);
     await page.getByRole("button", { name: "Share copy", exact: true }).click();
@@ -940,10 +968,10 @@ test("a lost action response preserves the committed score and the next action",
     },
     { times: 1 }
   );
-  await page.getByRole("button", { name: "Add point to OOU" }).click();
+  await page.getByRole("button", { name: "Add point to HOME" }).click();
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(page.locator(".score-control strong").first()).toHaveText("1");
-  await page.getByRole("button", { name: "Add point to OOU" }).click();
+  await page.getByRole("button", { name: "Add point to HOME" }).click();
   await expect(score).toHaveText("2");
   await expect(page.locator(".score-control strong").first()).toHaveText("2");
   await page.reload();
@@ -957,6 +985,7 @@ test("server-timed soccer controls keep running through focus and tab changes", 
   });
   await signIn(page);
   await createGame(page, "Control clock skew");
+  await page.getByRole("button", { name: "Play Scorebug", exact: true }).click();
   await page.getByRole("button", { name: "Start clock", exact: true }).click();
   const manual = page.getByLabel("Manual time", { exact: true });
   await expect(manual).toHaveValue(/00:0[1-3]/);
@@ -969,7 +998,7 @@ test("server-timed soccer controls keep running through focus and tab changes", 
   await expect(page.getByRole("button", { name: "Pause clock", exact: true })).toBeVisible();
   await expect(manual).toHaveValue(/00:0[3-9]/);
   const beforeSwitch = await manual.inputValue();
-  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByRole("button", { name: "Design", exact: true }).click();
   await page.getByRole("button", { name: "Live", exact: true }).click();
   await expect.poll(async () => (await manual.inputValue()) >= beforeSwitch).toBe(true);
   const beforeModeChange = await manual.inputValue();
@@ -1144,6 +1173,7 @@ test("panic clear cancels a queued graphic entrance in the independent browser s
   await signIn(page);
   const presetId = await createGame(page, "Interrupted Broadcast");
   const preset = (await (await page.request.get(`${backendUrl}/api/v1/presets/${presetId}`)).json()).preset;
+  await page.getByRole("button", { name: "Play Full page matchup", exact: true }).click();
   const capture = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   try {
     const output = await capture.newPage();
@@ -1176,4 +1206,87 @@ test("panic clear cancels a queued graphic entrance in the independent browser s
   } finally {
     await capture.close();
   }
+});
+
+test("both packages keep transparent output and matchup teams on one row", async ({ page, browser }, testInfo) => {
+  test.setTimeout(90_000);
+  const { default: sharp } = await import("sharp");
+  const { createDefaultSoccerState } = await import("@openoverlay/shared");
+  await signIn(page);
+  const id = await createGame(page, "Package rendering");
+  let preset = (await (await page.request.get(`${backendUrl}/api/v1/presets/${id}`)).json()).preset;
+  expect(preset.state.soccerPackage.activeOverlay).toBeNull();
+  const capture = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    storageState: { cookies: [], origins: [{ origin: new URL(page.url()).origin, localStorage: [{ name: "openoverlay:theme", value: "dark" }] }] }
+  });
+  const output = await capture.newPage();
+  await output.setViewportSize({ width: 1920, height: 1080 });
+  try {
+    for (const packageName of ["classic", "rounded"] as const) {
+      for (const overlay of [
+        "full-matchup",
+        "lower-matchup",
+        "lower-result",
+        "lineup-panel",
+        "scorebug",
+        "countdown-timer",
+        "one-line-text",
+        "two-line-text"
+      ] as const) {
+        const state = createDefaultSoccerState("Package rendering");
+        state.soccerPackage = { ...state.soccerPackage, overlayPackage: packageName, activeOverlay: overlay, packageBackground: false };
+        const response = await page.request.patch(`${backendUrl}/api/v1/presets/${id}`, { data: { state, expectedRevision: preset.revision } });
+        expect(response.status()).toBe(200);
+        preset = (await response.json()).preset;
+        await output.goto(`/overlay/${preset.publicId}`);
+        await expect(output.locator("html")).toHaveAttribute("data-theme", "dark");
+        const frame = output.frameLocator(".lab-frame");
+        await expect(frame.locator("article")).toBeVisible();
+        await expect(frame.locator(".overlay-entering")).toHaveCount(0);
+        const png = await output.screenshot({ omitBackground: true, path: testInfo.outputPath(`${packageName}-${overlay}.png`) });
+        const { data } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        expect(data[3], `${packageName}/${overlay} canvas should be transparent`).toBe(0);
+        const teamSelector =
+          overlay === "full-matchup" ? ".full-team" : overlay === "lower-matchup" ? ".lower-team" : overlay === "lower-result" ? ".lower-result-team" : null;
+        if (teamSelector) {
+          const teams = await frame.locator(teamSelector).evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()));
+          expect(teams).toHaveLength(2);
+          expect(Math.abs(teams[0].y - teams[1].y)).toBeLessThan(2);
+          expect(teams[0].right).toBeLessThanOrEqual(teams[1].left + 2);
+        }
+      }
+    }
+  } finally {
+    await capture.close();
+  }
+});
+
+test("church drafts, reordering, and deletion never change a published slide", async ({ page }) => {
+  await signIn(page);
+  const id = await createGame(page, "Draft safety", "church");
+  const output = page.frameLocator(".output-preview-iframe");
+  await page.getByRole("textbox", { name: "Text", exact: true }).fill("Opening song");
+  await page.getByRole("button", { name: "Show slide", exact: true }).click();
+  await expect(output.getByText("Opening song", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Text", exact: true }).click();
+  await page.getByRole("textbox", { name: "Text", exact: true }).fill("Next song");
+  await page.getByRole("button", { name: "Move slide up", exact: true }).click();
+  await expect(output.getByText("Opening song", { exact: true })).toBeVisible();
+  await expect(output.getByText("Next song", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toContainText("Saved");
+  await page.reload();
+  await expect(output.getByText("Opening song", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Show slide", exact: true }).click();
+  await expect(output.getByText("Next song", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete slide", exact: true })).toBeDisabled();
+  await page.locator(".slide-list-item").filter({ hasText: "Slide 1" }).click();
+  await page.getByRole("button", { name: "Delete slide", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toContainText("Saved");
+  await page.reload();
+  await expect(output.getByText("Next song", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Hide slide", exact: true }).click();
+  await expect(output.getByText("Next song", { exact: true })).toHaveCount(0);
+  const saved = await page.request.get(`${backendUrl}/api/v1/presets/${id}`);
+  expect(saved.status()).toBe(200);
 });

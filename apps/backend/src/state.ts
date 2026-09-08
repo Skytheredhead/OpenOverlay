@@ -9,6 +9,7 @@ import {
   type SoccerState,
   clockIsAtStop,
   createDefaultPresetState,
+  createNewPresetState,
   defaultElement,
   makeId,
   normalizeChurchState,
@@ -319,7 +320,7 @@ export function cloneStateForShare(state: PresetState): PresetState {
 }
 
 export function ensurePresetState(type: "soccer" | "church" | "custom", name: string, state?: PresetState): PresetState {
-  return state === undefined ? createDefaultPresetState(type, name) : validatePresetState(type, name, state);
+  return state === undefined ? createNewPresetState(type, name) : validatePresetState(type, name, state);
 }
 
 export function validatePresetState(type: PresetType, name: string, value: unknown): PresetState {
@@ -843,7 +844,12 @@ function assertDomainConstraints(type: PresetType, state: PresetState): void {
     if (state.slides.length > 500) throw new PresetStateValidationError("state.slides has too many items");
     assertBoundedString(state.serviceTitle, "state.serviceTitle", 200);
     state.sections.forEach((section, index) => assertBoundedString(section, `state.sections[${index}]`, 200));
-    state.slides.forEach((slide, index) => {
+    if (state.onAirSlide !== undefined && state.onAirSlide !== null) {
+      const template = createDefaultPresetState("church", "") as ChurchState;
+      assertMatchesTemplate(state.onAirSlide, template.slides[0], "state.onAirSlide");
+    }
+    const slides = state.onAirSlide ? [...state.slides, state.onAirSlide] : state.slides;
+    slides.forEach((slide, index) => {
       assertBoundedString(slide.id, `state.slides[${index}].id`, 200);
       assertBoundedString(slide.title, `state.slides[${index}].title`, 200);
       assertBoundedString(slide.text, `state.slides[${index}].text`, 10_000);

@@ -1,8 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultChurchState, createDefaultSoccerState, computeClockSeconds, normalizeSoccerState, parseRoster } from "@openoverlay/shared";
-import { PresetActionValidationError, applyAction, isSoccerState, materializeState, validatePresetState } from "../state.js";
+import { PresetActionValidationError, applyAction, isSoccerState, materializeState, ensurePresetState, validatePresetState } from "../state.js";
 
 describe("backend state actions", () => {
+  it("creates blank off-air productions without changing legacy saved defaults", () => {
+    const soccer = ensurePresetState("soccer", "New game") as ReturnType<typeof createDefaultSoccerState>;
+    expect(soccer.soccerPackage.activeOverlay).toBeNull();
+    expect(soccer.home.roster).toEqual([]);
+    expect(soccer.home.coach).toBe("");
+    const church = ensurePresetState("church", "New service") as ReturnType<typeof createDefaultChurchState>;
+    expect(church.onAirSlide).toBeNull();
+    expect(church.elements.fullscreenSlide.visible).toBe(false);
+    const legacy = createDefaultChurchState("Legacy");
+    expect(validatePresetState("church", "Legacy", legacy)).toEqual(legacy);
+  });
+
+  it("validates and preserves a church on-air snapshot independently of its draft", () => {
+    const state = createDefaultChurchState("Snapshot");
+    state.onAirSlide = structuredClone(state.slides[0]);
+    state.slides[0].text = "Draft";
+    const saved = validatePresetState("church", "Snapshot", state) as typeof state;
+    expect(saved.onAirSlide?.text).not.toBe("Draft");
+    for (const invalid of [[], "slide", {}, { ...state.onAirSlide, type: "video" }, { ...state.onAirSlide, text: "x".repeat(10001) }]) {
+      expect(() => validatePresetState("church", "Snapshot", { ...state, onAirSlide: invalid })).toThrow();
+    }
+  });
+
   it("starts preset countdown durations atomically using server time", () => {
     const state = createDefaultSoccerState("Countdown");
     const next = applyAction(state, "countdown-start", { durationSeconds: 600 }, 123_000) as typeof state;

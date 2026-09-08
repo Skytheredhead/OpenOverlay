@@ -128,6 +128,20 @@ describe("media upload safety", () => {
     await server.request.get(upload.body.media.url).expect(200);
   });
 
+  it("keeps media referenced only by an on-air slide protected and validates its ownership", async () => {
+    await signup(server.agent, "on-air-media@example.com");
+    const upload = await server.agent.post("/api/media").attach("file", onePixelPng(), { filename: "slide.png", contentType: "image/png" }).expect(201);
+    const state = createDefaultChurchState("On air");
+    state.onAirSlide = { ...state.slides[0], type: "image", mediaId: upload.body.media.id };
+    state.slides = [];
+    const created = await server.agent.post("/api/presets").send({ name: "On air", type: "church", state }).expect(201);
+    expect(created.body.preset.state.onAirSlide.mediaUrl).toBe(upload.body.media.url);
+    await server.agent.delete(`/api/media/${upload.body.media.id}`).expect(409);
+    const other = request.agent(server.backend.app);
+    await signup(other, "other-on-air@example.com");
+    await other.post("/api/presets").send({ name: "Foreign slide", type: "church", state }).expect(400);
+  });
+
   it("reports a failed quarantine restore instead of silently stranding referenced media", async () => {
     await signup(server.agent, "restore-failure@example.com");
     const upload = await server.agent.post("/api/media").attach("file", onePixelPng(), { filename: "team.png", contentType: "image/png" }).expect(201);
@@ -368,6 +382,7 @@ describe("media upload safety", () => {
       textColor: "#ffffff",
       variant: "clean"
     });
+    churchState.onAirSlide = structuredClone(churchState.slides.at(-1)!);
     const church = await server.agent.post("/api/presets").send({ name: "Shared Service", type: "church", state: churchState }).expect(201);
     const sharedChurch = await server.agent
       .post(`/api/presets/${church.body.preset.id}/share`)
@@ -381,7 +396,10 @@ describe("media upload safety", () => {
     const recipientChurchSummary = recipientPresets.find((preset: { name: string }) => preset.name === "Shared Service");
     const recipientChurch = (await recipient.get(`/api/presets/${recipientChurchSummary.id}`).expect(200)).body.preset;
     expect(recipientChurch.state.slides[0].mediaId).toBeUndefined();
-    expect(recipientChurch.state.slides[0].mediaUrl).toBeUndefined();
+    expect(recipientChurch.state.slides.at(-1).mediaUrl).toBeUndefined();
+    expect(recipientChurch.state.onAirSlide).toMatchObject({ id: "shared-image", type: "image" });
+    expect(recipientChurch.state.onAirSlide.mediaId).toBeUndefined();
+    expect(recipientChurch.state.onAirSlide.mediaUrl).toBeUndefined();
   });
 
   it("rejects uploads before buffering when a user's media item quota is full", async () => {

@@ -254,6 +254,8 @@ export interface ChurchState {
   sections: string[];
   slides: ChurchSlide[];
   selectedSlideId?: string;
+  /** Snapshot of the broadcast slide. Missing preserves legacy selected-slide output. */
+  onAirSlide?: ChurchSlide | null;
   style: GlobalStyle;
   elements: {
     lowerThird: OverlayElementConfig;
@@ -302,7 +304,7 @@ export function makeId(prefix = "id"): string {
 
 export function defaultGlobalStyle(): GlobalStyle {
   return {
-    font: "Inter",
+    font: "Arial",
     accentColor: "#36d399",
     backgroundMode: "transparent",
     backgroundColor: "transparent",
@@ -653,6 +655,44 @@ export function createDefaultPresetState(type: PresetType, name: string): Preset
   if (type === "soccer") return createDefaultSoccerState(name);
   if (type === "church") return createDefaultChurchState(name);
   return createDefaultCustomState(name);
+}
+
+export function emptyTeam(side: "home" | "away"): SoccerTeam {
+  return {
+    ...defaultTeam(side),
+    fullName: side === "home" ? "Home Team" : "Away Team",
+    shortName: side === "home" ? "Home" : "Away",
+    abbreviation: side === "home" ? "HOME" : "AWAY",
+    rosterText: "",
+    roster: [],
+    coach: "",
+    schoolName: ""
+  };
+}
+
+/** Blank production defaults; sample factories remain available for demos and recovery. */
+export function createNewPresetState(type: PresetType, name: string): PresetState {
+  const state = createDefaultPresetState(type, name);
+  if (type === "soccer" && "soccerPackage" in state) {
+    state.home = emptyTeam("home");
+    state.away = emptyTeam("away");
+    state.productionName = "";
+    state.soccerPackage.activeOverlay = null;
+    state.soccerPackage.selectedOverlay = "scorebug";
+    state.soccerPackage.oneLineText = "";
+    state.soccerPackage.twoLineTextA = "";
+    state.soccerPackage.twoLineTextB = "";
+  }
+  if (type === "church" && "slides" in state) {
+    state.slides = [{ ...state.slides[0], title: "Slide 1", text: "" }];
+    state.onAirSlide = null;
+    state.elements.fullscreenSlide.visible = false;
+  }
+  return state;
+}
+
+export function churchOnAirSlide(state: ChurchState): ChurchSlide | null {
+  return state.onAirSlide === undefined ? (state.slides.find((slide) => slide.id === state.selectedSlideId) ?? state.slides[0] ?? null) : state.onAirSlide;
 }
 
 function isSoccerLabOverlay(value: unknown): value is SoccerLabOverlay {

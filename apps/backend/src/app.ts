@@ -9,6 +9,7 @@ import sharp from "sharp";
 import {
   createDefaultPresetState,
   defaultTeam,
+  emptyTeam,
   normalizeImageCrop,
   normalizeTeam,
   openOverlayCompatibility,
@@ -973,7 +974,7 @@ function serializeTeam(row: TeamRow): TeamLibraryEntry {
 
 function sanitizeTeamInput(
   body: Record<string, unknown>,
-  fallback = defaultTeam("home")
+  fallback = { ...emptyTeam("home"), shortName: "", abbreviation: "" }
 ): Omit<TeamLibraryEntry, "id" | "revision" | "createdAt" | "updatedAt"> {
   const fullName = requiredStringField(body.fullName ?? body.name, fallback.fullName || "New Team").slice(0, 120);
   const shortName = stringField(body.shortName, fallback.shortName || fullName).slice(0, 48);
@@ -1050,7 +1051,7 @@ function canonicalizeOwnedPresetMedia(ctx: AppContext, ownerUserId: string, stat
       });
     }
   } else if (isChurchState(next)) {
-    next.slides.forEach((slide, index) => {
+    (next.onAirSlide ? [...next.slides, next.onAirSlide] : next.slides).forEach((slide, index) => {
       references.push({
         id: slide.mediaId,
         url: slide.mediaUrl,
@@ -1117,7 +1118,7 @@ function cloneStateWithoutMediaReferences(state: PresetState): { state: PresetSt
       delete team.logoUrl;
     }
   } else if (isChurchState(next)) {
-    for (const slide of next.slides) {
+    for (const slide of next.onAirSlide ? [...next.slides, next.onAirSlide] : next.slides) {
       removed = Boolean(slide.mediaId || slide.mediaUrl) || removed;
       delete slide.mediaId;
       delete slide.mediaUrl;

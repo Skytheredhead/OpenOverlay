@@ -21,7 +21,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^5.2.1",
-    "multer": "^2.0.2",
+    "multer": "^2.3.0",
     "sharp": "0.35.4",
     "socket.io": "^4.8.1"
   },

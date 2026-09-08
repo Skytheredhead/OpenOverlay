@@ -4,6 +4,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { App } from "./App";
 import "./styles/app.css";
 import "./styles/swiss.css";
+import "./styles/workspace.css";
 
 const router = createBrowserRouter([{ path: "*", element: <App /> }]);
 

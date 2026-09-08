@@ -202,7 +202,7 @@ describe("ChurchControls", () => {
     const commitState = vi.fn();
     render(<ChurchControls state={state} media={[]} tab="slides" commitState={commitState} runAction={vi.fn(async () => undefined)} />);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Show full-screen slide" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide slide" }));
     expect(commitState).toHaveBeenCalledWith(
       expect.objectContaining({
         elements: expect.objectContaining({

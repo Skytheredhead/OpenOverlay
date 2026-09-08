@@ -1,3 +1,4 @@
+import { ActionMenu, CopyButton, RecordInput } from "./components/Controls";
 import { RealtimeRetry } from "./lib/realtimeRetry";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -18,6 +19,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Play,
+  Pause,
   Plus,
   RotateCcw,
   Share2,
@@ -37,7 +39,7 @@ import {
   createDefaultChurchState,
   createDefaultSoccerState,
   defaultTeamColors,
-  defaultTeam,
+  churchOnAirSlide,
   formatClock,
   makeId,
   parseRoster,
@@ -116,7 +118,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const PromptDialogContext = createContext<((options: PromptDialogOptions) => Promise<string | null>) | null>(null);
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 const defaultSoccerEditorTabs: SoccerEditorTab[] = ["match", "live", "setup"];
-const soccerTabLabels: Record<SoccerEditorTab, string> = { match: "Match", live: "Live", setup: "Setup" };
+const soccerTabLabels: Record<SoccerEditorTab, string> = { match: "Match", live: "Live", setup: "Design" };
 
 const THEME_STORAGE_KEY = "openoverlay:theme";
 const SIDEBAR_WIDTH_STORAGE_KEY = "openoverlay:sidebar-width";
@@ -649,6 +651,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function Home() {
+  const { user } = useAuth();
   return (
     <div className="site-shell marketing">
       <header className="topbar">
@@ -657,11 +660,8 @@ function Home() {
           <span>OpenOverlay</span>
         </Link>
         <div className="nav-actions">
-          <Link className="button ghost" to="/login">
-            Login
-          </Link>
-          <Link className="button primary" to="/dash">
-            Open dashboard
+          <Link className="button" to={user ? "/dash" : "/login"}>
+            {user ? "Open dashboard" : "Login"}
           </Link>
         </div>
       </header>
@@ -670,11 +670,8 @@ function Home() {
           <h1>OpenOverlay</h1>
           <p>Free and open-source livestream graphics.</p>
           <div className="hero-actions">
-            <Link className="button primary" to="/signup">
-              Create account
-            </Link>
-            <Link className="button" to="/login">
-              Login
+            <Link className="button primary" to={user ? "/dash" : "/signup"}>
+              {user ? "Open dashboard" : "Create account"}
             </Link>
           </div>
         </section>
@@ -778,7 +775,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { theme, toggle: toggleTheme } = useTheme();
   const { width: sidebarWidth, resizing, startDrag, resizeWithKeyboard } = useResizableSidebar();
   const [games, setGames] = useState<PresetListItem[]>([]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.matchMedia?.("(max-width: 760px)").matches ?? false);
   const [presetMenu, setPresetMenu] = useState<{ game: PresetListItem; x: number; y: number; trigger: HTMLElement | null } | null>(null);
   const presetMenuRef = useRef<HTMLDivElement | null>(null);
   const [shellError, setShellError] = useState<string | null>(null);
@@ -788,6 +785,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const locationRef = useRef(location);
   locationRef.current = location;
+  useEffect(() => {
+    if (window.matchMedia?.("(max-width: 760px)").matches ?? false) setSidebarCollapsed(true);
+  }, [location.pathname]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -946,13 +946,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar-nav-wrap">
           <div className="sidebar-header">
-            <Link
-              to="/dash"
-              className="brand sidebar-brand"
-              aria-label="OpenOverlay dashboard"
-              tabIndex={sidebarCollapsed ? -1 : undefined}
-              aria-hidden={sidebarCollapsed}
-            >
+            <Link to="/dash" className="brand sidebar-brand" aria-label="OpenOverlay dashboard">
               <img className="brand-mark" src="/openoverlay-mark.svg" alt="" aria-hidden="true" />
               <span className="sidebar-brand-text">OpenOverlay</span>
             </Link>
@@ -1079,7 +1073,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function formatOverlayClientCount(count: number): string {
-  return `${count} ${count === 1 ? "client" : "clients"}`;
+  return `${count} ${count === 1 ? "output" : "outputs"}`;
 }
 
 function Dashboard() {
@@ -1089,6 +1083,9 @@ function Dashboard() {
   const [newGameType, setNewGameType] = useState<PresetType>("soccer");
   const [newGameName, setNewGameName] = useState(PRESET_NAME_PLACEHOLDERS.soccer);
   const [creatingGame, setCreatingGame] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [cardBusy, setCardBusy] = useState<string | null>(null);
   const creatingGameRef = useRef(false);
   const loadGenerationRef = useRef(0);
   const navigate = useNavigate();
@@ -1100,6 +1097,7 @@ function Dashboard() {
     const response = await presetApi.list(signal);
     if (signal?.aborted || generation !== loadGenerationRef.current) return;
     setPresets(response.presets);
+    setLoading(false);
     setError(null);
   }, []);
 
@@ -1107,7 +1105,10 @@ function Dashboard() {
     const controller = new AbortController();
     const refresh = () =>
       void load(controller.signal).catch((err) => {
-        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load games");
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setError(err instanceof Error ? err.message : "Could not load games");
+        }
       });
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") refresh();
@@ -1131,6 +1132,7 @@ function Dashboard() {
   }, [isNewGameOpen]);
 
   function openNewGameDialog() {
+    setCreateError(null);
     setNewGameType("soccer");
     setNewGameName(PRESET_NAME_PLACEHOLDERS.soccer);
     setIsNewGameOpen(true);
@@ -1153,19 +1155,30 @@ function Dashboard() {
       setIsNewGameOpen(false);
       navigate(`/dash/presets/${response.preset.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create game");
+      setCreateError(err instanceof Error ? err.message : "Could not create game");
     } finally {
       creatingGameRef.current = false;
       setCreatingGame(false);
     }
   }
 
-  async function copyGameOverlayLink(publicId: string) {
+  async function manageGame(preset: PresetListItem, action: "duplicate" | "delete") {
+    if (cardBusy) return;
+    if (action === "delete" && !window.confirm(`Delete “${preset.name}”? Its output URL will stop working.`)) return;
+    setCardBusy(preset.id);
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/overlay/${publicId}`);
-      setError(null);
-    } catch {
-      setError("Could not copy overlay URL.");
+      if (action === "duplicate") {
+        const result = await presetApi.duplicate(preset.id);
+        void navigate(`/dash/presets/${result.preset.id}`);
+      } else {
+        await presetApi.remove(preset.id, preset.revision);
+        await load();
+        dispatchPresetDeleted({ id: preset.id, publicId: preset.publicId, revision: preset.revision });
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not update game");
+    } finally {
+      setCardBusy(null);
     }
   }
 
@@ -1177,6 +1190,11 @@ function Dashboard() {
       {error ? (
         <div className="error" role="alert">
           {error}
+        </div>
+      ) : null}
+      {loading ? (
+        <div className="loading-state" role="status">
+          Loading games…
         </div>
       ) : null}
       <section className="preset-grid game-card-grid">
@@ -1196,19 +1214,28 @@ function Dashboard() {
                 <span>{preset.type === "soccer" ? "Soccer" : preset.type}</span>
                 <span>{formatOverlayClientCount(preset.overlayClientCount || 0)}</span>
               </div>
-              <h2>{preset.name}</h2>
+              <h2>
+                <Link to={`/dash/presets/${preset.id}`} aria-label={`Open ${preset.name}`}>
+                  {preset.name}
+                </Link>
+              </h2>
               <div className="control-row game-card-actions">
-                <button className="button game-card-copy" type="button" onClick={() => void copyGameOverlayLink(preset.publicId)}>
-                  <Copy size={14} /> Copy overlay
-                </button>
+                <CopyButton value={`${window.location.origin}/overlay/${preset.publicId}`} onError={setError} />
                 <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer">
-                  <ExternalLink size={14} /> Test
+                  <ExternalLink size={14} /> Test output
                 </a>
               </div>
             </div>
-            <Link className="button game-card-play" to={`/dash/presets/${preset.id}`} aria-label={`Open ${preset.name}`} title={`Open ${preset.name}`}>
-              <Play size={40} fill="currentColor" strokeWidth={0} />
-            </Link>
+            <ActionMenu label={`${preset.name} actions`}>
+              <button className="button" disabled={cardBusy === preset.id} onClick={() => void manageGame(preset, "duplicate")}>
+                <Copy size={14} />
+                Duplicate
+              </button>
+              <button className="button danger" disabled={cardBusy === preset.id} onClick={() => void manageGame(preset, "delete")}>
+                <Trash2 size={14} />
+                Delete
+              </button>
+            </ActionMenu>
           </article>
         ))}
       </section>
@@ -1216,6 +1243,11 @@ function Dashboard() {
         <ModalLayer initialFocusRef={newGameNameRef} onClose={closeNewGameDialog}>
           <form className="prompt-dialog" role="dialog" aria-modal="true" aria-labelledby="new-game-dialog-title" onSubmit={createPreset}>
             <h2 id="new-game-dialog-title">New game</h2>
+            {createError ? (
+              <div className="error" role="alert">
+                {createError}
+              </div>
+            ) : null}
             <label className="field">
               <span>Game type</span>
               <select
@@ -1246,7 +1278,7 @@ function Dashboard() {
               <button className="button" type="button" onClick={closeNewGameDialog} disabled={creatingGame}>
                 Cancel
               </button>
-              <button className="button primary" type="submit" disabled={creatingGame}>
+              <button className="button primary" type="submit" disabled={creatingGame || !newGameName.trim()}>
                 {creatingGame ? "Creating..." : "Create game"}
               </button>
             </div>
@@ -1621,10 +1653,7 @@ export function PresetEditor() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
   const [tab, setTab] = useState("live");
-  const [soccerTabOrder, setSoccerTabOrder] = useState<SoccerEditorTab[]>(defaultSoccerEditorTabs);
-  const [draggedSoccerTab, setDraggedSoccerTab] = useState<SoccerEditorTab | null>(null);
   const [soccerPreviewSurface, setSoccerPreviewSurface] = useState<SoccerState["soccerPackage"]["surface"]>("checker");
-  const draggedSoccerTabRef = useRef<SoccerEditorTab | null>(null);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [showConnectionWarning, setShowConnectionWarning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2102,24 +2131,6 @@ export function PresetEditor() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [restoreHistory]);
 
-  useEffect(() => {
-    if (!draggedSoccerTab) return;
-    const clearDrag = () => {
-      draggedSoccerTabRef.current = null;
-      setDraggedSoccerTab(null);
-    };
-    window.addEventListener("pointerup", clearDrag);
-    window.addEventListener("mouseup", clearDrag);
-    window.addEventListener("dragend", clearDrag);
-    window.addEventListener("blur", clearDrag);
-    return () => {
-      window.removeEventListener("pointerup", clearDrag);
-      window.removeEventListener("mouseup", clearDrag);
-      window.removeEventListener("dragend", clearDrag);
-      window.removeEventListener("blur", clearDrag);
-    };
-  }, [draggedSoccerTab]);
-
   async function runAction(action: string, payload: Record<string, unknown> = {}) {
     if (!presetRef.current || mutationBusyRef.current || revisionConflict || !requireSavedState()) return;
     if (pendingSoccerTextUpdateRef.current) applyPendingSoccerTextUpdate();
@@ -2193,76 +2204,19 @@ export function PresetEditor() {
   }
   const overlayUrl = `${window.location.origin}/overlay/${preset.publicId}`;
   const soccerState = preset.type === "soccer" && isSoccerState(preset.state) ? preset.state : null;
-  const tabs = soccerState ? soccerTabOrder : ["slides", "style"];
+  const tabs = soccerState ? defaultSoccerEditorTabs : ["slides", "style"];
   const isSoccerEditor = Boolean(soccerState);
-  const tabLabels: Record<string, string> = { ...soccerTabLabels, slides: "slides", style: "style" };
-  function startSoccerTabDrag(sourceTab: SoccerEditorTab) {
-    draggedSoccerTabRef.current = sourceTab;
-    setDraggedSoccerTab(sourceTab);
-  }
-  function clearSoccerTabDrag() {
-    draggedSoccerTabRef.current = null;
-    setDraggedSoccerTab(null);
-  }
-  function reorderSoccerTab(targetTab: SoccerEditorTab) {
-    const sourceTab = draggedSoccerTabRef.current;
-    if (!sourceTab || sourceTab === targetTab) return;
-    setSoccerTabOrder((current) => {
-      const next = current.filter((item) => item !== sourceTab);
-      const targetIndex = next.indexOf(targetTab);
-      next.splice(targetIndex < 0 ? next.length : targetIndex, 0, sourceTab);
-      return next;
-    });
-    clearSoccerTabDrag();
-  }
+  const tabLabels: Record<string, string> = { ...soccerTabLabels, slides: "Slides", style: "Style" };
   const tabButtons = (
     <div className="tabs" role="group" aria-label="Editor sections">
       {tabs.map((item) => (
         <button
           key={item}
-          className={`tab ${tab === item ? "active" : ""} ${draggedSoccerTab === item ? "dragging" : ""}`}
+          className={`tab ${tab === item ? "active" : ""}`}
           data-soccer-tab={soccerState ? item : undefined}
           type="button"
           aria-pressed={tab === item}
-          draggable={Boolean(soccerState)}
           onClick={() => setTab(item)}
-          onPointerDown={(event) => {
-            if (!soccerState || event.button !== 0) return;
-            startSoccerTabDrag(item as SoccerEditorTab);
-          }}
-          onPointerEnter={() => {
-            if (!soccerState) return;
-            reorderSoccerTab(item as SoccerEditorTab);
-          }}
-          onPointerMove={() => {
-            if (!soccerState) return;
-            reorderSoccerTab(item as SoccerEditorTab);
-          }}
-          onPointerUp={clearSoccerTabDrag}
-          onMouseDown={(event) => {
-            if (!soccerState || event.button !== 0) return;
-            startSoccerTabDrag(item as SoccerEditorTab);
-          }}
-          onMouseEnter={() => {
-            if (!soccerState) return;
-            reorderSoccerTab(item as SoccerEditorTab);
-          }}
-          onMouseMove={() => {
-            if (!soccerState) return;
-            reorderSoccerTab(item as SoccerEditorTab);
-          }}
-          onMouseUp={clearSoccerTabDrag}
-          onDragStart={() => (soccerState ? startSoccerTabDrag(item as SoccerEditorTab) : undefined)}
-          onDragOver={(event) => {
-            if (!soccerState) return;
-            event.preventDefault();
-          }}
-          onDrop={(event) => {
-            if (!soccerState) return;
-            event.preventDefault();
-            reorderSoccerTab(item as SoccerEditorTab);
-          }}
-          onDragEnd={clearSoccerTabDrag}
         >
           {tabLabels[item]}
         </button>
@@ -2321,15 +2275,6 @@ export function PresetEditor() {
     pendingSoccerTextUpdateRef.current = null;
     setPendingSoccerTextUpdate(null);
     commitState(nextState);
-  }
-
-  async function copyOverlayUrl() {
-    try {
-      await navigator.clipboard.writeText(overlayUrl);
-      setError(null);
-    } catch {
-      setError("Could not copy output URL.");
-    }
   }
 
   async function duplicatePreset() {
@@ -2435,14 +2380,12 @@ export function PresetEditor() {
           <h1>{preset.name}</h1>
           <p className="muted preset-meta">
             <span>{preset.type === "soccer" ? "soccer game" : `${preset.type} production`}</span>
-            <button className="inline-copy-button" type="button" onClick={() => void copyOverlayUrl()}>
-              <Copy size={14} /> Copy output URL
-            </button>
+            <CopyButton value={overlayUrl} className="inline-copy-button" onError={setError} />
           </p>
         </div>
         <div className="status-row">
           <span className={`status-pill ${connection === "connected" ? "ok" : "warn"}`}>{connection}</span>
-          <span className="status-pill ok">{preset.overlayClientCount || 0} overlay clients</span>
+          <span className="status-pill ok">{formatOverlayClientCount(preset.overlayClientCount || 0)}</span>
           <span className={`status-pill ${autosaveFailed || revisionConflict ? "warn" : "ok"}`} role="status">
             {autosaveFailed || revisionConflict ? "Unsaved changes" : hasPendingPresetSaveRef.current || mutationBusy ? "Saving…" : "Saved"}
           </span>
@@ -2464,18 +2407,20 @@ export function PresetEditor() {
         <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer">
           <ExternalLink size={15} /> Test output
         </a>
-        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void duplicatePreset()}>
-          <Copy size={15} /> Duplicate
-        </button>
-        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void sharePreset()}>
-          <Share2 size={15} /> Share
-        </button>
-        <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void rotateActionKey()}>
-          <KeyRound size={15} /> Rotate action key
-        </button>
-        <button className="button" type="button" onClick={() => (debugEvents ? setDebugEvents(null) : void loadDebugEvents())}>
-          <Bug size={15} /> {debugEvents ? "Hide events" : "Event log"}
-        </button>
+        <ActionMenu label="Game actions">
+          <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void duplicatePreset()}>
+            <Copy size={15} /> Duplicate
+          </button>
+          <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void sharePreset()}>
+            <Share2 size={15} /> Share
+          </button>
+          <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void rotateActionKey()}>
+            <KeyRound size={15} /> Rotate action key
+          </button>
+          <button className="button" type="button" onClick={() => (debugEvents ? setDebugEvents(null) : void loadDebugEvents())}>
+            <Bug size={15} /> {debugEvents ? "Hide events" : "Event log"}
+          </button>
+        </ActionMenu>
         <button className="button danger" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void runAction("clear")}>
           <ShieldAlert size={15} /> Panic clear
         </button>
@@ -2541,7 +2486,12 @@ export function PresetEditor() {
       <div className={`editor-layout ${isSoccerEditor ? "live-editor-layout" : ""}`} inert={mutationBusy} aria-busy={mutationBusy}>
         {soccerState ? (
           <>
-            <SoccerLabOverlayControls state={soccerState} updatePackage={updateSoccerPackage} runAction={runAction} />
+            <SoccerLabOverlayControls
+              state={soccerState}
+              updatePackage={updateSoccerPackage}
+              runAction={runAction}
+              onSelect={(overlay) => setTab(overlay === "full-matchup" || overlay === "lower-matchup" ? "match" : "live")}
+            />
             <section className="preview-column live-preview-pane">
               <OutputPreviewFrame src={overlayUrl} title={`${preset.name} output preview`} surface={soccerPreviewSurface} />
               {pendingSoccerTextUpdate ? <SoccerPreviewUpdatePrompt onApply={applyPendingSoccerTextUpdate} /> : null}
@@ -2559,7 +2509,6 @@ export function PresetEditor() {
               updateMatchPackage={updateSoccerMatchPackage}
               previewSurface={soccerPreviewSurface}
               setPreviewSurface={setSoccerPreviewSurface}
-              commitState={commitState}
               commitMatchState={commitSoccerMatchState}
               runAction={runAction}
             />
@@ -2581,7 +2530,12 @@ export function PresetEditor() {
                   Custom presets are read-only in this release. Existing output data is preserved.
                 </div>
               ) : null}
-              {selectedElement ? <ElementInspector state={preset.state} element={selectedElement} commitState={commitState} /> : null}
+              {selectedElement ? (
+                <details className="advanced-section">
+                  <summary>Lower third layout</summary>
+                  <ElementInspector state={preset.state} element={selectedElement} commitState={commitState} />
+                </details>
+              ) : null}
             </aside>
           </>
         )}
@@ -2591,10 +2545,14 @@ export function PresetEditor() {
 }
 
 function OutputPreviewFrame({ src, title, surface }: { src: string; title: string; surface: SoccerState["soccerPackage"]["surface"] }) {
+  const [expanded, setExpanded] = useState(() => !(window.matchMedia?.("(max-width: 760px)").matches ?? false));
   return (
-    <div className={`preview-frame preview-surface-${surface}`}>
-      <iframe className="output-preview-iframe" src={previewOverlaySrc(src)} title={title} loading="eager" />
-    </div>
+    <details className="preview-disclosure" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <summary>Output preview</summary>
+      <div className={`preview-frame preview-surface-${surface}`}>
+        <iframe className="output-preview-iframe" src={previewOverlaySrc(src)} title={title} loading="eager" />
+      </div>
+    </details>
   );
 }
 
@@ -2651,7 +2609,7 @@ function previewOverlaySrc(src: string): string {
 function SoccerPreviewUpdatePrompt({ onApply }: { onApply: () => void }) {
   return (
     <div className="preview-update-prompt" role="status">
-      <span>Changes were made. Update?</span>
+      <span>Ready to publish</span>
       <button className="button icon-only dark" type="button" aria-label="Update displayed overlay" title="Update displayed overlay" onClick={onApply}>
         <Check size={16} strokeWidth={2.6} />
       </button>
@@ -2663,141 +2621,42 @@ function SoccerControls({
   state,
   media,
   teams,
-  tab,
   commitState
 }: {
   state: SoccerState;
   media: MediaItem[];
   teams: TeamLibraryEntry[];
-  tab: string;
-  commitState: (state: PresetState) => void;
+  commitState: (state: PresetState, fields?: SoccerTextAnimationField[]) => void;
 }) {
-  function update(patch: Partial<SoccerState>) {
-    commitState({ ...state, ...patch });
-  }
-
   function updateTeam(side: "home" | "away", patch: Partial<SoccerState["home"]>) {
-    update({ [side]: mergeTeamPatch(state[side], patch) } as Partial<SoccerState>);
+    const next = { ...state, [side]: mergeTeamPatch(state[side], patch) };
+    commitState(next, soccerTeamTextFields(side, next));
   }
-
-  function applySavedTeam(side: "home" | "away", teamId: string) {
-    const team = teams.find((candidate) => candidate.id === teamId);
-    if (!team) return;
-    update({ [side]: teamLibraryToSoccerTeam(team) } as Partial<SoccerState>);
-  }
-
-  function clearTeam(side: "home" | "away") {
-    const blank = defaultTeam(side);
-    update({
-      [side]: {
-        ...blank,
-        fullName: side === "home" ? "Home Team" : "Away Team",
-        shortName: side === "home" ? "HOME" : "AWAY",
-        abbreviation: side === "home" ? "HOME" : "AWAY",
-        rosterText: "",
-        roster: [],
-        coach: "",
-        schoolName: "",
-        record: { wins: 0, losses: 0, draws: 0 }
-      }
-    } as Partial<SoccerState>);
-  }
-
-  function refreshTeam(side: "home" | "away") {
-    const match = findSavedTeamMatch(state[side], teams);
-    if (match) applySavedTeam(side, match.id);
-  }
-
-  function swapTeams() {
-    update({ home: state.away, away: state.home });
-  }
-
-  function updateGameInfo(patch: Partial<Pick<SoccerState, "gameTitle" | "productionName" | "scheduledAt">>) {
-    update(patch);
-  }
-
-  function updatePackage(patch: Partial<SoccerState["soccerPackage"]>) {
-    update({ soccerPackage: { ...state.soccerPackage, ...patch } });
-  }
-
-  if (tab === "setup") {
-    return (
-      <>
-        <div className="panel setup-panel">
-          <h2>Game setup</h2>
-          <div className="form-grid">
-            <label className="field">
-              <span>Game title</span>
-              <input value={state.gameTitle} onChange={(event) => updateGameInfo({ gameTitle: event.target.value })} />
-            </label>
-            <div className="two-col">
-              <label className="field">
-                <span>Production</span>
-                <input value={state.productionName} onChange={(event) => updateGameInfo({ productionName: event.target.value })} />
-              </label>
-              <label className="field">
-                <span>Scheduled</span>
-                <input
-                  type="datetime-local"
-                  value={dateTimeLocalValue(state.scheduledAt)}
-                  onChange={(event) => {
-                    const nextDate = new Date(event.target.value);
-                    if (!Number.isNaN(nextDate.getTime())) updateGameInfo({ scheduledAt: nextDate.toISOString() });
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-        <div className="panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Teams</h2>
-              <p className="muted">Saved teams are copied into this game, so game-day edits stay local to this game.</p>
-            </div>
-            <button className="button" type="button" onClick={swapTeams}>
-              Swap teams
-            </button>
-          </div>
-          <div className="two-col">
-            <TeamAssignmentCard
-              side="home"
-              team={state.home}
-              teams={teams}
-              onSelect={(id) => applySavedTeam("home", id)}
-              onClear={() => clearTeam("home")}
-              onRefresh={() => refreshTeam("home")}
-            />
-            <TeamAssignmentCard
-              side="away"
-              team={state.away}
-              teams={teams}
-              onSelect={(id) => applySavedTeam("away", id)}
-              onClear={() => clearTeam("away")}
-              onRefresh={() => refreshTeam("away")}
-            />
-          </div>
-        </div>
-        <TeamPanel title="Home team" side="home" team={state.home} media={media} onChange={(patch) => updateTeam("home", patch)} />
-        <TeamPanel title="Away team" side="away" team={state.away} media={media} onChange={(patch) => updateTeam("away", patch)} />
-      </>
-    );
-  }
-
-  if (tab === "design") {
-    return (
-      <>
-        <StylePanel state={state} commitState={commitState} />
-        <SoccerPackageStylePanel state={state} updatePackage={updatePackage} />
-        <div className="panel">
-          <h2>Elements</h2>
-          <p className="muted">Drag the soccer package in the preview or adjust the selected element below.</p>
-        </div>
-      </>
-    );
-  }
-
-  return null;
+  return (
+    <div className="match-control-stack">
+      <SoccerLiveSetupPanel state={state} teams={teams} commitMatchState={(next, fields) => commitState(next, fields)} />
+      <SoccerMatchupTextPanel state={state} commitMatchState={(next, fields) => commitState(next, fields)} />
+      <label className="field">
+        <span>Scheduled</span>
+        <input
+          type="datetime-local"
+          value={dateTimeLocalValue(state.scheduledAt)}
+          onChange={(event) => {
+            const date = new Date(event.target.value);
+            if (!Number.isNaN(date.getTime())) commitState({ ...state, scheduledAt: date.toISOString() });
+          }}
+        />
+      </label>
+      {(["home", "away"] as const).map((side) => (
+        <details className="advanced-section" key={side}>
+          <summary>
+            {side === "home" ? "Home" : "Away"} team details <span className="muted">{state[side].fullName}</span>
+          </summary>
+          <TeamFields team={state[side]} media={media} onChange={(patch) => updateTeam(side, patch)} />
+        </details>
+      ))}
+    </div>
+  );
 }
 
 function SoccerBottomControlPanel({
@@ -2812,7 +2671,6 @@ function SoccerBottomControlPanel({
   updateMatchPackage,
   previewSurface,
   setPreviewSurface,
-  commitState,
   commitMatchState,
   runAction
 }: {
@@ -2827,7 +2685,6 @@ function SoccerBottomControlPanel({
   updateMatchPackage: (patch: Partial<SoccerState["soccerPackage"]>, changedFields?: SoccerTextAnimationField[]) => void;
   previewSurface: SoccerState["soccerPackage"]["surface"];
   setPreviewSurface: (surface: SoccerState["soccerPackage"]["surface"]) => void;
-  commitState: (state: PresetState) => void;
   commitMatchState: (state: SoccerState, changedFields: SoccerTextAnimationField[]) => void;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
@@ -2835,24 +2692,22 @@ function SoccerBottomControlPanel({
     <div className="panel soccer-bottom-control-panel">
       <div className="bottom-control-tabs">{tabButtons}</div>
       {activeTab === "match" ? (
-        <div className="match-control-stack">
-          <SoccerLiveSetupPanel state={state} teams={teams} commitMatchState={commitMatchState} />
-          <SoccerMatchupTextPanel state={state} commitMatchState={commitMatchState} />
-          <SoccerTextBugPanel state={state} updatePackage={updateMatchPackage} />
-          <SoccerCountdownPanel state={state} serverTimeMs={serverTimeMs} updatePackage={updatePackage} runAction={runAction} />
-        </div>
+        <SoccerControls state={state} media={media} teams={teams} commitState={(next, fields = []) => commitMatchState(next as SoccerState, fields)} />
       ) : null}
       {activeTab === "setup" ? (
-        <div className="setup-control-stack">
-          <SoccerControls state={state} media={media} teams={teams} tab="setup" commitState={commitState} />
-          <SoccerPackageSetupPanel state={state} updatePackage={updatePackage} previewSurface={previewSurface} setPreviewSurface={setPreviewSurface} />
-        </div>
+        <SoccerPackageSetupPanel state={state} updatePackage={updatePackage} previewSurface={previewSurface} setPreviewSurface={setPreviewSurface} />
       ) : null}
       {activeTab === "live" ? (
         <div className="live-control-stack">
           <SoccerScoreClockPanel state={state} serverTimeMs={serverTimeMs} updateClock={updateClock} runAction={runAction} />
-          <SoccerOperationsPanel state={state} commitState={commitState} runAction={runAction} />
-          <SoccerCountdownPanel state={state} serverTimeMs={serverTimeMs} updatePackage={updatePackage} runAction={runAction} />
+          <SoccerGraphicFields
+            state={state}
+            serverTimeMs={serverTimeMs}
+            updatePackage={updatePackage}
+            updateTextPackage={updateMatchPackage}
+            runAction={runAction}
+          />
+          <SoccerOperationsPanel state={state} serverTimeMs={serverTimeMs} runAction={runAction} />
         </div>
       ) : null}
     </div>
@@ -3011,6 +2866,28 @@ function SoccerPackageSetupPanel({
         </div>
       </section>
       <section className="control-section">
+        <h2>Scorebug</h2>
+        <div className="two-col">
+          <label className="field">
+            <span>Layout</span>
+            <select value={state.soccerPackage.scorebugLayout} onChange={(e) => updatePackage({ scorebugLayout: e.target.value as "horizontal" | "vertical" })}>
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Width</span>
+            <input
+              type="range"
+              min="44"
+              max="82"
+              value={state.soccerPackage.scorebugWidth}
+              onChange={(e) => updatePackage({ scorebugWidth: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+      </section>
+      <section className="control-section">
         <h2>Colors</h2>
         <div className="package-color-grid">
           {soccerPackageColorFields[packageName].map((field) => (
@@ -3058,34 +2935,93 @@ function SoccerMatchupTextPanel({
   );
 }
 
-function SoccerTextBugPanel({
+function SoccerGraphicFields({
   state,
-  updatePackage
+  serverTimeMs,
+  updatePackage,
+  updateTextPackage,
+  runAction
 }: {
+  updateTextPackage: (patch: Partial<SoccerState["soccerPackage"]>, fields?: SoccerTextAnimationField[]) => void;
   state: SoccerState;
-  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>, changedFields?: SoccerTextAnimationField[]) => void;
+  serverTimeMs?: number;
+  updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
+  runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
-  return (
-    <section className="control-section">
-      <h2>Text bugs</h2>
-      <div className="form-grid">
+  const selected = state.soccerPackage.selectedOverlay;
+  const pack = state.soccerPackage;
+  if (selected === "countdown-timer")
+    return <SoccerCountdownPanel state={state} serverTimeMs={serverTimeMs} updatePackage={updatePackage} runAction={runAction} />;
+  if (selected === "lineup-panel") {
+    const count = Math.max(1, Math.ceil(state[pack.lineupTeam].roster.length / 6));
+    const page = Math.min(count - 1, pack.lineupPage);
+    return (
+      <section className="control-section">
+        <h2>Lineup</h2>
         <label className="field">
-          <span>1-line text</span>
-          <input value={state.soccerPackage.oneLineText} onChange={(event) => updatePackage({ oneLineText: event.target.value }, ["one-line"])} />
+          <span>Lineup team</span>
+          <select value={pack.lineupTeam} onChange={(e) => updatePackage({ lineupTeam: e.target.value as "home" | "away", lineupPage: 0 })}>
+            <option value="home">{state.home.fullName}</option>
+            <option value="away">{state.away.fullName}</option>
+          </select>
         </label>
-        <PositionSelect value={state.soccerPackage.oneLinePosition} onChange={(value) => updatePackage({ oneLinePosition: value })} />
+        <div className="control-row">
+          <button className="button" disabled={page === 0} onClick={() => updatePackage({ lineupPage: page - 1 })}>
+            Previous players
+          </button>
+          <span role="status">
+            {page + 1} / {count}
+          </span>
+          <button className="button" disabled={page >= count - 1} onClick={() => updatePackage({ lineupPage: page + 1 })}>
+            Next players
+          </button>
+        </div>
+      </section>
+    );
+  }
+  if (selected === "lower-result")
+    return (
+      <section className="control-section">
+        <h2>Score matchup</h2>
         <label className="field">
-          <span>2-line top</span>
-          <input value={state.soccerPackage.twoLineTextA} onChange={(event) => updatePackage({ twoLineTextA: event.target.value }, ["two-line-a"])} />
+          <span>Result</span>
+          <select value={pack.lowerResultState} onChange={(e) => updatePackage({ lowerResultState: e.target.value as "HALF" | "FINAL" })}>
+            <option value="HALF">Halftime</option>
+            <option value="FINAL">Final</option>
+          </select>
         </label>
-        <label className="field">
-          <span>2-line bottom</span>
-          <input value={state.soccerPackage.twoLineTextB} onChange={(event) => updatePackage({ twoLineTextB: event.target.value }, ["two-line-b"])} />
-        </label>
-        <PositionSelect value={state.soccerPackage.twoLinePosition} onChange={(value) => updatePackage({ twoLinePosition: value })} />
-      </div>
-    </section>
-  );
+      </section>
+    );
+  if (selected === "one-line-text" || selected === "two-line-text")
+    return (
+      <section className="control-section">
+        <h2>{selected === "one-line-text" ? "One-line text" : "Two-line text"}</h2>
+        <div className="form-grid">
+          {selected === "one-line-text" ? (
+            <>
+              <label className="field">
+                <span>Text</span>
+                <input maxLength={500} value={pack.oneLineText} onChange={(e) => updateTextPackage({ oneLineText: e.target.value }, ["one-line"])} />
+              </label>
+              <PositionSelect value={pack.oneLinePosition} onChange={(oneLinePosition) => updatePackage({ oneLinePosition })} />
+            </>
+          ) : (
+            <>
+              <label className="field">
+                <span>Top line</span>
+                <input maxLength={500} value={pack.twoLineTextA} onChange={(e) => updateTextPackage({ twoLineTextA: e.target.value }, ["two-line-a"])} />
+              </label>
+              <label className="field">
+                <span>Bottom line</span>
+                <input maxLength={500} value={pack.twoLineTextB} onChange={(e) => updateTextPackage({ twoLineTextB: e.target.value }, ["two-line-b"])} />
+              </label>
+              <PositionSelect value={pack.twoLinePosition} onChange={(twoLinePosition) => updatePackage({ twoLinePosition })} />
+            </>
+          )}
+        </div>
+      </section>
+    );
+  return null;
 }
 
 export function SyncedTimeInput({ seconds, disabled = false, onCommit }: { seconds: number; disabled?: boolean; onCommit: (seconds: number) => void }) {
@@ -3199,7 +3135,7 @@ export function SoccerCountdownPanel({
             title={running ? "Stop countdown" : "Start countdown"}
             onClick={() => void runAction("countdown-toggle")}
           >
-            {running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
+            {running ? <Pause size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
           </button>
           <button className="button" type="button" onClick={() => startPresetCountdown(300)}>
             5:00
@@ -3300,7 +3236,7 @@ export function SoccerScoreClockPanel({
             title={running ? "Pause clock" : "Start clock"}
             onClick={() => runAction("clock-toggle")}
           >
-            {running ? <Square size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
+            {running ? <Pause size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} />}
           </button>
           <button className="button" type="button" onClick={() => runAction("clock-reset")}>
             <RotateCcw size={15} /> Reset
@@ -3396,150 +3332,74 @@ function ScoreControls({ label, score, plus, minus }: { label: string; score: nu
   );
 }
 
-type SoccerStatKey = keyof SoccerState["stats"];
-
 function SoccerOperationsPanel({
   state,
-  commitState,
+  serverTimeMs,
   runAction
 }: {
   state: SoccerState;
-  commitState: (state: PresetState) => void;
+  serverTimeMs?: number;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [team, setTeam] = useState<"home" | "away">("home");
-
-  function updateStat(stat: SoccerStatKey, side: "home" | "away", delta: number) {
-    commitState({
-      ...state,
-      stats: {
-        ...state.stats,
-        [stat]: {
-          ...state.stats[stat],
-          [side]: Math.max(0, state.stats[stat][side] + delta)
-        }
-      }
-    });
-  }
-
-  function toggleStatBug() {
-    commitState({
-      ...state,
-      elements: {
-        ...state.elements,
-        statBug: { ...state.elements.statBug, visible: !state.elements.statBug.visible }
-      }
-    });
-  }
-
-  function trigger(action: string, overrides: Record<string, unknown> = {}) {
-    void runAction(action, {
-      team,
-      ...(title.trim() ? { title: title.trim() } : {}),
-      ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}),
-      ...overrides
-    });
-  }
-
+  const deadline = Math.min(...state.activeGraphics.map((graphic) => graphic.expiresAtMs ?? Infinity));
+  const now = useControlTime(serverTimeMs, deadline);
+  const active = state.activeGraphics.filter((graphic) => graphic.expiresAtMs === null || graphic.expiresAtMs > now);
+  const graphics = [
+    ["Goal", "trigger-goal", "goal"],
+    ["Yellow card", "trigger-yellow-card", "yellow-card"],
+    ["Red card", "trigger-red-card", "red-card"],
+    ["Substitution", "trigger-substitution", "substitution"],
+    ["Lineup", "trigger-lineups", "lineups"],
+    ["Sponsor", "trigger-sponsor", "sponsor"],
+    ["Lower third", "trigger-lower-third", "lower-third"],
+    ["Halftime", "trigger-halftime", "halftime"],
+    ["Full time", "trigger-full-time", "fullscreen"]
+  ];
   return (
     <section className="control-section soccer-operations-panel">
-      <div className="panel-heading">
-        <div>
-          <h2>Stats & temporary graphics</h2>
-          <p className="muted">A second trigger of the same graphic takes it off air.</p>
-        </div>
-        <button className="button" type="button" aria-pressed={state.elements.statBug.visible} onClick={toggleStatBug}>
-          {state.elements.statBug.visible ? "Hide stats" : "Show stats"}
-        </button>
+      <h2>Quick graphics</h2>
+      <label className="field">
+        <span>Team</span>
+        <select value={team} onChange={(e) => setTeam(e.target.value as "home" | "away")}>
+          <option value="home">{state.home.fullName}</option>
+          <option value="away">{state.away.fullName}</option>
+        </select>
+      </label>
+      <div className="temporary-graphic-actions">
+        {graphics.map(([label, action, kind]) => {
+          const showing = active.some((graphic) => graphic.kind === kind);
+          return (
+            <button
+              className={`button ${showing ? "on-air" : ""}`}
+              type="button"
+              key={action}
+              aria-pressed={showing}
+              onClick={() =>
+                void runAction(action, { team, ...(title.trim() ? { title: title.trim() } : {}), ...(subtitle.trim() ? { subtitle: subtitle.trim() } : {}) })
+              }
+            >
+              {showing ? `Hide ${label.toLowerCase()}` : label}
+            </button>
+          );
+        })}
       </div>
-      <div className="soccer-stat-editor" aria-label="Match statistics">
-        {(["shots", "fouls", "cards"] as SoccerStatKey[]).map((stat) => (
-          <div className="soccer-stat-row" key={stat}>
-            <strong>{stat[0].toUpperCase() + stat.slice(1)}</strong>
-            <StatStepper
-              label={`${state.home.abbreviation} ${stat}`}
-              value={state.stats[stat].home}
-              decrement={() => updateStat(stat, "home", -1)}
-              increment={() => updateStat(stat, "home", 1)}
-            />
-            <StatStepper
-              label={`${state.away.abbreviation} ${stat}`}
-              value={state.stats[stat].away}
-              decrement={() => updateStat(stat, "away", -1)}
-              increment={() => updateStat(stat, "away", 1)}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="form-grid temporary-graphic-fields">
+      <details className="advanced-section">
+        <summary>Custom text</summary>
         <div className="two-col">
           <label className="field">
-            <span>Graphic title (optional)</span>
-            <input value={title} maxLength={200} onChange={(event) => setTitle(event.target.value)} />
+            <span>Graphic title</span>
+            <input value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} />
           </label>
           <label className="field">
-            <span>Subtitle / player (optional)</span>
-            <input value={subtitle} maxLength={500} onChange={(event) => setSubtitle(event.target.value)} />
+            <span>Subtitle / player</span>
+            <input value={subtitle} maxLength={500} onChange={(e) => setSubtitle(e.target.value)} />
           </label>
         </div>
-        <label className="field">
-          <span>Team</span>
-          <select value={team} onChange={(event) => setTeam(event.target.value as "home" | "away")}>
-            <option value="home">{state.home.shortName || "Home"}</option>
-            <option value="away">{state.away.shortName || "Away"}</option>
-          </select>
-        </label>
-        <div className="control-row temporary-graphic-actions">
-          <button className="button primary" type="button" onClick={() => trigger("trigger-goal")}>
-            Goal
-          </button>
-          <button className="button" type="button" onClick={() => trigger("trigger-yellow-card")}>
-            Yellow card
-          </button>
-          <button className="button" type="button" onClick={() => trigger("trigger-red-card")}>
-            Red card
-          </button>
-          <button className="button" type="button" onClick={() => trigger("trigger-substitution")}>
-            Substitution
-          </button>
-          <button className="button" type="button" onClick={() => trigger("trigger-lineups")}>
-            Lineup
-          </button>
-          <button className="button" type="button" onClick={() => trigger("trigger-sponsor")}>
-            Sponsor
-          </button>
-          <button className="button" type="button" onClick={() => trigger("trigger-lower-third")}>
-            Lower third
-          </button>
-          <button className="button" type="button" onClick={() => trigger("trigger-halftime")}>
-            Halftime
-          </button>
-          <button className="button" type="button" onClick={() => trigger("trigger-full-time")}>
-            Full time
-          </button>
-          <button className="button danger" type="button" onClick={() => void runAction("clear")}>
-            Clear graphics
-          </button>
-        </div>
-      </div>
+      </details>
     </section>
-  );
-}
-
-function StatStepper({ label, value, decrement, increment }: { label: string; value: number; decrement: () => void; increment: () => void }) {
-  return (
-    <div className="stat-stepper">
-      <span>{label}</span>
-      <button className="button" type="button" aria-label={`Subtract one from ${label}`} disabled={value <= 0} onClick={decrement}>
-        −
-      </button>
-      <strong>{value}</strong>
-      <button className="button" type="button" aria-label={`Add one to ${label}`} onClick={increment}>
-        +
-      </button>
-    </div>
   );
 }
 
@@ -3565,49 +3425,13 @@ const labOverlayLabels: Record<SoccerLabOverlay, string> = {
   "two-line-text": "2-line text bug"
 };
 
-function SoccerPackageStylePanel({ state, updatePackage }: { state: SoccerState; updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void }) {
-  return (
-    <div className="panel">
-      <h2>Soccer package</h2>
-      <div className="form-grid">
-        <label className="field">
-          <span>Overlay package</span>
-          <select
-            value={state.soccerPackage.overlayPackage}
-            onChange={(event) => updatePackage({ overlayPackage: event.target.value as SoccerState["soccerPackage"]["overlayPackage"] })}
-          >
-            <option value="classic">Classic</option>
-            <option value="rounded">Rounded</option>
-          </select>
-        </label>
-        <label className="control-row">
-          <input
-            type="checkbox"
-            checked={state.soccerPackage.packageBackground}
-            onChange={(event) => updatePackage({ packageBackground: event.target.checked })}
-          />
-          Package background
-        </label>
-        <label className="field">
-          <span>Background opacity</span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={Math.round(state.soccerPackage.packageBackgroundOpacity * 100)}
-            onChange={(event) => updatePackage({ packageBackgroundOpacity: Number(event.target.value) / 100 })}
-          />
-        </label>
-      </div>
-    </div>
-  );
-}
-
 function SoccerLabOverlayControls({
   state,
   updatePackage,
-  runAction
+  runAction,
+  onSelect
 }: {
+  onSelect: (overlay: SoccerLabOverlay) => void;
   state: SoccerState;
   updatePackage: (patch: Partial<SoccerState["soccerPackage"]>) => void;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
@@ -3615,6 +3439,7 @@ function SoccerLabOverlayControls({
   const selected = state.soccerPackage.selectedOverlay;
 
   function takeOverlay(overlay: SoccerLabOverlay) {
+    onSelect(overlay);
     if (state.soccerPackage.activeOverlay === overlay) {
       void runAction("hide-overlay", { overlay });
       return;
@@ -3629,6 +3454,32 @@ function SoccerLabOverlayControls({
           <h2>Overlays</h2>
         </div>
       </div>
+      <div className="compact-overlay-picker">
+        <label className="field">
+          <span>Graphic</span>
+          <select
+            value={selected}
+            onChange={(event) => {
+              const overlay = event.target.value as SoccerLabOverlay;
+              updatePackage({ selectedOverlay: overlay });
+              onSelect(overlay);
+            }}
+          >
+            {labOverlayOrder.map((overlay) => (
+              <option key={overlay} value={overlay}>
+                {labOverlayLabels[overlay]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className={`button ${state.soccerPackage.activeOverlay === selected ? "on-air" : "primary"}`}
+          onClick={() => takeOverlay(selected)}
+        >
+          {state.soccerPackage.activeOverlay === selected ? "Hide graphic" : "Show graphic"}
+        </button>
+      </div>
       <div className="overlay-card-grid">
         {labOverlayOrder.map((overlay) => (
           <div
@@ -3639,7 +3490,10 @@ function SoccerLabOverlayControls({
               className="overlay-card-select"
               type="button"
               aria-pressed={selected === overlay}
-              onClick={() => updatePackage({ selectedOverlay: overlay })}
+              onClick={() => {
+                updatePackage({ selectedOverlay: overlay });
+                onSelect(overlay);
+              }}
             >
               <strong>{labOverlayLabels[overlay]}</strong>
             </button>
@@ -3685,58 +3539,6 @@ function TeamLogo({ team }: { team: SoccerState["home"] }) {
     <img className="team-library-logo" src={mediaApi.mediaUrl(team.logoUrl)} alt="" />
   ) : (
     <span className="team-library-logo fallback">{(team.abbreviation || team.shortName || "?").slice(0, 2)}</span>
-  );
-}
-
-function TeamAssignmentCard({
-  side,
-  team,
-  teams,
-  onSelect,
-  onClear,
-  onRefresh
-}: {
-  side: "home" | "away";
-  team: SoccerState["home"];
-  teams: TeamLibraryEntry[];
-  onSelect: (teamId: string) => void;
-  onClear: () => void;
-  onRefresh: () => void;
-}) {
-  const match = findSavedTeamMatch(team, teams);
-  return (
-    <section className="assignment-card" style={{ "--team-primary": team.primaryColor, "--team-secondary": team.secondaryColor } as React.CSSProperties}>
-      <div className="assignment-card-header">
-        <TeamLogo team={team} />
-        <span>
-          <small>{side}</small>
-          <strong>{team.fullName}</strong>
-          <em>
-            {team.abbreviation} · {formatRecord(team.record)} · {team.roster.length} roster
-          </em>
-        </span>
-      </div>
-      <label className="field">
-        <span>Assign saved team</span>
-        <select value="" onChange={(event) => onSelect(event.target.value)}>
-          <option value="">Select saved team</option>
-          {teams.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.fullName}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="control-row">
-        <button className="button" type="button" onClick={onRefresh} disabled={!match}>
-          Refresh from saved
-        </button>
-        <button className="button" type="button" onClick={onClear}>
-          Clear team
-        </button>
-      </div>
-      <p className="muted">{match ? `Snapshot from ${match.fullName}.` : "No saved team match for refresh."}</p>
-    </section>
   );
 }
 
@@ -3832,14 +3634,7 @@ export function TeamFields({
         </label>
       </div>
       <div className="record-color-row">
-        <label className="field">
-          <span>Record (W-L-T)</span>
-          <input
-            value={`${record.wins}-${record.losses}-${record.draws}`}
-            onChange={(e) => onChange({ record: parseRecordValue(e.target.value, record) })}
-            placeholder="0-0-0"
-          />
-        </label>
+        <RecordInput key={teamIdentity ?? team.fullName} value={record} onCommit={(record) => onChange({ record })} />
         <div className="color-swatch-group" aria-label="Team colors">
           <label className="field color-swatch-field">
             <span>Primary</span>
@@ -3911,38 +3706,42 @@ export function TeamFields({
           ))}
         </select>
       </div>
-      <div className="image-crop-controls">
-        <div className="panel-heading compact">
-          <h3>Image crop</h3>
-        </div>
-        <div className="crop-preview" style={{ "--team-primary": team.primaryColor, "--team-secondary": team.secondaryColor } as React.CSSProperties}>
-          {team.logoUrl ? (
-            <img
-              src={mediaApi.mediaUrl(team.logoUrl)}
-              alt=""
-              style={{
-                transform: `translate(${team.imageCrop.x}px, ${team.imageCrop.y}px) scale(${team.imageCrop.zoom})`
-              }}
-            />
-          ) : (
-            <span>{(team.abbreviation || team.shortName || "?").slice(0, 2)}</span>
-          )}
-        </div>
-        <div className="three-col">
-          <NumberField label="X" value={team.imageCrop.x} onChange={(value) => onChange({ imageCrop: { ...team.imageCrop, x: value } })} />
-          <NumberField label="Y" value={team.imageCrop.y} onChange={(value) => onChange({ imageCrop: { ...team.imageCrop, y: value } })} />
-          <label className="field">
-            <span>Zoom</span>
-            <input
-              type="number"
-              min="0.25"
-              step="0.05"
-              value={team.imageCrop.zoom}
-              onChange={(event) => onChange({ imageCrop: { ...team.imageCrop, zoom: Math.max(0.25, Number(event.target.value)) } })}
-            />
-          </label>
-        </div>
-      </div>
+      {team.logoUrl ? (
+        <details className="image-crop-controls advanced-section">
+          <summary>Crop logo</summary>
+          <div className="panel-heading compact">
+            <h3>Image crop</h3>
+          </div>
+          <div className="crop-preview" style={{ "--team-primary": team.primaryColor, "--team-secondary": team.secondaryColor } as React.CSSProperties}>
+            {team.logoUrl ? (
+              <img
+                src={mediaApi.mediaUrl(team.logoUrl)}
+                alt=""
+                style={{
+                  transform: `translate(${team.imageCrop.x}px, ${team.imageCrop.y}px) scale(${team.imageCrop.zoom})`
+                }}
+              />
+            ) : (
+              <span>{(team.abbreviation || team.shortName || "?").slice(0, 2)}</span>
+            )}
+          </div>
+          <div className="three-col">
+            <NumberField label="X" value={team.imageCrop.x} onChange={(value) => onChange({ imageCrop: { ...team.imageCrop, x: value } })} />
+            <NumberField label="Y" value={team.imageCrop.y} onChange={(value) => onChange({ imageCrop: { ...team.imageCrop, y: value } })} />
+            <label className="field">
+              <span>Zoom</span>
+              <input
+                type="number"
+                min="0.25"
+                step="0.05"
+                value={team.imageCrop.zoom}
+                onChange={(event) => onChange({ imageCrop: { ...team.imageCrop, zoom: Math.max(0.25, Number(event.target.value)) } })}
+              />
+            </label>
+          </div>
+        </details>
+      ) : null}
+
       <label className="field">
         <span>Roster</span>
         <textarea className="roster-textarea" value={team.rosterText} onChange={(e) => onChange({ rosterText: e.target.value })} placeholder="10 Max Grenham" />
@@ -3955,30 +3754,6 @@ export function TeamFields({
   );
 }
 
-function TeamPanel({
-  title,
-  side,
-  team,
-  media,
-  onChange
-}: {
-  title: string;
-  side: "home" | "away";
-  team: SoccerState["home"];
-  media: MediaItem[];
-  onChange: (patch: Partial<SoccerState["home"]>) => void;
-}) {
-  return (
-    <div className="panel">
-      <h2>{title}</h2>
-      <TeamFields team={team} media={media} onChange={onChange} />
-      <p className="muted" style={{ marginTop: 10 }}>
-        {side === "home" ? "Home" : "Away"} roster lines are parsed into lineup entries automatically.
-      </p>
-    </div>
-  );
-}
-
 function StylePanel({ state, commitState }: { state: SoccerState | ChurchState; commitState: (state: PresetState) => void }) {
   const variants: StyleVariant[] = ["clean", "glass", "stripe", "broadcast", "neon"];
   return (
@@ -3987,7 +3762,14 @@ function StylePanel({ state, commitState }: { state: SoccerState | ChurchState; 
       <div className="form-grid">
         <label className="field">
           <span>Font</span>
-          <input value={state.style.font} onChange={(e) => commitState({ ...state, style: { ...state.style, font: e.target.value } })} />
+          <select value={state.style.font} onChange={(e) => commitState({ ...state, style: { ...state.style, font: e.target.value } })}>
+            {!["Arial", "Verdana", "Georgia", "Courier New"].includes(state.style.font) ? <option value={state.style.font}>{state.style.font}</option> : null}
+            {["Arial", "Verdana", "Georgia", "Courier New"].map((font) => (
+              <option key={font} value={font}>
+                {font}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="field">
           <span>Accent</span>
@@ -4038,6 +3820,7 @@ export function ChurchControls({
   commitState: (state: PresetState) => void;
   runAction: (action: string, payload?: Record<string, unknown>) => Promise<void>;
 }) {
+  const onAir = churchOnAirSlide(state);
   const selected = state.slides.find((slide) => slide.id === state.selectedSlideId) || state.slides[0];
   const [countdownSeconds, setCountdownSeconds] = useState(5 * 60);
   const timeAnchor = useMemo(() => ({ server: serverTimeMs ?? Date.now(), received: performance.now() }), [serverTimeMs]);
@@ -4054,14 +3837,39 @@ export function ChurchControls({
   const lowerThirdActive = activeGraphics.some((graphic) => graphic.kind === "church-lower-third" || graphic.kind === "lower-third");
   const countdownActive = activeGraphics.some((graphic) => graphic.kind === "countdown");
 
+  function commitDraft(patch: Partial<ChurchState>) {
+    commitState({ ...state, onAirSlide: onAir ? structuredClone(onAir) : null, ...patch });
+  }
+  function showSlide() {
+    if (!selected) return;
+    commitState({
+      ...state,
+      onAirSlide: structuredClone(selected),
+      elements: { ...state.elements, fullscreenSlide: { ...state.elements.fullscreenSlide, visible: true } }
+    });
+  }
+  function moveSlide(delta: number) {
+    if (!selected) return;
+    const slides = [...state.slides];
+    const index = slides.findIndex((slide) => slide.id === selected.id);
+    const target = index + delta;
+    if (target < 0 || target >= slides.length) return;
+    [slides[index], slides[target]] = [slides[target], slides[index]];
+    commitDraft({ slides });
+  }
+  function deleteSlide() {
+    if (!selected) return;
+    const slides = state.slides.filter((slide) => slide.id !== selected.id);
+    commitDraft({ slides, selectedSlideId: slides[0]?.id });
+  }
   function updateSlide(slide: ChurchSlide) {
-    commitState({ ...state, slides: state.slides.map((item) => (item.id === slide.id ? slide : item)), selectedSlideId: slide.id });
+    commitDraft({ slides: state.slides.map((item) => (item.id === slide.id ? slide : item)), selectedSlideId: slide.id });
   }
 
   function addSlide(type: "text" | "image") {
     const slide: ChurchSlide = {
       id: makeId("slide"),
-      title: type === "text" ? "Text slide" : "Image slide",
+      title: `${type === "text" ? "Text" : "Image"} ${state.slides.length + 1}`,
       type,
       text: type === "text" ? "New slide" : "",
       section: state.sections[0] || "Service",
@@ -4069,12 +3877,11 @@ export function ChurchControls({
       textColor: "#ffffff",
       variant: "glass"
     };
-    commitState({ ...state, slides: [...state.slides, slide], selectedSlideId: slide.id });
+    commitDraft({ slides: [...state.slides, slide], selectedSlideId: slide.id });
   }
 
   function setElementVisible(element: keyof ChurchState["elements"], visible: boolean) {
-    commitState({
-      ...state,
+    commitDraft({
       elements: {
         ...state.elements,
         [element]: { ...state.elements[element], visible }
@@ -4089,14 +3896,27 @@ export function ChurchControls({
       <div className="panel">
         <h2>Output</h2>
         <div className="form-grid">
-          <label className="control-row">
-            <input
-              type="checkbox"
-              checked={state.elements.fullscreenSlide.visible}
-              onChange={(event) => setElementVisible("fullscreenSlide", event.target.checked)}
-            />
-            <span>Show full-screen slide</span>
-          </label>
+          <div className="control-row slide-output-actions">
+            <button
+              className="button primary"
+              type="button"
+              disabled={!selected || (state.elements.fullscreenSlide.visible && JSON.stringify(onAir) === JSON.stringify(selected))}
+              onClick={showSlide}
+            >
+              Show slide
+            </button>
+            <button
+              className="button"
+              type="button"
+              disabled={!state.elements.fullscreenSlide.visible}
+              onClick={() => setElementVisible("fullscreenSlide", false)}
+            >
+              Hide slide
+            </button>
+            <span className="muted" role="status">
+              {state.elements.fullscreenSlide.visible && onAir ? `On air: ${onAir.title}` : "Off air"}
+            </span>
+          </div>
           <label className="control-row">
             <input type="checkbox" checked={state.elements.lowerThird.visible} onChange={(event) => setElementVisible("lowerThird", event.target.checked)} />
             <span>Enable lower third</span>
@@ -4138,18 +3958,51 @@ export function ChurchControls({
           </button>
         </div>
         <div className="form-grid">
-          <label className="field">
-            <span>Selected slide</span>
-            <select value={selected?.id || ""} onChange={(e) => commitState({ ...state, selectedSlideId: e.target.value })}>
-              {state.slides.map((slide) => (
-                <option key={slide.id} value={slide.id}>
-                  {slide.title}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="slide-list" aria-label="Slides">
+            {state.slides.map((slide, index) => (
+              <button
+                type="button"
+                key={slide.id}
+                className={`slide-list-item ${selected?.id === slide.id ? "active" : ""}`}
+                aria-pressed={selected?.id === slide.id}
+                onClick={() => commitDraft({ selectedSlideId: slide.id })}
+              >
+                <span className="muted">{index + 1}</span>
+                <span>{slide.title || "Untitled"}</span>
+                {state.elements.fullscreenSlide.visible && onAir?.id === slide.id ? <span className="on-air-dot" aria-label="On air" /> : null}
+              </button>
+            ))}
+          </div>
           {selected ? (
             <>
+              <div className="control-row">
+                <button
+                  className="button"
+                  type="button"
+                  aria-label="Move slide up"
+                  disabled={state.slides[0]?.id === selected.id}
+                  onClick={() => moveSlide(-1)}
+                >
+                  Move up
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  aria-label="Move slide down"
+                  disabled={state.slides.at(-1)?.id === selected.id}
+                  onClick={() => moveSlide(1)}
+                >
+                  Move down
+                </button>
+                <button
+                  className="button danger"
+                  type="button"
+                  disabled={state.elements.fullscreenSlide.visible && onAir?.id === selected.id}
+                  onClick={deleteSlide}
+                >
+                  Delete slide
+                </button>
+              </div>
               <label className="field">
                 <span>Title</span>
                 <input value={selected.title} onChange={(e) => updateSlide({ ...selected, title: e.target.value })} />
@@ -4164,7 +4017,7 @@ export function ChurchControls({
                   value={selected.mediaId || ""}
                   onChange={(e) => {
                     const item = media.find((candidate) => candidate.id === e.target.value);
-                    updateSlide({ ...selected, mediaId: item?.id, mediaUrl: item?.url, type: item ? "image" : selected.type });
+                    updateSlide({ ...selected, mediaId: item?.id, mediaUrl: item?.url, type: item ? "image" : "text" });
                   }}
                 >
                   <option value="">None</option>
@@ -4207,12 +4060,8 @@ function ElementInspector({ state, element, commitState }: { state: PresetState;
 
   return (
     <div className="panel">
-      <h2>Selected element</h2>
+      <h2>Lower third layout</h2>
       <div className="form-grid">
-        <label className="control-row">
-          <input type="checkbox" checked={element.visible} onChange={(e) => updateElement({ visible: e.target.checked })} />
-          Visible
-        </label>
         <label className="field">
           <span>Position preset</span>
           <select
@@ -4518,15 +4367,6 @@ function uniqueSoccerTextFields(fields: SoccerTextAnimationField[]): SoccerTextA
   return Array.from(new Set(fields));
 }
 
-function parseRecordValue(value: string, fallback: SoccerState["home"]["record"]): SoccerState["home"]["record"] {
-  const [wins, losses, draws] = value.split(/[/-]/).map((part) => Number.parseInt(part.trim(), 10));
-  return {
-    wins: Number.isFinite(wins) ? Math.max(0, wins) : fallback.wins,
-    losses: Number.isFinite(losses) ? Math.max(0, losses) : fallback.losses,
-    draws: Number.isFinite(draws) ? Math.max(0, draws) : fallback.draws
-  };
-}
-
 function teamLibraryToSoccerTeam(team: TeamLibraryEntry): SoccerState["home"] {
   const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...soccerTeam } = team;
   return soccerTeam;
@@ -4707,10 +4547,12 @@ export function MediaLibrary() {
               <img src={mediaApi.mediaUrl(item.thumbnailUrl || item.url)} alt={item.originalFilename} loading="lazy" decoding="async" />
             </div>
             <footer>
-              <strong>{item.originalFilename}</strong>
-              <span className="muted">
-                {item.width || "?"} × {item.height || "?"}
-              </span>
+              <strong title={item.originalFilename}>{item.originalFilename}</strong>
+              {item.width && item.height ? (
+                <span className="muted">
+                  {item.width} × {item.height}
+                </span>
+              ) : null}
               <button className="button danger" type="button" disabled={deletingIds.has(item.id)} onClick={() => void remove(item.id)}>
                 <Trash2 size={16} /> {deletingIds.has(item.id) ? "Deleting..." : "Delete"}
               </button>
@@ -4845,7 +4687,7 @@ export function OverlayPage({ test }: { test: boolean }) {
             </p>
           </div>
           <Link className="button" to={overlay ? `/overlay/${overlay.publicId}` : "#"} target="_blank" rel="noreferrer">
-            OBS route
+            Open output
           </Link>
         </div>
         {error ? (
