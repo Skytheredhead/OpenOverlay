@@ -634,6 +634,14 @@ function clearTemporaryGraphics<T extends PresetState>(state: T): T {
       activeGraphics: []
     };
   }
+  if (isChurchState(state)) {
+    return {
+      ...state,
+      onAirSlide: null,
+      elements: { ...state.elements, fullscreenSlide: { ...state.elements.fullscreenSlide, visible: false } },
+      activeGraphics: []
+    };
+  }
   return {
     ...state,
     activeGraphics: []

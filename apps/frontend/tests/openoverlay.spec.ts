@@ -1287,6 +1287,12 @@ test("church drafts, reordering, and deletion never change a published slide", a
   await expect(output.getByText("Next song", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Hide slide", exact: true }).click();
   await expect(output.getByText("Next song", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Show slide", exact: true }).click();
+  await expect(output.getByText("Next song", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Panic clear", exact: true }).click();
+  await expect(output.getByText("Next song", { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(output.getByText("Next song", { exact: true })).toHaveCount(0);
   const saved = await page.request.get(`${backendUrl}/api/v1/presets/${id}`);
   expect(saved.status()).toBe(200);
 });

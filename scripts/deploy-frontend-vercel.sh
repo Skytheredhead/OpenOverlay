@@ -112,6 +112,8 @@ if [[ "${DEPLOYED_COMMIT}" != "${EXPECTED_COMMIT}" ]]; then
   exit 1
 fi
 BACKEND_HEALTH="$(curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 20 "${API_URL}/health")"
+# JavaScript template substitutions must remain literal for Node.
+# shellcheck disable=SC2016
 node -e '
   const frontend = JSON.parse(process.argv[1]);
   const backend = JSON.parse(process.argv[2]);

@@ -26,6 +26,19 @@ describe("backend state actions", () => {
     }
   });
 
+  it("panic clear hides legacy and published church slides without deleting drafts", () => {
+    for (const published of [false, true]) {
+      const state = createDefaultChurchState("Service");
+      if (published) state.onAirSlide = structuredClone(state.slides[0]);
+      state.elements.fullscreenSlide.visible = true;
+      const next = applyAction(state, "clear") as typeof state;
+      expect(next.elements.fullscreenSlide.visible).toBe(false);
+      expect(next.onAirSlide).toBeNull();
+      expect(next.slides).toEqual(state.slides);
+      expect(next.activeGraphics).toEqual([]);
+    }
+  });
+
   it("starts preset countdown durations atomically using server time", () => {
     const state = createDefaultSoccerState("Countdown");
     const next = applyAction(state, "countdown-start", { durationSeconds: 600 }, 123_000) as typeof state;
