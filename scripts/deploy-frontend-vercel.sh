@@ -77,16 +77,24 @@ if [[ -z "${DEPLOYMENT_URL}" ]]; then
 fi
 
 vercel_scoped inspect "${DEPLOYMENT_URL}" --wait --timeout 3m
-curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 20 "${DEPLOYMENT_URL}/" >/dev/null
+
+# Candidate URLs may require Vercel deployment protection authentication.
+# The CLI supplies the scoped bypass without weakening project protection.
+candidate_curl() {
+  local request_path="$1"
+  shift
+  vercel_scoped curl "$request_path" --deployment "${DEPLOYMENT_URL}" -- "$@"
+}
+candidate_curl / -fsS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 20 >/dev/null
 for CLIENT_ROUTE in /login /signup /dash /overlay/route-probe /overlay-test/route-probe; do
-  curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 20 "${DEPLOYMENT_URL}${CLIENT_ROUTE}" >/dev/null
+  candidate_curl "${CLIENT_ROUTE}" -fsS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 20 >/dev/null
 done
-MISSING_ASSET_STATUS="$(curl -sS --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 20 "${DEPLOYMENT_URL}/assets/openoverlay-missing-route-probe.js")"
+MISSING_ASSET_STATUS="$(candidate_curl /assets/openoverlay-missing-route-probe.js -sS --output /dev/null --write-out '%{http_code}' --connect-timeout 5 --max-time 20)"
 if [[ "${MISSING_ASSET_STATUS}" != "404" ]]; then
   echo "Refusing promotion: a missing static asset returned HTTP ${MISSING_ASSET_STATUS}, expected 404."
   exit 1
 fi
-DEPLOYMENT_HEADERS="$(curl -fsSI --connect-timeout 5 --max-time 20 "${DEPLOYMENT_URL}/")"
+DEPLOYMENT_HEADERS="$(candidate_curl / -fsSI --connect-timeout 5 --max-time 20)"
 for REQUIRED_HEADER in content-security-policy permissions-policy referrer-policy strict-transport-security x-content-type-options x-frame-options; do
   if ! grep -qi "^${REQUIRED_HEADER}:" <<<"${DEPLOYMENT_HEADERS}"; then
     echo "Refusing promotion: deployment is missing the ${REQUIRED_HEADER} response header."
@@ -97,7 +105,7 @@ if ! grep -Fqi "${API_URL}" <<<"${DEPLOYMENT_HEADERS}" || ! grep -Fqi "${WEBSOCK
   echo "Refusing promotion: the deployed CSP does not allow the configured API and WebSocket endpoints."
   exit 1
 fi
-BUILD_INFO="$(curl -fsS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 20 "${DEPLOYMENT_URL}/build-info.json")"
+BUILD_INFO="$(candidate_curl /build-info.json -fsS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 5 --max-time 20)"
 DEPLOYED_COMMIT="$(node -e 'const info=JSON.parse(process.argv[1]); process.stdout.write(info?.build?.commit || "")' "${BUILD_INFO}")"
 if [[ "${DEPLOYED_COMMIT}" != "${EXPECTED_COMMIT}" ]]; then
   echo "Refusing promotion: deployment reports commit ${DEPLOYED_COMMIT:-unknown}; expected ${EXPECTED_COMMIT}."
