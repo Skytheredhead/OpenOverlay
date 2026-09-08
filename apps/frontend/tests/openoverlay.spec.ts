@@ -1059,3 +1059,83 @@ test("revoked editor sessions return to login while public output stays live", a
     await capture.close();
   }
 });
+
+test("team editing stays available during slow media and preserves selection across delayed deletion", async ({ page }) => {
+  await signIn(page);
+  const names = ["Library Alpha", "Library Bravo", "Library Charlie"];
+  for (const fullName of names) {
+    const response = await page.request.post(`${backendUrl}/api/v1/teams`, {
+      data: { fullName },
+      headers: { Origin: new URL(page.url()).origin, "X-OpenOverlay-Api-Version": "v1" }
+    });
+    expect(response.status()).toBe(201);
+  }
+  let releaseMedia!: () => void;
+  const mediaGate = new Promise<void>((resolve) => {
+    releaseMedia = resolve;
+  });
+  await page.route("**/api/v1/media**", async (route) => {
+    await mediaGate;
+    await route.continue();
+  });
+  await page.goto("/dash/teams");
+  try {
+    await expect(page.getByRole("button", { name: /Library Alpha/ })).toBeVisible();
+  } finally {
+    releaseMedia();
+  }
+  await page.getByRole("button", { name: /Library Alpha/ }).click();
+  let releaseDelete!: () => void;
+  const deleteGate = new Promise<void>((resolve) => {
+    releaseDelete = resolve;
+  });
+  await page.route("**/api/v1/teams/*", async (route) => {
+    if (route.request().method() !== "DELETE") return route.continue();
+    const response = await route.fetch();
+    await deleteGate;
+    await route.fulfill({ response });
+  });
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator(".team-editor-panel button").filter({ hasText: "Deleting..." })).toBeDisabled();
+  await page.getByRole("button", { name: /Library Charlie/ }).click();
+  releaseDelete();
+  await expect(page.getByRole("button", { name: /Library Alpha/ })).toBeHidden();
+  await expect(page.getByLabel("Team name", { exact: true })).toHaveValue("Library Charlie");
+});
+
+test("media upload and deletion remain accurate when library refreshes fail", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/dash/media");
+  await expect(page.getByText("Drop images here")).toBeVisible();
+  // Let the initial GET settle before faulting the post-mutation refreshes.
+  await page.waitForLoadState("networkidle");
+  let failRefresh = true;
+  await page.route("**/api/v1/media**", async (route) => {
+    if (route.request().method() === "GET" && failRefresh) return route.abort("failed");
+    await route.continue();
+  });
+  await page.getByLabel("Upload media files").setInputFiles({
+    name: "refresh-survivor.svg",
+    mimeType: "image/svg+xml",
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="red"/></svg>')
+  });
+  await expect(page.getByRole("alert")).toContainText("Uploads finished");
+  const card = page.locator(".media-card").filter({ hasText: "refresh-survivor.svg" });
+  await expect(card).toBeVisible();
+  await page.getByRole("button", { name: "Retry media" }).click();
+  await expect(page.getByRole("alert")).toContainText("Could not load media");
+  failRefresh = false;
+  await page.getByRole("button", { name: "Retry media" }).click();
+  await expect(page.getByRole("alert")).toBeHidden();
+  await expect(card).toBeVisible();
+  failRefresh = true;
+  page.once("dialog", (dialog) => dialog.accept());
+  await card.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("alert")).toContainText("Media deleted");
+  await expect(card).toBeHidden();
+  failRefresh = false;
+  await page.getByRole("button", { name: "Retry media" }).click();
+  await expect(page.getByRole("alert")).toBeHidden();
+  await expect(card).toBeHidden();
+});

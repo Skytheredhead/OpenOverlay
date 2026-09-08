@@ -1262,6 +1262,7 @@ export function TeamsLibrary() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TeamLibraryEntry | null>(null);
+  const [deletingTeamIds, setDeletingTeamIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const [saveStatuses, setSaveStatuses] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
   const draftRef = useRef<TeamLibraryEntry | null>(null);
@@ -1287,10 +1288,13 @@ export function TeamsLibrary() {
   const load = useCallback(async (signal?: AbortSignal) => {
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;
-    const [teamsResult, mediaResult] = await Promise.allSettled([teamApi.list(signal), mediaApi.list(signal)]);
+    // Optional images must not delay the primary team editor or reject unhandled.
+    const mediaRequest = mediaApi.list(signal).then(
+      (response) => ({ ok: true as const, response }),
+      () => ({ ok: false as const })
+    );
+    const teamsResponse = await teamApi.list(signal);
     if (signal?.aborted || generation !== loadGenerationRef.current) return;
-    if (teamsResult.status === "rejected") throw teamsResult.reason;
-    const teamsResponse = teamsResult.value;
     teamSaveDebouncerRef.current?.clear();
     for (const pendingTeamId of pendingTeamIdsRef.current) {
       const invalidationRevision = teamSaveRevisionRef.current + 1;
@@ -1302,7 +1306,6 @@ export function TeamsLibrary() {
     pendingTeamIdsRef.current.clear();
     teamsRef.current = teamsResponse.teams;
     setTeams(teamsResponse.teams);
-    setMedia(mediaResult.status === "fulfilled" ? mediaResult.value.media : []);
     const selected = teamsResponse.teams.find((team) => team.id === selectedIdRef.current) ?? teamsResponse.teams[0] ?? null;
     const nextDraft = selected ? structuredClone(selected) : null;
     selectedIdRef.current = selected?.id ?? null;
@@ -1315,11 +1318,13 @@ export function TeamsLibrary() {
       setError(
         `${recoveredCount} stored team ${recoveredCount === 1 ? "record was" : "records were"} corrupt and loaded with safe defaults. Review and resave ${recoveredCount === 1 ? "it" : "them"}.`
       );
-    } else if (mediaResult.status === "rejected") {
-      setError("Teams loaded, but the media library could not be loaded.");
     } else {
       setError(null);
     }
+    const mediaResult = await mediaRequest;
+    if (signal?.aborted || generation !== loadGenerationRef.current) return;
+    if (mediaResult.ok) setMedia(mediaResult.response.media);
+    else setError((current) => current ?? "Teams loaded, but the media library could not be loaded.");
   }, []);
 
   useEffect(() => {
@@ -1466,6 +1471,7 @@ export function TeamsLibrary() {
   }
 
   async function deleteTeam(id: string) {
+    if (conflictedTeamIdsRef.current.has(id)) return;
     const target = teamsRef.current.find((team) => team.id === id);
     if (!target) {
       setError("Could not delete a team that is no longer in the loaded library.");
@@ -1477,6 +1483,7 @@ export function TeamsLibrary() {
     try {
       teamSaveDebouncerRef.current?.cancel(id);
       conflictedTeamIdsRef.current.add(id);
+      setDeletingTeamIds((current) => new Set(current).add(id));
       latestTeamSaveRevisionRef.current[id] = teamSaveRevisionRef.current + 1;
       teamSaveRevisionRef.current += 1;
       await teamSaveQueueRef.current!.run(id, () => teamApi.remove(id, serverTeamRevisionRef.current[id] ?? target.revision));
@@ -1485,7 +1492,7 @@ export function TeamsLibrary() {
       const remaining = teamsRef.current.filter((team) => team.id !== id);
       delete serverTeamRevisionRef.current[id];
       teamsRef.current = remaining;
-      selectedIdRef.current = remaining[0]?.id ?? null;
+      if (selectedIdRef.current === id) selectedIdRef.current = remaining[0]?.id ?? null;
       setTeams(remaining);
       setSelectedId(selectedIdRef.current);
     } catch (err) {
@@ -1507,6 +1514,13 @@ export function TeamsLibrary() {
         conflictedTeamIdsRef.current.delete(id);
         setError(err instanceof Error ? err.message : "Could not delete team");
       }
+    } finally {
+      if (teamsMountedRef.current)
+        setDeletingTeamIds((current) => {
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
     }
   }
 
@@ -1582,13 +1596,13 @@ export function TeamsLibrary() {
               </div>
               <div className="control-row">
                 <button className="button danger" disabled={conflictedTeamIdsRef.current.has(draft.id)} onClick={() => void deleteTeam(draft.id)}>
-                  <Trash2 size={17} /> Delete
+                  <Trash2 size={17} /> {deletingTeamIds.has(draft.id) ? "Deleting..." : "Delete"}
                 </button>
               </div>
             </div>
             <TeamFields key={draft.id} team={draft} media={media} onChange={(patch) => updateDraft(draft.id, patch)} />
             <p className="muted autosave-status" role="status">
-              {saveStatusLabel(saveStatuses[draft.id] ?? "idle", draft.updatedAt)}
+              {deletingTeamIds.has(draft.id) ? "Deleting team..." : saveStatusLabel(saveStatuses[draft.id] ?? "idle", draft.updatedAt)}
             </p>
           </section>
         ) : null}
@@ -4526,34 +4540,44 @@ export function MediaLibrary() {
   const [uploading, setUploading] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(() => new Set());
   const uploadingRef = useRef(false);
+  const loadingMoreRef = useRef(false);
   const mediaMutationsRef = useRef(new Set<string>());
   const loadGenerationRef = useRef(0);
   const componentAbortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    const generation = loadGenerationRef.current + 1;
-    loadGenerationRef.current = generation;
-    const response = await mediaApi.list(signal);
-    if (!signal?.aborted && loadGenerationRef.current === generation) {
-      setMedia(response.media);
-      setNextCursor(response.nextCursor);
+  const load = useCallback(async (signal?: AbortSignal, failureMessage = "Could not load media") => {
+    const generation = ++loadGenerationRef.current;
+    setError(null);
+    try {
+      const response = await mediaApi.list(signal);
+      if (!signal?.aborted && loadGenerationRef.current === generation) {
+        setMedia(response.media);
+        setNextCursor(response.nextCursor);
+      }
+    } catch (err) {
+      if (!signal?.aborted && loadGenerationRef.current === generation) {
+        setError(`${failureMessage}${err instanceof Error ? `: ${err.message}` : "."}`);
+      }
     }
   }, []);
 
   async function loadMore() {
     const controller = componentAbortRef.current;
-    if (!controller || controller.signal.aborted || !nextCursor || loadingMore) return;
+    if (!controller || controller.signal.aborted || !nextCursor || loadingMoreRef.current) return;
+    const generation = loadGenerationRef.current;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     setError(null);
     try {
       const response = await mediaApi.list(controller.signal, nextCursor);
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && generation === loadGenerationRef.current) {
         setMedia((current) => [...current, ...response.media.filter((item) => !current.some((existing) => existing.id === item.id))]);
         setNextCursor(response.nextCursor);
       }
     } catch (err) {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load more media");
+      if (!controller.signal.aborted && generation === loadGenerationRef.current) setError(err instanceof Error ? err.message : "Could not load more media");
     } finally {
+      loadingMoreRef.current = false;
       if (!controller.signal.aborted) setLoadingMore(false);
     }
   }
@@ -4561,9 +4585,7 @@ export function MediaLibrary() {
   useEffect(() => {
     const controller = new AbortController();
     componentAbortRef.current = controller;
-    void load(controller.signal).catch((err) => {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load media");
-    });
+    void load(controller.signal);
     return () => {
       controller.abort();
       if (componentAbortRef.current === controller) componentAbortRef.current = null;
@@ -4585,11 +4607,18 @@ export function MediaLibrary() {
     setUploading(true);
     try {
       const results: PromiseSettledResult<{ media: MediaItem }>[] = [];
-      for (let index = 0; index < selectedFiles.length; index += 2) {
-        results.push(...(await Promise.allSettled(selectedFiles.slice(index, index + 2).map((file) => mediaApi.upload(file, controller.signal)))));
+      for (let index = 0; index < selectedFiles.length && !controller.signal.aborted; index += 2) {
+        const batch = await Promise.allSettled(selectedFiles.slice(index, index + 2).map((file) => mediaApi.upload(file, controller.signal)));
+        results.push(...batch);
+        if (controller.signal.aborted) return;
+        const uploaded = batch.flatMap((result) => (result.status === "fulfilled" ? [result.value.media] : []));
+        if (uploaded.length > 0) {
+          ++loadGenerationRef.current;
+          setMedia((current) => [...uploaded, ...current.filter((item) => !uploaded.some((added) => added.id === item.id))]);
+        }
       }
       if (controller.signal.aborted) return;
-      await load(controller.signal).catch((err) => setError(err instanceof Error ? err.message : "Could not refresh media"));
+      await load(controller.signal, "Uploads finished, but the media library could not be refreshed");
       if (controller.signal.aborted) return;
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length > 0) setError(`${failures.length} of ${selectedFiles.length} uploads failed. Successful uploads were kept.`);
@@ -4609,7 +4638,10 @@ export function MediaLibrary() {
     setError(null);
     try {
       await mediaApi.remove(id, controller.signal);
-      await load(controller.signal);
+      if (controller.signal.aborted) return;
+      ++loadGenerationRef.current;
+      setMedia((current) => current.filter((item) => item.id !== id));
+      await load(controller.signal, "Media deleted, but the library could not be refreshed");
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not delete media");
     } finally {

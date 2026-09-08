@@ -222,6 +222,79 @@ describe("TeamFields", () => {
 });
 
 describe("MediaLibrary", () => {
+  it("handles repeated retry failures and clears the error after recovery", async () => {
+    vi.spyOn(mediaApi, "list")
+      .mockRejectedValueOnce(new Error("First outage"))
+      .mockRejectedValueOnce(new Error("Still offline"))
+      .mockResolvedValueOnce({ media: [mediaFixture()], nextCursor: null });
+    render(<MediaLibrary />);
+    fireEvent.click(await screen.findByRole("button", { name: "Retry media" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Still offline"));
+    fireEvent.click(screen.getByRole("button", { name: "Retry media" }));
+    expect(await screen.findByText(mediaFixture().originalFilename)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("ignores stale pagination errors after a newer refresh succeeds", async () => {
+    const page = deferred<{ media: MediaItem[]; nextCursor: string | null }>();
+    const item = mediaFixture();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(mediaApi, "remove").mockResolvedValue({ ok: true });
+    vi.spyOn(mediaApi, "list")
+      .mockResolvedValueOnce({ media: [item], nextCursor: "old" })
+      .mockReturnValueOnce(page.promise)
+      .mockResolvedValueOnce({ media: [], nextCursor: null });
+    render(<MediaLibrary />);
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByText(item.originalFilename)).not.toBeInTheDocument());
+    await act(async () => page.reject(new Error("Old page failed")));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("ignores pagination from before a successful deletion refresh", async () => {
+    const olderPage = deferred<{ media: MediaItem[]; nextCursor: string | null }>();
+    const item = mediaFixture();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(mediaApi, "remove").mockResolvedValue({ ok: true });
+    vi.spyOn(mediaApi, "list")
+      .mockResolvedValueOnce({ media: [item], nextCursor: "old-cursor" })
+      .mockReturnValueOnce(olderPage.promise)
+      .mockResolvedValueOnce({ media: [], nextCursor: null });
+    render(<MediaLibrary />);
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByText(item.originalFilename)).not.toBeInTheDocument());
+    await act(async () => olderPage.resolve({ media: [item], nextCursor: "stale-cursor" }));
+    expect(screen.queryByText(item.originalFilename)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("keeps confirmed deletion visible when refreshing the library fails", async () => {
+    const item = mediaFixture();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(mediaApi, "remove").mockResolvedValue({ ok: true });
+    vi.spyOn(mediaApi, "list")
+      .mockResolvedValueOnce({ media: [item], nextCursor: null })
+      .mockRejectedValue(new Error("Refresh unavailable"));
+    render(<MediaLibrary />);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await screen.findByRole("alert");
+    expect(screen.queryByText(item.originalFilename)).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("deleted");
+  });
+
+  it("shows successful uploads even when refreshing the library fails", async () => {
+    const item = mediaFixture();
+    vi.spyOn(mediaApi, "list").mockResolvedValueOnce({ media: [], nextCursor: null }).mockRejectedValue(new Error("Refresh unavailable"));
+    vi.spyOn(mediaApi, "upload").mockResolvedValue({ media: item });
+    render(<MediaLibrary />);
+    await act(async () => {});
+    fireEvent.change(screen.getByLabelText("Upload media files"), { target: { files: [new File(["image"], "badge.png", { type: "image/png" })] } });
+    await screen.findByRole("alert");
+    expect(screen.getByText(item.originalFilename)).toBeVisible();
+  });
+
   it("deduplicates overlapping batches and ignores an older list response", async () => {
     const initialList = deferred<{ media: MediaItem[]; nextCursor: string | null }>();
     const refreshedList = deferred<{ media: MediaItem[]; nextCursor: string | null }>();

@@ -93,6 +93,47 @@ describe("TeamsLibrary concurrency and reconciliation", () => {
     vi.restoreAllMocks();
   });
 
+  it("locks the deleting team immediately and prevents duplicate deletion", async () => {
+    const removal = deferred<{ ok: boolean }>();
+    apiMocks.listTeams.mockResolvedValue({ teams: [makeTeam()] });
+    apiMocks.removeTeam.mockReturnValue(removal.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderTeamsLibrary();
+    const button = await screen.findByRole("button", { name: "Delete" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Deleting");
+    await act(async () => removal.resolve({ ok: true }));
+    expect(apiMocks.removeTeam).toHaveBeenCalledOnce();
+  });
+
+  it("renders teams without waiting for optional media", async () => {
+    const media = deferred<{ media: never[] }>();
+    apiMocks.listTeams.mockResolvedValue({ teams: [makeTeam({ fullName: "Ready Team" })] });
+    apiMocks.listMedia.mockReturnValue(media.promise);
+    renderTeamsLibrary();
+    expect(await screen.findByDisplayValue("Ready Team")).toBeVisible();
+    await act(async () => media.resolve({ media: [] }));
+  });
+
+  it("preserves a newly selected team when an earlier deletion finishes", async () => {
+    const removal = deferred<{ ok: boolean }>();
+    apiMocks.listTeams.mockResolvedValue({
+      teams: [makeTeam({ id: "a", fullName: "Alpha" }), makeTeam({ id: "b", fullName: "Bravo" }), makeTeam({ id: "c", fullName: "Charlie" })]
+    });
+    apiMocks.removeTeam.mockReturnValue(removal.promise);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderTeamsLibrary();
+    await screen.findByDisplayValue("Alpha");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(apiMocks.removeTeam).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: /Charlie/ }));
+    expect(screen.getByDisplayValue("Charlie")).toBeVisible();
+    await act(async () => removal.resolve({ ok: true }));
+    expect(screen.getByDisplayValue("Charlie")).toBeVisible();
+  });
+
   it("replaces a conflicted draft with the latest server copy before allowing another edit", async () => {
     const initial = makeTeam({ fullName: "Original team" });
     const remote = makeTeam({ fullName: "Remote team", coach: "Remote coach", revision: 2 });
