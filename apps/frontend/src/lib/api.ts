@@ -111,12 +111,14 @@ export class ApiError extends Error {
 }
 
 export const AUTH_EXPIRED_EVENT = "openoverlay:auth-expired";
+let authGeneration = 0;
 
 function shouldBroadcastAuthExpiration(path: string): boolean {
   return path !== "/api/auth/me" && path !== "/api/auth/login" && path !== "/api/auth/signup";
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const requestAuthGeneration = authGeneration;
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type") && options.body !== undefined) headers.set("Content-Type", "application/json");
   headers.set("X-OpenOverlay-Api-Version", OPENOVERLAY_API_VERSION);
@@ -127,6 +129,11 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
       headers,
       signal
     });
+    // Authentication status remains authoritative even if an error body is
+    // truncated, malformed, or stalls while being read.
+    if (response.status === 401 && requestAuthGeneration === authGeneration && shouldBroadcastAuthExpiration(path) && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+    }
     const responseText = response.status === 204 ? "" : await response.text();
     const isJson = response.headers.get("content-type")?.includes("application/json");
     let body: unknown = responseText;
@@ -148,9 +155,6 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     if (!response.ok) {
       const message = typeof body === "object" && body && "error" in body && typeof body.error === "string" ? body.error : `Request failed: ${response.status}`;
       const error = new ApiError(message, response.status, body);
-      if (response.status === 401 && shouldBroadcastAuthExpiration(path) && typeof window !== "undefined") {
-        window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-      }
       throw error;
     }
     return body as T;
@@ -164,11 +168,17 @@ function versionedApiPath(path: string): string {
 export const authApi = {
   async signup(email: string, password: string) {
     const body = await api<unknown>("/api/auth/signup", { method: "POST", body: JSON.stringify({ email, password }) });
-    return { user: expectEnvelope(body, "user", isUser) };
+    const user = expectEnvelope(body, "user", isUser);
+    // Responses from requests made before this login cannot revoke it.
+    authGeneration += 1;
+    return { user };
   },
   async login(email: string, password: string) {
     const body = await api<unknown>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
-    return { user: expectEnvelope(body, "user", isUser) };
+    const user = expectEnvelope(body, "user", isUser);
+    // Responses from requests made before this login cannot revoke it.
+    authGeneration += 1;
+    return { user };
   },
   async logout() {
     return expectOk(await api<unknown>("/api/auth/logout", { method: "POST" }));

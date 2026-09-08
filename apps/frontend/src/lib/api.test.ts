@@ -27,6 +27,47 @@ describe("api", () => {
     await expect(api("/test")).rejects.toMatchObject({ status: 502, message: "Server returned malformed JSON (502)" } satisfies Partial<ApiError>);
   });
 
+  it("expires authentication even when a 401 response has malformed JSON", async () => {
+    const expired = vi.fn();
+    window.addEventListener(AUTH_EXPIRED_EVENT, expired);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("truncated", { status: 401, headers: { "Content-Type": "application/json" } }))
+    );
+    try {
+      await expect(api("/api/presets")).rejects.toMatchObject({ status: 401 });
+      expect(expired).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, expired);
+    }
+  });
+
+  it("does not let a delayed 401 from an old session expire a successful new login", async () => {
+    let rejectOldSession!: (response: Response) => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      rejectOldSession = resolve;
+    });
+    const expired = vi.fn();
+    window.addEventListener(AUTH_EXPIRED_EVENT, expired);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockReturnValueOnce(oldResponse)
+        .mockResolvedValueOnce(jsonResponse({ user: { id: "new-user", email: "new@example.com" } }))
+    );
+    try {
+      const oldRequest = api("/api/presets");
+      const rejection = expect(oldRequest).rejects.toMatchObject({ status: 401 });
+      await authApi.login("new@example.com", "password");
+      rejectOldSession(new Response(JSON.stringify({ error: "Authentication required" }), { status: 401, headers: { "Content-Type": "application/json" } }));
+      await rejection;
+      expect(expired).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, expired);
+    }
+  });
+
   it("accepts an empty successful response", async () => {
     vi.stubGlobal(
       "fetch",

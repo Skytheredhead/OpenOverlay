@@ -1,3 +1,4 @@
+import { RealtimeRetry } from "./lib/realtimeRetry";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, NavLink, Navigate, Route, Routes, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -1792,11 +1793,19 @@ export function PresetEditor() {
     const requestedPresetId = presetId;
     const generation = routeGenerationRef.current;
     const socket = io(WS_URL, {
+      autoConnect: false,
       withCredentials: true,
       transports: ["polling", "websocket"],
       tryAllTransports: true,
       auth: { role: "admin", presetId, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
       query: { role: "admin", presetId, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION }
+    });
+    const retry = new RealtimeRetry(() => socket.connect());
+    let disposed = false;
+    // Strict Mode cleans up its probe mount synchronously. Do not leave an
+    // orphan polling handshake behind for a subscription that never mounted.
+    queueMicrotask(() => {
+      if (!disposed) socket.connect();
     });
     function enterDeletedState(explicitPayload?: PresetDeletedEvent) {
       if (routeGenerationRef.current !== generation) return;
@@ -1832,13 +1841,16 @@ export function PresetEditor() {
       setPresetDeleted(true);
       setConnection("disconnected");
       if (sidebarPayload) dispatchPresetDeleted(sidebarPayload);
+      retry.stop();
       socket.disconnect();
     }
     socket.on("connect", () => {
       if (routeGenerationRef.current === generation) setConnection("connected");
     });
-    socket.on("disconnect", () => {
-      if (routeGenerationRef.current === generation) setConnection("disconnected");
+    socket.on("disconnect", (reason) => {
+      if (routeGenerationRef.current !== generation) return;
+      setConnection("disconnected");
+      retry.disconnected(reason);
     });
     socket.on("connect_error", () => {
       if (routeGenerationRef.current === generation) setConnection("disconnected");
@@ -1850,6 +1862,7 @@ export function PresetEditor() {
         return;
       }
       if (payload.id !== requestedPresetId) return;
+      retry.receivedState();
       const current = presetRef.current;
       if (!current) {
         const buffered = bufferedSocketPresetRef.current;
@@ -1893,6 +1906,14 @@ export function PresetEditor() {
       // transient, auth-related, or version-related and must retain last-known
       // state rather than being mistaken for deletion.
       if (payload.error === "Preset not found") enterDeletedState();
+      if (payload.error === "Authentication required") {
+        retry.stop();
+        window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+      }
+      if (payload.error === "Incompatible OpenOverlay API or realtime version") {
+        retry.stop();
+        setError("Realtime version is incompatible. Reload OpenOverlay to use the latest version.");
+      }
     });
     socket.on("overlay:clients", (payload: unknown) => {
       if (routeGenerationRef.current !== generation) return;
@@ -1903,6 +1924,8 @@ export function PresetEditor() {
       replacePreset({ ...current, overlayClientCount: Number(count) });
     });
     return () => {
+      disposed = true;
+      retry.stop();
       socket.disconnect();
     };
   }, [presetId, reloadKey, replacePreset, resetHistory]);
@@ -4717,10 +4740,15 @@ export function OverlayPage({ test }: { test: boolean }) {
         setError(err instanceof Error ? err.message : "Could not load overlay");
       });
     const socket = io(WS_URL, {
+      autoConnect: false,
       transports: ["polling", "websocket"],
       tryAllTransports: true,
       auth: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
       query: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION }
+    });
+    const retry = new RealtimeRetry(() => socket.connect());
+    queueMicrotask(() => {
+      if (active && !deleted) socket.connect();
     });
     function enterDeletedState() {
       if (!active || deleted) return;
@@ -4729,13 +4757,16 @@ export function OverlayPage({ test }: { test: boolean }) {
       setOverlay(null);
       setError("This overlay was deleted and is no longer available.");
       setConnection("disconnected");
+      retry.stop();
       socket.disconnect();
     }
     socket.on("connect", () => {
       if (active) setConnection("connected");
     });
-    socket.on("disconnect", () => {
-      if (active) setConnection("disconnected");
+    socket.on("disconnect", (reason) => {
+      if (!active || deleted) return;
+      setConnection("disconnected");
+      retry.disconnected(reason);
     });
     socket.on("connect_error", () => {
       if (active) setConnection("disconnected");
@@ -4745,6 +4776,7 @@ export function OverlayPage({ test }: { test: boolean }) {
       const incomingRevision = getPresetRevision(payload);
       if (incomingRevision === undefined) return;
       if (incomingRevision < latestRevision) return;
+      retry.receivedState();
       socketHasUpdated = true;
       latestRevision = incomingRevision;
       setError(null);
@@ -4757,9 +4789,14 @@ export function OverlayPage({ test }: { test: boolean }) {
     socket.on("error:message", (payload: unknown) => {
       if (!active || deleted || !isRealtimeErrorMessage(payload)) return;
       if (payload.error === "Overlay not found") enterDeletedState();
+      if (payload.error === "Incompatible OpenOverlay API or realtime version" || payload.error === "Authentication required") {
+        retry.stop();
+        setError(payload.error);
+      }
     });
     return () => {
       active = false;
+      retry.stop();
       controller.abort();
       socket.disconnect();
     };

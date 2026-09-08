@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultSoccerState, type PresetSummary } from "@openoverlay/shared";
@@ -6,13 +7,14 @@ import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from 
 interface FakeSocket {
   handlers: Map<string, Array<(payload?: unknown) => void>>;
   disconnect: ReturnType<typeof vi.fn>;
+  connect: ReturnType<typeof vi.fn<() => void>>;
   emit(event: string, payload?: unknown): void;
 }
 
 const socketHarness = vi.hoisted(() => ({ sockets: [] as FakeSocket[] }));
 
 vi.mock("socket.io-client", () => ({
-  io: vi.fn(() => {
+  io: vi.fn((_url: string, options?: { autoConnect?: boolean }) => {
     const handlers = new Map<string, Array<(payload?: unknown) => void>>();
     const socket = {
       handlers,
@@ -21,17 +23,19 @@ vi.mock("socket.io-client", () => ({
         return socket;
       }),
       disconnect: vi.fn(),
+      connect: vi.fn(),
       emit(event: string, payload?: unknown) {
         for (const callback of handlers.get(event) ?? []) callback(payload);
       }
     } as FakeSocket & { on: ReturnType<typeof vi.fn> };
+    if (options?.autoConnect !== false) socket.connect();
     socketHarness.sockets.push(socket);
     return socket;
   })
 }));
 
 import { OverlayPage, PresetEditor, PromptDialogProvider } from "./App";
-import { mediaApi, overlayApi, presetApi, teamApi } from "./lib/api";
+import { AUTH_EXPIRED_EVENT, mediaApi, overlayApi, presetApi, teamApi } from "./lib/api";
 
 describe("preset deletion realtime handling", () => {
   beforeEach(() => {
@@ -41,6 +45,83 @@ describe("preset deletion realtime handling", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it.each(["overlay", "admin"])("does not open a socket for a discarded Strict Mode %s mount", async (role) => {
+    const view = role === "overlay" ? renderTestOverlay(true) : renderTestEditor(true);
+    await act(async () => {});
+    expect(socketHarness.sockets).toHaveLength(2);
+    expect(socketHarness.sockets[0]!.connect).not.toHaveBeenCalled();
+    expect(socketHarness.sockets[1]!.connect).toHaveBeenCalledOnce();
+    view.unmount();
+  });
+
+  it.each(["overlay", "admin"])("retries a server-initiated %s disconnect with backoff and cancels on unmount", async (role) => {
+    vi.useFakeTimers();
+    try {
+      const view = role === "overlay" ? renderTestOverlay() : renderTestEditor();
+      await act(async () => {});
+      const socket = socketHarness.sockets[0]!;
+      socket.connect.mockClear();
+      act(() => {
+        socket.emit("error:message", { error: "Realtime connection failed" });
+        socket.emit("disconnect", "io server disconnect");
+      });
+      await act(async () => vi.advanceTimersByTime(1000));
+      expect(socket.connect).toHaveBeenCalledTimes(1);
+      act(() => {
+        socket.emit("connect");
+        socket.emit("disconnect", "io server disconnect");
+      });
+      await act(async () => vi.advanceTimersByTime(1000));
+      expect(socket.connect).toHaveBeenCalledTimes(1);
+      await act(async () => vi.advanceTimersByTime(1000));
+      expect(socket.connect).toHaveBeenCalledTimes(2);
+      act(() => socket.emit("disconnect", "io server disconnect"));
+      view.unmount();
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(socket.connect).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["overlay", "Overlay not found"],
+    ["overlay", "Incompatible OpenOverlay API or realtime version"],
+    ["admin", "Preset not found"],
+    ["admin", "Authentication required"],
+    ["admin", "Incompatible OpenOverlay API or realtime version"]
+  ])("does not retry terminal %s error %s", async (role, error) => {
+    vi.useFakeTimers();
+    try {
+      const view = role === "overlay" ? renderTestOverlay() : renderTestEditor();
+      await act(async () => {});
+      const socket = socketHarness.sockets[0]!;
+      socket.connect.mockClear();
+      act(() => {
+        socket.emit("error:message", { error });
+        socket.emit("disconnect", "io server disconnect");
+      });
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(socket.connect).not.toHaveBeenCalled();
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ends the expired admin session when realtime rejects authentication", async () => {
+    const expired = vi.fn();
+    window.addEventListener(AUTH_EXPIRED_EVENT, expired);
+    try {
+      renderTestEditor();
+      await screen.findByRole("heading", { name: "Realtime Game" });
+      act(() => socketHarness.sockets[0]!.emit("error:message", { error: "Authentication required" }));
+      expect(expired).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, expired);
+    }
   });
 
   it("clears a failed HTTP load warning when realtime recovers", async () => {
@@ -368,4 +449,37 @@ function deferred<T>() {
     reject = promiseReject;
   });
   return { promise, resolve, reject };
+}
+
+function renderTestEditor(strict = false) {
+  vi.spyOn(presetApi, "get").mockResolvedValue({ preset: presetFixture() });
+  vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
+  vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/dash/presets/:presetId",
+        element: (
+          <PromptDialogProvider>
+            <PresetEditor />
+          </PromptDialogProvider>
+        )
+      }
+    ],
+    { initialEntries: ["/dash/presets/preset-1"] }
+  );
+  const editor = <RouterProvider router={router} />;
+  return render(strict ? <StrictMode>{editor}</StrictMode> : editor);
+}
+
+function renderTestOverlay(strict = false) {
+  vi.spyOn(overlayApi, "get").mockResolvedValue({ overlay: presetFixture() });
+  const overlay = (
+    <MemoryRouter initialEntries={["/overlay-test/public-1"]}>
+      <Routes>
+        <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  return render(strict ? <StrictMode>{overlay}</StrictMode> : overlay);
 }

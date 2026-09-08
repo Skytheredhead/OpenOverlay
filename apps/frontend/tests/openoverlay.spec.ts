@@ -981,3 +981,81 @@ test("server-timed soccer controls keep running through focus and tab changes", 
   await page.reload();
   await expect(manual).toHaveValue(pausedTime);
 });
+
+test("controls and public output recover after server-initiated subscription disconnects", async ({ page, browser }) => {
+  let adminChannel: { send(message: string): void } | undefined;
+  let adminTransports = 0;
+  await page.routeWebSocket("**/socket.io/**", (channel) => {
+    adminTransports++;
+    const server = channel.connectToServer();
+    channel.onMessage((message) => {
+      server.send(message);
+      // Wait for Engine.IO's upgrade packet, not a state update that may have
+      // already arrived over the initial polling transport.
+      if (String(message) === "5" && new URL(channel.url()).searchParams.get("role") === "admin") adminChannel = channel;
+    });
+  });
+  await signIn(page);
+  const presetId = await createGame(page, "Subscription recovery");
+  const capture = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  let outputChannel: { send(message: string): void } | undefined;
+  let outputTransports = 0;
+  await capture.routeWebSocket("**/socket.io/**", (channel) => {
+    outputTransports++;
+    const server = channel.connectToServer();
+    channel.onMessage((message) => {
+      server.send(message);
+      if (String(message) === "5") outputChannel = channel;
+    });
+  });
+  const output = await capture.newPage();
+  try {
+    await output.goto((await page.locator(".output-preview-iframe").getAttribute("src"))!);
+    await expect.poll(() => Boolean(outputChannel) && adminTransports > 0).toBe(true);
+    await page.request.post(`${backendUrl}/api/v1/presets/${presetId}/actions/show-overlay`, { data: { overlay: "scorebug" } });
+    await page.request.post(`${backendUrl}/api/v1/presets/${presetId}/actions/home-score-plus`, { data: {} });
+    const score = output.frameLocator(".lab-frame").locator("[data-bind-score]").first();
+    await expect(score).toHaveText("1");
+    await expect.poll(() => Boolean(adminChannel)).toBe(true);
+    const beforeAdmin = adminTransports;
+    const beforeOutput = outputTransports;
+    for (const channel of [adminChannel!, outputChannel!]) {
+      channel.send('42["error:message",{"error":"Realtime connection failed"}]');
+      channel.send("41");
+    }
+    await page.request.post(`${backendUrl}/api/v1/presets/${presetId}/actions/home-score-plus`, { data: {} });
+    await expect(score).toHaveText("2");
+    await expect(page.locator(".score-control strong").first()).toHaveText("2");
+    await expect.poll(() => adminTransports > beforeAdmin && outputTransports > beforeOutput).toBe(true);
+  } finally {
+    await capture.close();
+  }
+});
+
+test("revoked editor sessions return to login while public output stays live", async ({ page, browser }) => {
+  await signIn(page);
+  const presetId = await createGame(page, "Session revocation");
+  await page.getByRole("button", { name: "Start clock", exact: true }).click();
+  const capture = await browser.newContext();
+  const output = await capture.newPage();
+  try {
+    await output.goto((await page.locator(".output-preview-iframe").getAttribute("src"))!);
+    const timer = output.frameLocator(".lab-frame").locator(".bug-clock strong");
+    await expect(timer).toHaveText(/00:0[1-3]/);
+    const before = await timer.textContent();
+    // Revoke through a separate HTTP client, as another signed-in tab would.
+    const revoked = await page.request.post(`${backendUrl}/api/v1/auth/logout`, { data: {} });
+    expect(revoked.status()).toBe(200);
+    await expect(page.getByRole("button", { name: "Login", exact: true })).toBeVisible();
+    await expect(timer).not.toHaveText(before!);
+    // Revocation destroys the Engine.IO session. Its final in-flight polling
+    // POST may correctly receive Unknown session (400) during teardown.
+    const closedSessionRequest = `http 400: POST ${backendUrl}/socket.io/?role=admin&presetId=${presetId}&`;
+    browserErrors.set(
+      page.context(),
+      (browserErrors.get(page.context()) || []).filter((error) => !error.startsWith(closedSessionRequest))
+    );
+  } finally {
+    await capture.close();
+  }
+});
