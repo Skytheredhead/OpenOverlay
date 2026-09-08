@@ -684,6 +684,7 @@ export function createBackendApp(configOverrides: Partial<AppConfig> = {}): Back
     const state = materializeState(stored.state);
     res.json({
       overlay: {
+        serverTimeMs: Date.now(),
         id: row.id,
         publicId: row.public_id,
         name: row.name,
@@ -878,6 +879,7 @@ function serializePreset(row: PresetRow, ctx: AppContext) {
   const stored = readStoredPresetState(row);
   if (stored.recovered) ctx.logger.warn("preset_state_recovered", { presetId: row.id, type: row.type });
   return {
+    serverTimeMs: Date.now(),
     id: row.id,
     publicId: row.public_id,
     name: row.name,

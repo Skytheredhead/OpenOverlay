@@ -320,6 +320,7 @@ function logConnectionRejection(ctx: AppContext, lastLogAt: Map<"total" | "ip", 
 
 function publicPayload(row: PresetRow, state: unknown, recovered = false) {
   return {
+    serverTimeMs: Date.now(),
     id: row.id,
     publicId: row.public_id,
     name: row.name,

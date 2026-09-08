@@ -1622,6 +1622,7 @@ export function PresetEditor() {
   const [pendingSoccerTextUpdate, setPendingSoccerTextUpdate] = useState<{ state: SoccerState; fields: SoccerTextAnimationField[] } | null>(null);
   const pendingSoccerTextUpdateRef = useRef<{ state: SoccerState; fields: SoccerTextAnimationField[] } | null>(null);
   const presetRef = useRef<PresetSummary | null>(null);
+  const mutationBroadcastRef = useRef<PresetSummary | null>(null);
   const bufferedSocketPresetRef = useRef<{ generation: number; preset: PresetSummary } | null>(null);
   const presetLoadControllerRef = useRef<AbortController | null>(null);
   const historyRef = useRef<PresetState[]>([]);
@@ -1702,9 +1703,10 @@ export function PresetEditor() {
     setPendingSoccerTextUpdate(null);
     pendingSoccerTextUpdateRef.current = null;
     bufferedSocketPresetRef.current = null;
+    mutationBroadcastRef.current = null;
     setConnection("connecting");
     hasPendingPresetSaveRef.current = false;
-    void mutationQueueRef.current?.flush();
+    void mutationQueueRef.current?.flush().catch(() => undefined);
 
     async function loadPreset() {
       const optionalResults = Promise.allSettled([mediaApi.list(controller.signal), teamApi.list(controller.signal)]);
@@ -1742,7 +1744,7 @@ export function PresetEditor() {
       setPendingSoccerTextUpdate(null);
       pendingSoccerTextUpdateRef.current = null;
       bufferedSocketPresetRef.current = null;
-      void mutationQueueRef.current?.flush();
+      void mutationQueueRef.current?.flush().catch(() => undefined);
     };
   }, [presetId, reloadKey, replacePreset, resetHistory]);
 
@@ -1787,7 +1789,8 @@ export function PresetEditor() {
     const generation = routeGenerationRef.current;
     const socket = io(WS_URL, {
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      tryAllTransports: true,
       auth: { role: "admin", presetId, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
       query: { role: "admin", presetId, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION }
     });
@@ -1854,7 +1857,9 @@ export function PresetEditor() {
         return;
       }
       if (current.id !== payload.id) return;
-      if (hasPendingPresetSaveRef.current || mutationBusyRef.current) {
+      if (hasPendingPresetSaveRef.current || mutationBusyRef.current || autosaveFailedRef.current) {
+        if (payload.revision < current.revision) return;
+        mutationBroadcastRef.current = payload;
         replacePreset({ ...payload, state: current.state });
         return;
       }
@@ -1907,6 +1912,12 @@ export function PresetEditor() {
     return () => window.clearTimeout(timeout);
   }, [connection]);
 
+  const reconcileMutation = useCallback((response: PresetSummary): PresetSummary => {
+    const broadcast = mutationBroadcastRef.current;
+    mutationBroadcastRef.current = null;
+    return broadcast?.id === response.id && broadcast.revision > response.revision ? broadcast : response;
+  }, []);
+
   const commitState = useCallback(
     (nextState: PresetState, persist = true) => {
       const current = presetRef.current;
@@ -1931,9 +1942,19 @@ export function PresetEditor() {
             if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
             const serverRevision = getPresetRevision(response.preset);
             if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
-            if (latestSaveSequenceByPresetRef.current[resourceId] === sequence) hasPendingPresetSaveRef.current = false;
+            const newestSave = latestSaveSequenceByPresetRef.current[resourceId] === sequence;
+            if (newestSave) hasPendingPresetSaveRef.current = false;
+            const accepted = reconcileMutation(response.preset);
             const latest = presetRef.current;
-            if (latest) replacePreset({ ...response.preset, state: latest.state });
+            if (newestSave) {
+              serverRevisionByPresetRef.current[resourceId] = accepted.revision;
+              replacePreset(accepted);
+              if (accepted.revision > response.preset.revision) resetHistory(accepted.state);
+            } else if (latest) {
+              // Keep the acknowledgement revision as the next save's precondition:
+              // a concurrent operator update must conflict with this local draft.
+              replacePreset({ ...accepted, state: latest.state });
+            }
             autosaveFailedRef.current = false;
             setAutosaveFailed(false);
           } catch (err) {
@@ -1954,7 +1975,7 @@ export function PresetEditor() {
         });
       }
     },
-    [appendHistory, replacePreset, revisionConflict]
+    [appendHistory, reconcileMutation, replacePreset, resetHistory, revisionConflict]
   );
 
   const restoreHistory = useCallback(
@@ -1985,9 +2006,9 @@ export function PresetEditor() {
           })
         );
         if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
-        const serverRevision = getPresetRevision(response.preset);
-        if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
-        replacePreset(response.preset);
+        const accepted = reconcileMutation(response.preset);
+        serverRevisionByPresetRef.current[resourceId] = accepted.revision;
+        replacePreset(accepted);
       } catch (err) {
         if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
         historyIndexRef.current = previousIndex;
@@ -2011,7 +2032,7 @@ export function PresetEditor() {
         }
       }
     },
-    [replacePreset, requireSavedState, revisionConflict]
+    [reconcileMutation, replacePreset, requireSavedState, revisionConflict]
   );
 
   useEffect(() => {
@@ -2060,10 +2081,10 @@ export function PresetEditor() {
     try {
       const response = await mutationQueueRef.current!.run(() => presetApi.action(resourceId, action, payload, serverRevisionByPresetRef.current[resourceId]));
       if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
-      const serverRevision = getPresetRevision(response.preset);
-      if (serverRevision !== undefined) serverRevisionByPresetRef.current[resourceId] = serverRevision;
-      replacePreset(response.preset);
-      appendHistory(response.preset.state);
+      const accepted = reconcileMutation(response.preset);
+      serverRevisionByPresetRef.current[resourceId] = accepted.revision;
+      replacePreset(accepted);
+      appendHistory(accepted.state);
     } catch (err) {
       if (routeGenerationRef.current !== generation || presetRef.current?.id !== resourceId) return;
       if (err instanceof ApiError && err.status === 409) {
@@ -2366,6 +2387,9 @@ export function PresetEditor() {
         <div className="status-row">
           <span className={`status-pill ${connection === "connected" ? "ok" : "warn"}`}>{connection}</span>
           <span className="status-pill ok">{preset.overlayClientCount || 0} overlay clients</span>
+          <span className={`status-pill ${autosaveFailed || revisionConflict ? "warn" : "ok"}`} role="status">
+            {autosaveFailed || revisionConflict ? "Unsaved changes" : hasPendingPresetSaveRef.current || mutationBusy ? "Saving…" : "Saved"}
+          </span>
           <button className="button" type="button" disabled={mutationBusy || autosaveFailed || historyIndex <= 0} onClick={() => void restoreHistory("undo")}>
             Undo
           </button>
@@ -2493,7 +2517,14 @@ export function PresetEditor() {
             <aside className="inspector">
               {tabButtons}
               {preset.type === "church" && isChurchState(preset.state) ? (
-                <ChurchControls state={preset.state} media={media} tab={tab} commitState={commitState} runAction={runAction} />
+                <ChurchControls
+                  state={preset.state}
+                  serverTimeMs={preset.serverTimeMs}
+                  media={media}
+                  tab={tab}
+                  commitState={commitState}
+                  runAction={runAction}
+                />
               ) : null}
               {preset.type === "custom" ? (
                 <div className="notice" role="status">
@@ -3061,17 +3092,7 @@ function SoccerCountdownPanel({
   }
 
   function startPresetCountdown(seconds: number) {
-    updatePackage({
-      activeOverlay: "countdown-timer",
-      selectedOverlay: "countdown-timer",
-      countdown: {
-        ...state.soccerPackage.countdown,
-        seconds,
-        resetSeconds: seconds,
-        running: true,
-        startedAtMs: Date.now()
-      }
-    });
+    void runAction("countdown-start", { durationSeconds: seconds });
   }
 
   return (
@@ -3900,12 +3921,14 @@ function StylePanel({ state, commitState }: { state: SoccerState | ChurchState; 
 
 export function ChurchControls({
   state,
+  serverTimeMs,
   media,
   tab,
   commitState,
   runAction
 }: {
   state: ChurchState;
+  serverTimeMs?: number;
   media: MediaItem[];
   tab: string;
   commitState: (state: PresetState) => void;
@@ -3913,8 +3936,19 @@ export function ChurchControls({
 }) {
   const selected = state.slides.find((slide) => slide.id === state.selectedSlideId) || state.slides[0];
   const [countdownSeconds, setCountdownSeconds] = useState(5 * 60);
-  const lowerThirdActive = state.activeGraphics.some((graphic) => graphic.kind === "church-lower-third" || graphic.kind === "lower-third");
-  const countdownActive = state.activeGraphics.some((graphic) => graphic.kind === "countdown");
+  const timeAnchor = useMemo(() => ({ server: serverTimeMs ?? Date.now(), received: performance.now() }), [serverTimeMs]);
+  const [, refreshExpiry] = useState(0);
+  const now = timeAnchor.server + Math.max(0, performance.now() - timeAnchor.received);
+  const activeGraphics = state.activeGraphics.filter((graphic) => graphic.expiresAtMs === null || graphic.expiresAtMs > now);
+  const nextExpiry = Math.min(...activeGraphics.map((graphic) => graphic.expiresAtMs ?? Infinity));
+  useEffect(() => {
+    if (!Number.isFinite(nextExpiry)) return;
+    const remaining = nextExpiry - timeAnchor.server - Math.max(0, performance.now() - timeAnchor.received);
+    const timer = window.setTimeout(() => refreshExpiry((value) => value + 1), Math.min(2_147_483_647, Math.max(1, Math.ceil(remaining))));
+    return () => window.clearTimeout(timer);
+  }, [nextExpiry, timeAnchor]);
+  const lowerThirdActive = activeGraphics.some((graphic) => graphic.kind === "church-lower-third" || graphic.kind === "lower-third");
+  const countdownActive = activeGraphics.some((graphic) => graphic.kind === "countdown");
 
   function updateSlide(slide: ChurchSlide) {
     commitState({ ...state, slides: state.slides.map((item) => (item.id === slide.id ? slide : item)), selectedSlideId: slide.id });
@@ -4605,17 +4639,19 @@ export function OverlayPage({ test }: { test: boolean }) {
       .then((response) => {
         if (!active || deleted || controller.signal.aborted || response.overlay.publicId !== requestedOverlayId) return;
         const responseRevision = getPresetRevision(response.overlay) ?? -1;
-        if (socketHasUpdated && responseRevision < latestRevision) return;
+        if (socketHasUpdated && responseRevision <= latestRevision) return;
         if (socketHasUpdated && responseRevision === -1) return;
         latestRevision = Math.max(latestRevision, responseRevision);
+        setError(null);
         setOverlay(response.overlay);
       })
       .catch((err) => {
-        if (!active || controller.signal.aborted) return;
+        if (!active || controller.signal.aborted || socketHasUpdated) return;
         setError(err instanceof Error ? err.message : "Could not load overlay");
       });
     const socket = io(WS_URL, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      tryAllTransports: true,
       auth: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION },
       query: { role: "overlay", overlayId, client, apiVersion: OPENOVERLAY_API_VERSION, realtimeVersion: OPENOVERLAY_REALTIME_VERSION }
     });
@@ -4644,6 +4680,7 @@ export function OverlayPage({ test }: { test: boolean }) {
       if (incomingRevision < latestRevision) return;
       socketHasUpdated = true;
       latestRevision = incomingRevision;
+      setError(null);
       setOverlay(payload);
     });
     socket.on("preset:deleted", (payload: unknown) => {
@@ -4680,14 +4717,16 @@ export function OverlayPage({ test }: { test: boolean }) {
             {error}
           </div>
         ) : null}
-        <div className="overlay-test-frame">{overlay ? <OverlayRenderer type={overlay.type} state={overlay.state} safeArea /> : null}</div>
+        <div className="overlay-test-frame">
+          {overlay ? <OverlayRenderer type={overlay.type} state={overlay.state} serverTimeMs={overlay.serverTimeMs} safeArea /> : null}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="overlay-page">
-      {overlay ? <OverlayRenderer type={overlay.type} state={overlay.state} /> : null}
+      {overlay ? <OverlayRenderer type={overlay.type} state={overlay.state} serverTimeMs={overlay.serverTimeMs} /> : null}
       {error ? <span style={{ color: "transparent" }}>{error}</span> : null}
     </div>
   );

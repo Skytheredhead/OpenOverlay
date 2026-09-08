@@ -393,6 +393,7 @@ export function isPreset(value: unknown): value is PresetSummary {
     typeof value.updatedAt === "string" &&
     (value.overlayClientCount === undefined || isNonNegativeInteger(value.overlayClientCount)) &&
     (value.stateRecovered === undefined || typeof value.stateRecovered === "boolean") &&
+    (value.serverTimeMs === undefined || (isFiniteNumber(value.serverTimeMs) && value.serverTimeMs > 0)) &&
     isPresetState(value.state, value.type)
   );
 }

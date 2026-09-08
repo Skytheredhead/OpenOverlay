@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultChurchState, createDefaultSoccerState } from "@openoverlay/shared";
@@ -13,6 +14,44 @@ async function frameText(container: HTMLElement) {
 }
 
 describe("OverlayRenderer", () => {
+  it("uses server time for countdowns even when the capture machine clock is wrong", () => {
+    const serverTimeMs = Date.now() - 120_000;
+    const state = createDefaultChurchState("Clock skew");
+    state.activeGraphics = [
+      {
+        id: "countdown-skew",
+        kind: "countdown",
+        title: "Starts in",
+        label: "Countdown",
+        variant: "broadcast",
+        placement: state.elements.countdown.placement,
+        startedAtMs: serverTimeMs,
+        durationMs: 60_000,
+        expiresAtMs: serverTimeMs + 60_000
+      }
+    ];
+    render(<OverlayRenderer type="church" state={state} serverTimeMs={serverTimeMs} />);
+    expect(screen.getByLabelText("Starts in: 01:00")).toBeInTheDocument();
+  });
+
+  it("can switch overlays after StrictMode replays mount effects", async () => {
+    const state = createDefaultSoccerState("Strict lifecycle");
+    const { container, rerender } = render(
+      <StrictMode>
+        <OverlayRenderer type="soccer" state={state} />
+      </StrictMode>
+    );
+    await frameText(container);
+    const next = structuredClone(state);
+    next.soccerPackage.activeOverlay = "scorebug";
+    rerender(
+      <StrictMode>
+        <OverlayRenderer type="soccer" state={next} />
+      </StrictMode>
+    );
+    await waitFor(() => expect(frameBody(container)?.querySelector('[aria-label="Scorebug"]')).not.toBeNull(), { timeout: 3000 });
+  });
+
   it("does not start a clock interval for a static soccer scene", () => {
     const intervalSpy = vi.spyOn(window, "setInterval");
     const state = createDefaultSoccerState("Static Match");

@@ -273,6 +273,8 @@ export interface CustomState {
 export type PresetState = SoccerState | ChurchState | CustomState;
 
 export interface PresetSummary {
+  /** Server time when this snapshot was produced; older servers may omit it. */
+  serverTimeMs?: number;
   id: string;
   publicId: string;
   name: string;

@@ -276,7 +276,7 @@ export function validatePresetActionPayload(state: PresetState, action: PresetAc
       }
       validated[key] = value;
     } else if (key === "durationSeconds") {
-      const minimum = isChurchState(state) && churchCountdownPayloadActions.has(action) ? 1 : 0;
+      const minimum = (isChurchState(state) && churchCountdownPayloadActions.has(action)) || action === "countdown-start" ? 1 : 0;
       if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum || value > 3_600) {
         throw new PresetActionValidationError(`durationSeconds must be an integer from ${minimum} to 3600 for ${action}`);
       }
@@ -299,6 +299,7 @@ function allowedPayloadFields(state: PresetState, action: PresetAction): Readonl
   if (isSoccerState(state)) {
     if (graphicPayloadActions.has(action)) return graphicPayloadFields;
     if (overlayPayloadActions.has(action)) return new Set(["overlay"]);
+    if (action === "countdown-start") return new Set(["durationSeconds"]);
     if (soccerPayloadlessActions.has(action)) return new Set<string>();
   } else if (isChurchState(state)) {
     if (action === "trigger-lower-third" || churchCountdownPayloadActions.has(action)) return graphicPayloadFields;
@@ -494,6 +495,15 @@ function applySoccerAction(state: SoccerState, action: PresetAction, payload: Re
 
   if (action === "countdown-toggle" || action === "countdown-start") {
     next.soccerPackage = { ...next.soccerPackage, activeOverlay: "countdown-timer", selectedOverlay: "countdown-timer" };
+    if (action === "countdown-start" && typeof payload.durationSeconds === "number") {
+      next.soccerPackage.countdown = {
+        ...next.soccerPackage.countdown,
+        seconds: payload.durationSeconds,
+        resetSeconds: payload.durationSeconds,
+        running: false,
+        startedAtMs: null
+      };
+    }
     next.soccerPackage.countdown = startPackageCountdown(next.soccerPackage.countdown, nowMs);
   }
 

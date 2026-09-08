@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultSoccerState, type PresetSummary } from "@openoverlay/shared";
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router-dom";
@@ -41,6 +41,95 @@ describe("preset deletion realtime handling", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("clears a failed HTTP load warning when realtime recovers", async () => {
+    vi.spyOn(overlayApi, "get").mockRejectedValue(new Error("Temporary outage"));
+    render(
+      <MemoryRouter initialEntries={["/overlay-test/public-1"]}>
+        <Routes>
+          <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Temporary outage");
+    act(() => socketHarness.sockets[0]!.emit("state:update", presetFixture()));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not display a late HTTP failure after realtime has loaded the overlay", async () => {
+    const pending = deferred<{ overlay: PresetSummary }>();
+    vi.spyOn(overlayApi, "get").mockReturnValue(pending.promise);
+    render(
+      <MemoryRouter initialEntries={["/overlay-test/public-1"]}>
+        <Routes>
+          <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    act(() => socketHarness.sockets[0]!.emit("state:update", presetFixture()));
+    await act(async () => pending.reject(new Error("Late timeout")));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps a newer broadcast when an older action response arrives late", async () => {
+    vi.spyOn(presetApi, "get").mockResolvedValue({ preset: presetFixture() });
+    const pending = deferred<{ preset: PresetSummary }>();
+    vi.spyOn(presetApi, "action").mockReturnValue(pending.promise);
+    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
+    vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/dash/presets/:presetId",
+          element: (
+            <PromptDialogProvider>
+              <PresetEditor />
+            </PromptDialogProvider>
+          )
+        }
+      ],
+      { initialEntries: ["/dash/presets/preset-1"] }
+    );
+    render(<RouterProvider router={router} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add point to OOU" }));
+    const newer = presetFixture();
+    newer.revision = 4;
+    if ("score" in newer.state) newer.state.score.home = 2;
+    act(() => socketHarness.sockets[0]!.emit("preset:update", newer));
+    const older = presetFixture();
+    older.revision = 3;
+    if ("score" in older.state) older.state.score.home = 1;
+    await act(async () => pending.resolve({ preset: older }));
+    expect(document.querySelector(".score-control strong")).toHaveTextContent("2");
+  });
+
+  it("preserves a failed autosave draft when another operator broadcasts an update", async () => {
+    vi.spyOn(presetApi, "get").mockResolvedValue({ preset: presetFixture() });
+    vi.spyOn(presetApi, "patch").mockRejectedValue(new Error("Save failed"));
+    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
+    vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/dash/presets/:presetId",
+          element: (
+            <PromptDialogProvider>
+              <PresetEditor />
+            </PromptDialogProvider>
+          )
+        }
+      ],
+      { initialEntries: ["/dash/presets/preset-1"] }
+    );
+    render(<RouterProvider router={router} />);
+    const period = await screen.findByLabelText("Period", { exact: true });
+    fireEvent.change(period, { target: { value: "MY DRAFT" } });
+    await screen.findByRole("button", { name: "Retry save" });
+    const remote = presetFixture();
+    remote.revision = 3;
+    act(() => socketHarness.sockets[0]!.emit("preset:update", remote));
+    expect(period).toHaveValue("MY DRAFT");
   });
 
   it("clears a public overlay, aborts its stale HTTP load, and stays cleared", async () => {

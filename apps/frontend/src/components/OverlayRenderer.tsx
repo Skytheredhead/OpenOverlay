@@ -23,6 +23,7 @@ import scorebugOpenOverlayLabCssUrl from "../styles/scorebug-openoverlay-lab.css
 interface OverlayRendererProps {
   type: PresetType;
   state: PresetState;
+  serverTimeMs?: number;
   transparent?: boolean;
   safeArea?: boolean;
   interactive?: boolean;
@@ -45,10 +46,20 @@ const overlayLayerStyle: React.CSSProperties = {
   pointerEvents: "none"
 };
 
-export function OverlayRenderer({ type, state, transparent = true, safeArea = false, interactive = false, onDragStart }: OverlayRendererProps) {
+export function OverlayRenderer({ type, state, serverTimeMs, transparent = true, safeArea = false, interactive = false, onDragStart }: OverlayRendererProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: BASE_WIDTH, height: BASE_HEIGHT });
-  const [now, setNow] = useState(Date.now());
+  // Anchor incoming snapshots to server time. performance.now keeps clocks and
+  // graphic expiry stable if the capture machine changes its wall clock.
+  const timeAnchor = useMemo(
+    () => ({
+      server: serverTimeMs ?? Date.now(),
+      received: performance.now()
+    }),
+    [serverTimeMs]
+  );
+  const [, tick] = useState(0);
+  const now = timeAnchor.server + Math.max(0, performance.now() - timeAnchor.received);
   const soccerNeedsClockTick =
     type === "soccer" &&
     isSoccerState(state) &&
@@ -58,8 +69,7 @@ export function OverlayRenderer({ type, state, transparent = true, safeArea = fa
 
   useEffect(() => {
     if (!needsClockTick) return;
-    setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    const timer = window.setInterval(() => tick((value) => value + 1), 250);
     return () => window.clearInterval(timer);
   }, [needsClockTick]);
 
@@ -259,6 +269,7 @@ function SoccerOverlay({
     return () => {
       transitionTimeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout));
       transitionTimeoutsRef.current = [];
+      transitionRunningRef.current = false;
     };
   }, []);
 

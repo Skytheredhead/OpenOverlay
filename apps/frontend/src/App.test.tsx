@@ -96,6 +96,34 @@ describe("ChurchControls", () => {
     });
   });
 
+  it("returns church countdown controls to Start when the countdown expires", () => {
+    vi.useFakeTimers();
+    try {
+      const state = createDefaultChurchState("Sunday");
+      state.activeGraphics = [
+        {
+          id: "expiring",
+          kind: "countdown",
+          title: "Starts in",
+          label: "Countdown",
+          variant: "broadcast",
+          placement: state.elements.countdown.placement,
+          startedAtMs: Date.now(),
+          durationMs: 1000,
+          expiresAtMs: Date.now() + 1000
+        }
+      ];
+      render(<ChurchControls state={state} media={[]} tab="slides" commitState={vi.fn()} runAction={vi.fn(async () => undefined)} />);
+      expect(screen.getByRole("button", { name: "Stop countdown" })).toBeVisible();
+      act(() => {
+        vi.advanceTimersByTime(1001);
+      });
+      expect(screen.getByRole("button", { name: "Start countdown" })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("persists church output visibility controls", () => {
     const state = createDefaultChurchState("Sunday");
     const commitState = vi.fn();

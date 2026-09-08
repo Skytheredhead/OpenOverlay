@@ -3,6 +3,16 @@ import { createDefaultChurchState, createDefaultSoccerState, computeClockSeconds
 import { PresetActionValidationError, applyAction, isSoccerState, materializeState, validatePresetState } from "../state.js";
 
 describe("backend state actions", () => {
+  it("starts preset countdown durations atomically using server time", () => {
+    const state = createDefaultSoccerState("Countdown");
+    const next = applyAction(state, "countdown-start", { durationSeconds: 600 }, 123_000) as typeof state;
+    expect(next.soccerPackage.countdown).toMatchObject({ seconds: 600, resetSeconds: 600, running: true, startedAtMs: 123_000 });
+    expect(next.soccerPackage.activeOverlay).toBe("countdown-timer");
+    for (const durationSeconds of [0, -1, 1.5, 3601, "600", null]) {
+      expect(() => applyAction(state, "countdown-start", { durationSeconds }, 123_000)).toThrow(PresetActionValidationError);
+    }
+  });
+
   it("updates scores through action endpoints logic", () => {
     let state = createDefaultSoccerState("Match");
     state = applyAction(state, "home-score-plus") as typeof state;
