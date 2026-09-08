@@ -69,7 +69,7 @@ OPENOVERLAY_GIT_SHA="${EXPECTED_COMMIT}" VITE_API_BASE_URL="${API_URL}" VITE_WS_
   vercel_scoped build --prod --yes --project "${VERCEL_PROJECT}"
 
 DEPLOY_OUTPUT="$(vercel_scoped deploy --prebuilt --prod --skip-domain --yes --project "${VERCEL_PROJECT}")"
-DEPLOYMENT_URL="$(printf '%s\n' "${DEPLOY_OUTPUT}" | awk '/^https:\/\// { url=$0 } END { print url }')"
+DEPLOYMENT_URL="$(printf '%s' "${DEPLOY_OUTPUT}" | node scripts/read-vercel-deployment-url.mjs)"
 if [[ -z "${DEPLOYMENT_URL}" ]]; then
   echo "Vercel did not return a deployment URL."
   printf '%s\n' "${DEPLOY_OUTPUT}"
