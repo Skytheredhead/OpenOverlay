@@ -773,12 +773,12 @@ test("soccer and church workflows render in dashboard and overlay", async ({ pag
   await page.getByLabel("Game name").fill("E2E Church");
   await page.getByRole("button", { name: "Create game" }).click();
   await expect(page.getByRole("heading", { name: "E2E Church" })).toBeVisible();
-  await page.getByRole("button", { name: "Slides" }).click();
-  await page.getByRole("button", { name: "Text" }).click();
+  await page.getByRole("button", { name: "Service", exact: true }).click();
+  await page.getByRole("button", { name: "Text", exact: true }).click();
   await page.getByRole("textbox", { name: "Text", exact: true }).fill("Welcome\nE2E Service");
-  await expect(page.frameLocator(".output-preview-iframe").getByText("E2E Service")).toHaveCount(0);
+  await expect(page.frameLocator('iframe[title="Church live output"]').getByText("E2E Service")).toHaveCount(0);
   await page.getByRole("button", { name: "Show slide", exact: true }).click();
-  await expect(page.frameLocator(".output-preview-iframe").getByText("E2E Service")).toBeVisible();
+  await expect(page.frameLocator('iframe[title="Church live output"]').getByText("E2E Service")).toBeVisible();
 });
 
 test("live output survives concurrent scores, capture clock skew, reconnect, and 16:9 resizing", async ({ page, browser }, testInfo) => {
@@ -873,8 +873,16 @@ test("teams, media deletion, sharing, church output, and accessible controls wor
   const { default: AxeBuilder } = await import("@axe-core/playwright");
   await signUp(page, "library-owner");
   const checkAccessibility = async () => {
+    // Navigation fades briefly composite readable text against the page background.
+    // Audit the settled surface while retaining every contrast assertion.
+    await page.evaluate(async () => {
+      const animations = document.getAnimations().filter((animation) => animation.effect?.getTiming().iterations !== Infinity);
+      await Promise.all(animations.map((animation) => animation.finished.catch(() => undefined)));
+    });
     const report = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
-    expect(report.violations.map(({ id, nodes }) => ({ id, targets: nodes.map((node) => node.target) }))).toEqual([]);
+    expect(
+      report.violations.map(({ id, nodes }) => ({ id, targets: nodes.map((node) => node.target), details: nodes.map((node) => node.failureSummary) }))
+    ).toEqual([]);
   };
   await checkAccessibility();
   await page.getByRole("link", { name: "Teams", exact: true }).click();
@@ -903,12 +911,12 @@ test("teams, media deletion, sharing, church output, and accessible controls wor
   await expect(page.getByText("audit.svg")).toBeHidden();
 
   await createGame(page, "Shared Service", "church");
-  const previewWidth = (await page.locator(".preview-frame").boundingBox())!.width;
-  const columnWidth = (await page.locator(".preview-column").boundingBox())!.width;
-  expect(previewWidth).toBeGreaterThan(columnWidth * 0.9);
+  const previewWidth = (await page.locator(".church-program").boundingBox())!.width;
+  const columnWidth = (await page.locator(".church-monitors").boundingBox())!.width;
+  expect(previewWidth).toBeGreaterThan(columnWidth * 0.85);
   await expect(page.getByRole("button", { name: "Hide slide", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Show selected lower third" }).click();
-  const output = page.frameLocator(".output-preview-iframe");
+  const output = page.frameLocator('iframe[title="Church live output"]');
   await expect(output.locator(".church-lower-third")).toBeVisible();
   await page.getByLabel("Countdown length").fill("00:03");
   await page.getByLabel("Countdown length").blur();
@@ -923,7 +931,7 @@ test("teams, media deletion, sharing, church output, and accessible controls wor
   const recipient = await recipientContext.newPage();
   try {
     const account = await signUp(recipient, "share-recipient");
-    await page.getByLabel("Game actions", { exact: true }).click();
+    await page.getByLabel("Service actions", { exact: true }).click();
     await page.getByRole("button", { name: "Share", exact: true }).click();
     await page.getByLabel("Recipient account email").fill(account.email);
     await page.getByRole("button", { name: "Share copy", exact: true }).click();
@@ -1265,7 +1273,7 @@ test("both packages keep transparent output and matchup teams on one row", async
 test("church drafts, reordering, and deletion never change a published slide", async ({ page }) => {
   await signIn(page);
   const id = await createGame(page, "Draft safety", "church");
-  const output = page.frameLocator(".output-preview-iframe");
+  const output = page.frameLocator('iframe[title="Church live output"]');
   await page.getByRole("textbox", { name: "Text", exact: true }).fill("Opening song");
   await page.getByRole("button", { name: "Show slide", exact: true }).click();
   await expect(output.getByText("Opening song", { exact: true })).toBeVisible();
@@ -1279,8 +1287,9 @@ test("church drafts, reordering, and deletion never change a published slide", a
   await expect(output.getByText("Opening song", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Show slide", exact: true }).click();
   await expect(output.getByText("Next song", { exact: true })).toBeVisible();
+  if (!(await page.getByRole("button", { name: "Delete slide", exact: true }).isVisible())) await page.locator(".church-slide-editor > summary").click();
   await expect(page.getByRole("button", { name: "Delete slide", exact: true })).toBeDisabled();
-  await page.locator(".slide-list-item").filter({ hasText: "Slide 1" }).click();
+  await page.getByRole("button", { name: "Preview Slide 1", exact: true }).click();
   await page.getByRole("button", { name: "Delete slide", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toContainText("Saved");
   await page.reload();

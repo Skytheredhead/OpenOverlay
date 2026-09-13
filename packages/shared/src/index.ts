@@ -236,6 +236,9 @@ export interface SoccerState {
   activeGraphics: ActiveGraphic[];
 }
 
+export const CHURCH_BACKGROUND_PRESETS = ["solid", "aurora", "dusk", "ocean", "geometry", "rings", "stars"] as const;
+export type ChurchBackgroundPreset = (typeof CHURCH_BACKGROUND_PRESETS)[number];
+
 export interface ChurchSlide {
   id: string;
   title: string;
@@ -247,6 +250,14 @@ export interface ChurchSlide {
   backgroundColor: string;
   textColor: string;
   variant: StyleVariant;
+  label?: string;
+  reference?: string;
+  notes?: string;
+  fontSize?: number;
+  textAlign?: "left" | "center" | "right";
+  backgroundDim?: number;
+  backgroundPreset?: ChurchBackgroundPreset;
+  backgroundMotion?: boolean;
 }
 
 export interface ChurchState {
@@ -256,6 +267,9 @@ export interface ChurchState {
   selectedSlideId?: string;
   /** Snapshot of the broadcast slide. Missing preserves legacy selected-slide output. */
   onAirSlide?: ChurchSlide | null;
+  blackout?: boolean;
+  textCleared?: boolean;
+  stageMessage?: string;
   style: GlobalStyle;
   elements: {
     lowerThird: OverlayElementConfig;
@@ -694,6 +708,8 @@ export function createNewPresetState(type: PresetType, name: string): PresetStat
 export function churchOnAirSlide(state: ChurchState): ChurchSlide | null {
   return state.onAirSlide === undefined ? (state.slides.find((slide) => slide.id === state.selectedSlideId) ?? state.slides[0] ?? null) : state.onAirSlide;
 }
+
+export { churchSections, orderedChurchSlides, prepareChurchSlides, importChurchService, exportChurchService } from "./church.js";
 
 function isSoccerLabOverlay(value: unknown): value is SoccerLabOverlay {
   return (

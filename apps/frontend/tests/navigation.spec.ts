@@ -1,16 +1,17 @@
 import { expect, test, request, type Page, type Route } from "@playwright/test";
+import { ensureServiceAccount, serviceAccount as navigationAccount } from "./serviceAccount";
 
 const backend = process.env.OPENOVERLAY_E2E_BACKEND_URL || `http://127.0.0.1:${Number(process.env.OPENOVERLAY_E2E_BACKEND_PORT) || 8734}`;
 const headers = { "X-OpenOverlay-Api-Version": "v1" };
 
-const navigationAccount = { email: `navigation-${Date.now()}-${process.pid}@openoverlay.local`, password: "password123" };
 const games: Array<{ id: string; name: string; type: string }> = [];
 
 test.beforeAll(async () => {
+  await ensureServiceAccount();
   const api = await request.newContext();
   try {
-    const signup = await api.post(`${backend}/api/v1/auth/signup`, { headers, data: navigationAccount });
-    expect(signup.status()).toBe(201);
+    const login = await api.post(`${backend}/api/v1/auth/login`, { headers, data: navigationAccount });
+    expect(login.status()).toBe(200);
     for (const name of ["Soccer", "Sunday service"]) {
       const response = await api.post(`${backend}/api/v1/presets`, {
         headers,

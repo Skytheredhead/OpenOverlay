@@ -18,6 +18,7 @@ import {
   normalizeChurchState
 } from "@openoverlay/shared";
 import { mediaApi } from "../lib/api";
+import { ChurchSlideContent } from "./ChurchPresentation";
 import scorebugLabCssUrl from "../styles/scorebug-lab.css?url";
 import scorebugOpenOverlayLabCssUrl from "../styles/scorebug-openoverlay-lab.css?url";
 
@@ -105,6 +106,7 @@ export function OverlayRenderer({ type, state, serverTimeMs, transparent = true,
         ) : null}
         {type === "church" && isChurchState(state) ? <ChurchOverlay state={state} now={now} interactive={interactive} onDragStart={onDragStart} /> : null}
         {state.activeGraphics
+          .filter(() => !(type === "church" && isChurchState(state) && state.blackout))
           .filter((graphic) => graphic.expiresAtMs === null || graphic.expiresAtMs > now)
           .filter((graphic) => !(type === "church" && isChurchManagedGraphic(graphic)))
           .map((graphic) => (
@@ -539,16 +541,14 @@ function ChurchOverlay({
       ? Math.max(0, Math.ceil(countdown.durationMs / 1000))
       : Math.max(0, Math.ceil((countdown.expiresAtMs - now) / 1000))
     : 0;
+  if (church.blackout)
+    return <div className="church-blackout" role="img" aria-label="Blackout" style={{ position: "absolute", inset: 0, background: "#000" }} />;
   return (
     <>
       {slide && church.elements.fullscreenSlide.visible ? (
         <Positioned element={church.elements.fullscreenSlide} interactive={interactive} onDragStart={onDragStart}>
-          <div
-            className={`church-slide variant-${slide.variant}`}
-            style={{ background: slide.backgroundColor, color: slide.textColor, fontFamily: `${church.style.font}, Arial, sans-serif` }}
-          >
-            {slide.mediaUrl ? <img src={mediaApi.mediaUrl(slide.mediaUrl)} alt="" /> : null}
-            <div className="church-slide-text">{slide.text}</div>
+          <div className={`church-slide variant-${slide.variant}`}>
+            <ChurchSlideContent slide={slide} hideText={church.textCleared} font={church.style.font} />
           </div>
         </Positioned>
       ) : null}

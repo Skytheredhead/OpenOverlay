@@ -1,4 +1,5 @@
 import {
+  CHURCH_BACKGROUND_PRESETS,
   type ActiveGraphic,
   type ChurchState,
   type GraphicKind,
@@ -638,6 +639,8 @@ function clearTemporaryGraphics<T extends PresetState>(state: T): T {
     return {
       ...state,
       onAirSlide: null,
+      blackout: false,
+      textCleared: false,
       elements: { ...state.elements, fullscreenSlide: { ...state.elements.fullscreenSlide, visible: false } },
       activeGraphics: []
     };
@@ -851,6 +854,11 @@ function assertDomainConstraints(type: PresetType, state: PresetState): void {
     if (state.sections.length > 100) throw new PresetStateValidationError("state.sections has too many items");
     if (state.slides.length > 500) throw new PresetStateValidationError("state.slides has too many items");
     assertBoundedString(state.serviceTitle, "state.serviceTitle", 200);
+    if (state.stageMessage !== undefined) assertBoundedString(state.stageMessage, "state.stageMessage", 500);
+    for (const key of ["blackout", "textCleared"] as const) {
+      if (state[key] !== undefined && typeof state[key] !== "boolean") throw new PresetStateValidationError(`state.${key} must be a boolean`);
+    }
+    if (new Set(state.slides.map((slide) => slide.id)).size !== state.slides.length) throw new PresetStateValidationError("Slide IDs must be unique");
     state.sections.forEach((section, index) => assertBoundedString(section, `state.sections[${index}]`, 200));
     if (state.onAirSlide !== undefined && state.onAirSlide !== null) {
       const template = createDefaultPresetState("church", "") as ChurchState;
@@ -862,6 +870,23 @@ function assertDomainConstraints(type: PresetType, state: PresetState): void {
       assertBoundedString(slide.title, `state.slides[${index}].title`, 200);
       assertBoundedString(slide.text, `state.slides[${index}].text`, 10_000);
       assertBoundedString(slide.section, `state.slides[${index}].section`, 200);
+      if (slide.label !== undefined) assertBoundedString(slide.label, `state.slides[${index}].label`, 80);
+      if (slide.reference !== undefined) assertBoundedString(slide.reference, `state.slides[${index}].reference`, 300);
+      if (slide.notes !== undefined) assertBoundedString(slide.notes, `state.slides[${index}].notes`, 2_000);
+      if (slide.backgroundPreset !== undefined) assertOneOf(slide.backgroundPreset, CHURCH_BACKGROUND_PRESETS, `state.slides[${index}].backgroundPreset`);
+      if (slide.backgroundMotion !== undefined && typeof slide.backgroundMotion !== "boolean") {
+        throw new PresetStateValidationError(`state.slides[${index}].backgroundMotion must be a boolean`);
+      }
+      if (slide.textAlign !== undefined) assertOneOf(slide.textAlign, ["left", "center", "right"], `state.slides[${index}].textAlign`);
+      for (const [key, min, max] of [
+        ["fontSize", 32, 120],
+        ["backgroundDim", 0, 90]
+      ] as const) {
+        const value = slide[key];
+        if (value !== undefined && (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max)) {
+          throw new PresetStateValidationError(`state.slides[${index}].${key} must be between ${min} and ${max}`);
+        }
+      }
       if (slide.mediaId !== undefined) assertBoundedString(slide.mediaId, `state.slides[${index}].mediaId`, 200);
       if (slide.mediaUrl !== undefined) assertBoundedString(slide.mediaUrl, `state.slides[${index}].mediaUrl`, 2_048);
       assertOneOf(slide.type, ["text", "image"], `state.slides[${index}].type`);

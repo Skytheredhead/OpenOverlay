@@ -1,3 +1,5 @@
+import { ChurchWorkspace } from "./components/ChurchWorkspace";
+import { ChurchDisplay, ChurchStageScreen } from "./components/ChurchPresentation";
 import { ActionMenu, CopyButton, RecordInput } from "./components/Controls";
 import { CachedPages } from "./components/CachedPages";
 import { PageSkeleton, SidebarSkeleton, TeamEditorSkeleton, TeamListSkeleton } from "./components/PageSkeleton";
@@ -50,7 +52,6 @@ import {
   placementForPreset,
   setClockSeconds,
   type ChurchState,
-  type ChurchSlide,
   type OverlayElementConfig,
   type PositionPreset,
   type PresetListItem,
@@ -2225,7 +2226,7 @@ export function PresetEditor() {
   const soccerState = preset.type === "soccer" && isSoccerState(preset.state) ? preset.state : null;
   const tabs = soccerState ? defaultSoccerEditorTabs : ["slides", "style"];
   const isSoccerEditor = Boolean(soccerState);
-  const tabLabels: Record<string, string> = { ...soccerTabLabels, slides: "Slides", style: "Style" };
+  const tabLabels: Record<string, string> = { ...soccerTabLabels, slides: "Service", style: "Design" };
   const tabButtons = (
     <div className="tabs" role="group" aria-label="Editor sections">
       {tabs.map((item) => (
@@ -2393,7 +2394,7 @@ export function PresetEditor() {
   }
 
   return (
-    <div className="live-game-page">
+    <div className={`live-game-page ${preset.type === "church" ? "church-page" : ""}`}>
       <div className="page-title compact">
         <div>
           <h1>{preset.name}</h1>
@@ -2422,11 +2423,11 @@ export function PresetEditor() {
         </div>
       </div>
 
-      <div className="control-row editor-tools" aria-label="Game tools">
+      <div className="control-row editor-tools" aria-label={preset.type === "church" ? "Service tools" : "Game tools"}>
         <a className="button" href={`/overlay-test/${preset.publicId}`} target="_blank" rel="noreferrer">
           <ExternalLink size={15} /> Test output
         </a>
-        <ActionMenu label="Game actions">
+        <ActionMenu label={preset.type === "church" ? "Service actions" : "Game actions"}>
           <button className="button" type="button" disabled={mutationBusy || revisionConflict || autosaveFailed} onClick={() => void duplicatePreset()}>
             <Copy size={15} /> Duplicate
           </button>
@@ -2502,8 +2503,27 @@ export function PresetEditor() {
         {mutationBusy ? "Saving game" : "Game controls ready"}
       </span>
 
-      <div className={`editor-layout ${isSoccerEditor ? "live-editor-layout" : ""}`} inert={mutationBusy} aria-busy={mutationBusy}>
-        {soccerState ? (
+      <div
+        className={`editor-layout ${isSoccerEditor ? "live-editor-layout" : preset.type === "church" ? "church-editor-layout" : ""}`}
+        inert={mutationBusy}
+        aria-busy={mutationBusy}
+      >
+        {preset.type === "church" && isChurchState(preset.state) ? (
+          <div className="church-editor-content">
+            {tabButtons}
+            <ChurchControls
+              state={preset.state}
+              serverTimeMs={controlTimeMs}
+              media={media}
+              tab={tab}
+              commitState={commitState}
+              runAction={runAction}
+              outputUrl={overlayUrl}
+              disabled={mutationBusy || revisionConflict || autosaveFailed}
+            />
+            {tab === "style" && selectedElement ? <ElementInspector state={preset.state} element={selectedElement} commitState={commitState} /> : null}
+          </div>
+        ) : soccerState ? (
           <>
             <SoccerLabOverlayControls
               state={soccerState}
@@ -2541,9 +2561,6 @@ export function PresetEditor() {
             </section>
             <aside className="inspector">
               {tabButtons}
-              {preset.type === "church" && isChurchState(preset.state) ? (
-                <ChurchControls state={preset.state} serverTimeMs={controlTimeMs} media={media} tab={tab} commitState={commitState} runAction={runAction} />
-              ) : null}
               {preset.type === "custom" ? (
                 <div className="notice" role="status">
                   Custom presets are read-only in this release. Existing output data is preserved.
@@ -3830,8 +3847,12 @@ export function ChurchControls({
   media,
   tab,
   commitState,
-  runAction
+  runAction,
+  outputUrl,
+  disabled
 }: {
+  outputUrl?: string;
+  disabled?: boolean;
   state: ChurchState;
   serverTimeMs?: number;
   media: MediaItem[];
@@ -3856,86 +3877,23 @@ export function ChurchControls({
   const lowerThirdActive = activeGraphics.some((graphic) => graphic.kind === "church-lower-third" || graphic.kind === "lower-third");
   const countdownActive = activeGraphics.some((graphic) => graphic.kind === "countdown");
 
-  function commitDraft(patch: Partial<ChurchState>) {
-    commitState({ ...state, onAirSlide: onAir ? structuredClone(onAir) : null, ...patch });
-  }
-  function showSlide() {
-    if (!selected) return;
+  function setElementVisible(element: keyof ChurchState["elements"], visible: boolean) {
     commitState({
       ...state,
-      onAirSlide: structuredClone(selected),
-      elements: { ...state.elements, fullscreenSlide: { ...state.elements.fullscreenSlide, visible: true } }
+      onAirSlide: onAir ? structuredClone(onAir) : null,
+      elements: { ...state.elements, [element]: { ...state.elements[element], visible } }
     });
   }
-  function moveSlide(delta: number) {
-    if (!selected) return;
-    const slides = [...state.slides];
-    const index = slides.findIndex((slide) => slide.id === selected.id);
-    const target = index + delta;
-    if (target < 0 || target >= slides.length) return;
-    [slides[index], slides[target]] = [slides[target], slides[index]];
-    commitDraft({ slides });
-  }
-  function deleteSlide() {
-    if (!selected) return;
-    const slides = state.slides.filter((slide) => slide.id !== selected.id);
-    commitDraft({ slides, selectedSlideId: slides[0]?.id });
-  }
-  function updateSlide(slide: ChurchSlide) {
-    commitDraft({ slides: state.slides.map((item) => (item.id === slide.id ? slide : item)), selectedSlideId: slide.id });
-  }
-
-  function addSlide(type: "text" | "image") {
-    const slide: ChurchSlide = {
-      id: makeId("slide"),
-      title: `${type === "text" ? "Text" : "Image"} ${state.slides.length + 1}`,
-      type,
-      text: type === "text" ? "New slide" : "",
-      section: state.sections[0] || "Service",
-      backgroundColor: "#111827",
-      textColor: "#ffffff",
-      variant: "glass"
-    };
-    commitDraft({ slides: [...state.slides, slide], selectedSlideId: slide.id });
-  }
-
-  function setElementVisible(element: keyof ChurchState["elements"], visible: boolean) {
-    commitDraft({
-      elements: {
-        ...state.elements,
-        [element]: { ...state.elements[element], visible }
-      }
-    });
-  }
-
   if (tab === "style") return <StylePanel state={state} commitState={commitState} />;
-
   return (
-    <>
-      <div className="panel">
-        <h2>Output</h2>
+    <ChurchWorkspace
+      state={state}
+      media={media}
+      commitState={commitState}
+      outputUrl={outputUrl}
+      disabled={disabled}
+      cues={
         <div className="form-grid">
-          <div className="control-row slide-output-actions">
-            <button
-              className="button primary"
-              type="button"
-              disabled={!selected || (state.elements.fullscreenSlide.visible && JSON.stringify(onAir) === JSON.stringify(selected))}
-              onClick={showSlide}
-            >
-              Show slide
-            </button>
-            <button
-              className="button"
-              type="button"
-              disabled={!state.elements.fullscreenSlide.visible}
-              onClick={() => setElementVisible("fullscreenSlide", false)}
-            >
-              Hide slide
-            </button>
-            <span className="muted" role="status">
-              {state.elements.fullscreenSlide.visible && onAir ? `On air: ${onAir.title}` : "Off air"}
-            </span>
-          </div>
           <label className="control-row">
             <input type="checkbox" checked={state.elements.lowerThird.visible} onChange={(event) => setElementVisible("lowerThird", event.target.checked)} />
             <span>Enable lower third</span>
@@ -3965,103 +3923,8 @@ export function ChurchControls({
             {countdownActive ? "Stop countdown" : "Start countdown"}
           </button>
         </div>
-      </div>
-      <div className="panel">
-        <h2>Slides</h2>
-        <div className="control-row">
-          <button className="button" type="button" onClick={() => addSlide("text")}>
-            <Plus size={17} /> Text
-          </button>
-          <button className="button" type="button" onClick={() => addSlide("image")}>
-            <Image size={17} /> Image
-          </button>
-        </div>
-        <div className="form-grid">
-          <div className="slide-list" aria-label="Slides">
-            {state.slides.map((slide, index) => (
-              <button
-                type="button"
-                key={slide.id}
-                className={`slide-list-item ${selected?.id === slide.id ? "active" : ""}`}
-                aria-pressed={selected?.id === slide.id}
-                onClick={() => commitDraft({ selectedSlideId: slide.id })}
-              >
-                <span className="muted">{index + 1}</span>
-                <span>{slide.title || "Untitled"}</span>
-                {state.elements.fullscreenSlide.visible && onAir?.id === slide.id ? <span className="on-air-dot" aria-label="On air" /> : null}
-              </button>
-            ))}
-          </div>
-          {selected ? (
-            <>
-              <div className="control-row">
-                <button
-                  className="button"
-                  type="button"
-                  aria-label="Move slide up"
-                  disabled={state.slides[0]?.id === selected.id}
-                  onClick={() => moveSlide(-1)}
-                >
-                  Move up
-                </button>
-                <button
-                  className="button"
-                  type="button"
-                  aria-label="Move slide down"
-                  disabled={state.slides.at(-1)?.id === selected.id}
-                  onClick={() => moveSlide(1)}
-                >
-                  Move down
-                </button>
-                <button
-                  className="button danger"
-                  type="button"
-                  disabled={state.elements.fullscreenSlide.visible && onAir?.id === selected.id}
-                  onClick={deleteSlide}
-                >
-                  Delete slide
-                </button>
-              </div>
-              <label className="field">
-                <span>Title</span>
-                <input value={selected.title} onChange={(e) => updateSlide({ ...selected, title: e.target.value })} />
-              </label>
-              <label className="field">
-                <span>Text</span>
-                <textarea value={selected.text} onChange={(e) => updateSlide({ ...selected, text: e.target.value })} />
-              </label>
-              <label className="field">
-                <span>Image/background</span>
-                <select
-                  value={selected.mediaId || ""}
-                  onChange={(e) => {
-                    const item = media.find((candidate) => candidate.id === e.target.value);
-                    updateSlide({ ...selected, mediaId: item?.id, mediaUrl: item?.url, type: item ? "image" : "text" });
-                  }}
-                >
-                  <option value="">None</option>
-                  {media.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.originalFilename}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="two-col">
-                <label className="field">
-                  <span>Background</span>
-                  <input type="color" value={selected.backgroundColor} onChange={(e) => updateSlide({ ...selected, backgroundColor: e.target.value })} />
-                </label>
-                <label className="field">
-                  <span>Text color</span>
-                  <input type="color" value={selected.textColor} onChange={(e) => updateSlide({ ...selected, textColor: e.target.value })} />
-                </label>
-              </div>
-            </>
-          ) : null}
-        </div>
-      </div>
-    </>
+      }
+    />
   );
 }
 
@@ -4732,6 +4595,22 @@ export function OverlayPage({ test }: { test: boolean }) {
     );
   }
 
+  if (overlay?.type === "church" && isChurchState(overlay.state) && ["projector", "stage"].includes(searchParams.get("display") ?? "")) {
+    const mode = searchParams.get("display") === "stage" ? "stage" : "projector";
+    const content =
+      mode === "stage" ? (
+        <ChurchStageScreen state={overlay.state} serverTimeMs={overlay.serverTimeMs} connected={connection === "connected"} />
+      ) : (
+        <OverlayRenderer type="church" state={overlay.state} serverTimeMs={overlay.serverTimeMs} />
+      );
+    return client === "preview" ? (
+      <main className="church-display church-display-projector" aria-label="Projector output">
+        {content}
+      </main>
+    ) : (
+      <ChurchDisplay mode={mode}>{content}</ChurchDisplay>
+    );
+  }
   return (
     <div className="overlay-page">
       {overlay ? <OverlayRenderer type={overlay.type} state={overlay.state} serverTimeMs={overlay.serverTimeMs} /> : null}

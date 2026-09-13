@@ -268,3 +268,16 @@ apps/backend        Express + Socket.IO API server
 packages/shared     Shared state types, defaults, clock logic
 scripts             Deployment helpers
 ```
+
+## Running a church service
+
+Create a Church production, then use the Service tab:
+
+1. **Add item** prepares a song, scripture reading, or announcement. Paste text; blank lines start a new slide. Song headings such as `[Verse 1]` and `[Chorus]` label the slides. Choose how many lines fit on each slide and include a reference, translation, or copyright footer.
+2. Arrange **Service order** with the up/down controls. Select thumbnails to preview, then **Show slide** to send the selected slide live. **Next** follows the live slide through the service order. Editing, rearranging, importing, or duplicating slides preserves the published slide until you show another one.
+3. In **Edit slide**, choose a **Worship background**: Aurora, Dusk, Ocean, Geometry, Soft arcs, or Starlight. **Slow** uses gentle motion; **Still** freezes it. **Apply appearance to this item** sets the whole song. Backgrounds also appear in the Add item dialog and travel with service exports. Thumbnails stay still, and reduced-motion preferences stop movement. Use **Upload image** to attach your own image instead.
+4. Open **projector** and **stage screen** windows, move them onto their displays, and press **F** for fullscreen. The stage screen shows current/next text, notes, countdown, and stage messages. The normal output URL remains suitable for an OBS browser source.
+5. Use **Clear text** to keep the background, **Blackout** to show black, or **Hide slide** to remove the slide. These are reversible. **Panic clear** removes all audience graphics. Keyboard shortcuts: Enter shows the preview, Space/Right advances, Left goes back, B toggles blackout, and T toggles text. Shortcuts pause in form fields and dialogs.
+6. **Duplicate** in Service actions reuses the production for next week. **Save item for reuse** or **Export service** downloads a portable JSON file; Import accepts these files or plain text lyrics. Imports append with new IDs and do not replace existing work. Portable files include text, notes, and styling; images remain in the original media library and must be attached again after import.
+
+This is a browser-based presentation workflow. It supports text and image slides, supplied scripture text, lower thirds, and countdowns. Native `.pro` imports, SongSelect/Planning Center integration, Bible translation lookup, audio/video playback, offline startup, and NDI/SDI hardware output are not implemented. Projector/stage connections retain their last loaded state during a connection loss; starting or reloading an output still requires the backend.
