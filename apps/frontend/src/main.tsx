@@ -5,6 +5,7 @@ import { App } from "./App";
 import "./styles/app.css";
 import "./styles/swiss.css";
 import "./styles/workspace.css";
+import "./styles/navigation.css";
 
 const router = createBrowserRouter([{ path: "*", element: <App /> }]);
 

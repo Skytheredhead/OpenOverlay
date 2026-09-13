@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultTeam, type TeamLibraryEntry } from "@openoverlay/shared";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createMemoryRouter, RouterProvider, Routes, Route } from "react-router-dom";
 
 const apiMocks = vi.hoisted(() => ({
   listTeams: vi.fn(),
@@ -32,6 +32,7 @@ vi.mock("./lib/api", async (importOriginal) => {
 });
 
 import { PromptDialogProvider, TeamFields, TeamsLibrary } from "./App";
+import { CachedPages } from "./components/CachedPages";
 import { ApiError } from "./lib/api";
 
 function makeTeam(overrides: Partial<TeamLibraryEntry> = {}): TeamLibraryEntry {
@@ -106,6 +107,46 @@ describe("TeamsLibrary concurrency and reconciliation", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Deleting");
     await act(async () => removal.resolve({ ok: true }));
     expect(apiMocks.removeTeam).toHaveBeenCalledOnce();
+  });
+
+  it("keeps cached team edits when a delayed background refresh returns", async () => {
+    const initial = makeTeam({ fullName: "Original team" });
+    const refresh = deferred<{ teams: TeamLibraryEntry[] }>();
+    apiMocks.listTeams.mockResolvedValueOnce({ teams: [initial] }).mockReturnValueOnce(refresh.promise);
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/dash/*",
+          element: (
+            <PromptDialogProvider>
+              <CachedPages>
+                {(location) => (
+                  <Routes location={location}>
+                    <Route path="teams" element={<TeamsLibrary />} />
+                    <Route path="media" element={<p>Media</p>} />
+                  </Routes>
+                )}
+              </CachedPages>
+            </PromptDialogProvider>
+          )
+        }
+      ],
+      { initialEntries: ["/dash/teams"] }
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByRole("textbox", { name: "Team name" })).toHaveValue("Original team");
+    await act(async () => {
+      await router.navigate("/dash/media");
+    });
+    await act(async () => {
+      await router.navigate("/dash/teams");
+    });
+    expect(screen.queryByRole("status", { name: "Loading teams" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "Team name" }), { target: { value: "Fresh edit" } });
+    await act(async () => refresh.resolve({ teams: [initial] }));
+    expect(screen.getByRole("textbox", { name: "Team name" })).toHaveValue("Fresh edit");
+    await waitFor(() => expect(apiMocks.patchTeam).toHaveBeenCalledOnce(), { timeout: 2000 });
+    expect(apiMocks.patchTeam.mock.calls[0]?.[1]).toMatchObject({ fullName: "Fresh edit" });
   });
 
   it("renders teams without waiting for optional media", async () => {

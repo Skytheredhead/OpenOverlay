@@ -35,6 +35,7 @@ vi.mock("socket.io-client", () => ({
 }));
 
 import { OverlayPage, PresetEditor, PromptDialogProvider } from "./App";
+import { CachedPages } from "./components/CachedPages";
 import { AUTH_EXPIRED_EVENT, mediaApi, overlayApi, presetApi, teamApi } from "./lib/api";
 
 describe("preset deletion realtime handling", () => {
@@ -109,6 +110,51 @@ describe("preset deletion realtime handling", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("pauses cached editor sockets and prevents a late refresh from replacing newer realtime state", async () => {
+    const refresh = deferred<{ preset: PresetSummary }>();
+    vi.spyOn(presetApi, "get").mockResolvedValueOnce({ preset: presetFixture() }).mockReturnValueOnce(refresh.promise);
+    vi.spyOn(mediaApi, "list").mockResolvedValue({ media: [], nextCursor: null });
+    vi.spyOn(teamApi, "list").mockResolvedValue({ teams: [] });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/dash/*",
+          element: (
+            <PromptDialogProvider>
+              <CachedPages>
+                {(location) => (
+                  <Routes location={location}>
+                    <Route path="presets/:presetId" element={<PresetEditor />} />
+                    <Route path="media" element={<p>Media</p>} />
+                  </Routes>
+                )}
+              </CachedPages>
+            </PromptDialogProvider>
+          )
+        }
+      ],
+      { initialEntries: ["/dash/presets/preset-1"] }
+    );
+    render(<RouterProvider router={router} />);
+    await screen.findByRole("heading", { name: "Realtime Game" });
+    fireEvent.click(screen.getByRole("button", { name: "Match" }));
+    await act(async () => {
+      await router.navigate("/dash/media");
+    });
+    expect(socketHarness.sockets[0]!.disconnect).toHaveBeenCalledOnce();
+    await act(async () => {
+      await router.navigate("/dash/presets/preset-1");
+    });
+    expect(screen.getByRole("heading", { name: "Realtime Game" })).toBeVisible();
+    expect(screen.queryByRole("status", { name: "Loading game" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Match" })).toHaveClass("active");
+    expect(socketHarness.sockets).toHaveLength(2);
+    const newer = { ...presetFixture(), name: "Updated remotely", revision: 3 };
+    act(() => socketHarness.sockets[1]!.emit("preset:update", newer));
+    await act(async () => refresh.resolve({ preset: presetFixture() }));
+    expect(screen.getByRole("heading", { name: "Updated remotely" })).toBeVisible();
   });
 
   it("ends the expired admin session when realtime rejects authentication", async () => {

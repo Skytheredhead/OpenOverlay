@@ -1,0 +1,367 @@
+.workspace-pages,
+.workspace-page {
+  display: contents;
+}
+/* Workspace navigation follows the site's square, ruled editorial layout. */
+.sidebar {
+  padding: 20px 12px 12px;
+  background: var(--sw-bg);
+  border-right-color: var(--sw-ink);
+}
+.sidebar-nav-wrap {
+  gap: 20px;
+}
+.sidebar-header {
+  gap: 4px;
+  padding: 0 4px 16px;
+  border-bottom: 1px solid var(--sw-ink);
+}
+.sidebar .sidebar-brand {
+  gap: 9px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  text-transform: none;
+}
+.sidebar .sidebar-brand .brand-mark {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+.sidebar button.sidebar-collapse-toggle {
+  width: 30px;
+  min-height: 32px;
+  height: 32px;
+  border: 1px solid var(--sw-ink);
+  border-radius: 0;
+  color: var(--sw-ink);
+}
+.sidebar button.sidebar-collapse-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.sidebar nav {
+  gap: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-bottom-color: var(--sw-ink);
+  border-left-width: 3px;
+  border-radius: 0;
+  color: var(--sw-ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  transition: color 120ms ease;
+}
+.sidebar nav > a {
+  min-height: 44px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sidebar nav a svg {
+  display: block;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+}
+.sidebar nav a:hover,
+.sidebar button.sidebar-collapse-toggle:hover {
+  color: var(--sw-red);
+  background: transparent;
+}
+.sidebar nav a.active {
+  color: var(--sw-ink);
+  background: var(--sw-bg);
+  border-color: var(--sw-ink);
+  border-left-color: var(--sw-red);
+  font-weight: 800;
+  box-shadow: none;
+}
+.sidebar nav a.active svg {
+  color: var(--sw-red);
+}
+.sidebar a.active::before {
+  content: none;
+}
+.sidebar nav a:focus-visible,
+.sidebar button:focus-visible {
+  outline: 2px solid var(--sw-red);
+  outline-offset: -2px;
+}
+.sidebar .nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.sidebar-subnav {
+  gap: 0;
+  margin: 10px 0 10px 20px;
+  padding: 0 0 0 10px;
+  border: 0;
+  border-left: 1px solid var(--sw-ink);
+}
+.sidebar .sidebar-subnav a {
+  min-height: 36px;
+  padding: 8px 10px;
+  border-bottom-color: transparent;
+  font-size: 13px;
+}
+.sidebar .sidebar-subnav a.active {
+  border-bottom-color: var(--sw-ink);
+}
+.sidebar .sidebar-subnav svg {
+  width: 15px;
+  height: 15px;
+}
+.sidebar nav .sidebar-library-start {
+  margin-top: 8px;
+}
+.sidebar-account {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px 32px;
+  gap: 4px;
+  padding: 12px 4px 0;
+  border-top: 1px solid var(--sw-ink);
+}
+.sidebar-account .muted {
+  font-size: 11px;
+}
+.sidebar .sidebar-account button {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid var(--sw-ink);
+  border-radius: 0;
+  color: var(--sw-ink);
+}
+.sidebar .sidebar-account button:hover {
+  background: var(--sw-ink);
+  color: var(--sw-bg);
+}
+.sidebar .sidebar-account button svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Neutral placeholders share the dimensions of their destination layouts. */
+.skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--sw-ink) 8%, var(--sw-bg));
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sw-bg) 65%, transparent), transparent);
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+.skeleton-line {
+  width: 70%;
+  height: 12px;
+}
+.skeleton-line-short {
+  width: 40%;
+  height: 10px;
+}
+.skeleton-title {
+  width: 210px;
+  max-width: 65%;
+  height: 38px;
+}
+.skeleton-card-title {
+  width: 65%;
+  height: 26px;
+}
+.skeleton-button {
+  width: 100px;
+  max-width: 30%;
+  height: 34px;
+}
+.skeleton-actions {
+  display: flex;
+  gap: 10px;
+}
+.skeleton-game-card {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-height: 188px;
+  padding: 22px;
+  border: 1px solid var(--sw-rule-faint);
+}
+.skeleton-game-card .skeleton-actions {
+  margin-top: auto;
+}
+.skeleton-team-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 12px;
+  border-bottom: 1px solid var(--sw-rule-faint);
+}
+.skeleton-team-row > div {
+  display: grid;
+  gap: 10px;
+  flex: 1;
+}
+.skeleton-avatar {
+  width: 38px;
+  height: 38px;
+}
+.skeleton-team-editor {
+  display: grid;
+  align-content: start;
+  gap: 28px;
+}
+.skeleton-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 18px;
+}
+.skeleton-field {
+  display: grid;
+  gap: 10px;
+}
+.skeleton-input {
+  height: 36px;
+}
+.skeleton-media-grid {
+  margin-top: 18px;
+}
+.skeleton-media-card {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--sw-rule-faint);
+}
+.skeleton-thumbnail {
+  height: 160px;
+}
+.skeleton-toolbar {
+  margin-bottom: 24px;
+}
+.skeleton-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.skeleton-editor-controls,
+.skeleton-preview-column {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+}
+.skeleton-editor-controls > .skeleton-actions .skeleton-line {
+  width: 60px;
+  height: 30px;
+}
+.skeleton-score {
+  height: 190px;
+}
+.skeleton-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+.skeleton-overlay {
+  height: 108px;
+}
+.sidebar-loading {
+  padding: 12px 12px 12px 42px;
+}
+.sidebar-loading > div {
+  display: grid;
+  gap: 22px;
+}
+.game-card-grid:not(.skeleton-grid),
+.teams-page .team-list-item:not(.team-list-item-new),
+.teams-page .team-editor-panel,
+.media-grid > .media-card,
+.workspace-page > .dropzone,
+.workspace-page > .live-game-page {
+  animation: workspace-reveal 180ms ease-out;
+}
+@keyframes skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes workspace-reveal {
+  from {
+    transform: translateY(2px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@media (min-width: 761px) and (max-width: 1180px) {
+  .sidebar .sidebar-brand {
+    font-size: 15px;
+    gap: 6px;
+  }
+  .sidebar .sidebar-brand .brand-mark {
+    width: 18px;
+    height: 18px;
+  }
+}
+@media (max-width: 980px) {
+  .skeleton-editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .sidebar,
+  .app-shell.sidebar-collapsed .sidebar {
+    padding: 8px 12px;
+    border-bottom-color: var(--sw-ink);
+  }
+  .sidebar .sidebar-header {
+    padding: 0;
+    border-bottom: 0;
+  }
+  .sidebar-nav-wrap {
+    gap: 10px;
+  }
+  .sidebar-collapsed .sidebar-nav-wrap {
+    gap: 0;
+  }
+  .sidebar-account {
+    margin-top: 12px;
+    padding-bottom: 4px;
+  }
+  .skeleton-fields {
+    gap: 16px 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after,
+  .game-card-grid:not(.skeleton-grid),
+  .teams-page .team-list-item:not(.team-list-item-new),
+  .teams-page .team-editor-panel,
+  .media-grid > .media-card,
+  .workspace-page > .dropzone,
+  .workspace-page > .live-game-page {
+    animation: none;
+  }
+  .sidebar nav a {
+    transition: none;
+  }
+}

@@ -1,4 +1,6 @@
 import { ActionMenu, CopyButton, RecordInput } from "./components/Controls";
+import { CachedPages } from "./components/CachedPages";
+import { PageSkeleton, SidebarSkeleton, TeamEditorSkeleton, TeamListSkeleton } from "./components/PageSkeleton";
 import { RealtimeRetry } from "./lib/realtimeRetry";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -8,6 +10,7 @@ import {
   AlertTriangle,
   Bug,
   Check,
+  CircleDot,
   Copy,
   ExternalLink,
   Image,
@@ -149,42 +152,10 @@ export function App() {
             <Route path="/overlay/:overlayId" element={<OverlayPage test={false} />} />
             <Route path="/overlay-test/:overlayId" element={<OverlayPage test />} />
             <Route
-              path="/dash"
+              path="/dash/*"
               element={
                 <RequireAuth>
-                  <AppShell>
-                    <Dashboard />
-                  </AppShell>
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/dash/teams"
-              element={
-                <RequireAuth>
-                  <AppShell>
-                    <TeamsLibrary />
-                  </AppShell>
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/dash/media"
-              element={
-                <RequireAuth>
-                  <AppShell>
-                    <MediaLibrary />
-                  </AppShell>
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/dash/presets/:presetId"
-              element={
-                <RequireAuth>
-                  <AppShell>
-                    <PresetEditor />
-                  </AppShell>
+                  <Workspace />
                 </RequireAuth>
               }
             />
@@ -193,6 +164,25 @@ export function App() {
         </AuthProvider>
       </PromptDialogProvider>
     </ThemeProvider>
+  );
+}
+
+function Workspace() {
+  const { user } = useAuth();
+  return (
+    <AppShell>
+      <CachedPages key={user?.id}>
+        {(location) => (
+          <Routes location={location}>
+            <Route index element={<Dashboard />} />
+            <Route path="teams" element={<TeamsLibrary />} />
+            <Route path="media" element={<MediaLibrary />} />
+            <Route path="presets/:presetId" element={<PresetEditor />} />
+            <Route path="*" element={<Navigate to="/dash" replace />} />
+          </Routes>
+        )}
+      </CachedPages>
+    </AppShell>
   );
 }
 
@@ -775,6 +765,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { theme, toggle: toggleTheme } = useTheme();
   const { width: sidebarWidth, resizing, startDrag, resizeWithKeyboard } = useResizableSidebar();
   const [games, setGames] = useState<PresetListItem[]>([]);
+  const [gamesLoaded, setGamesLoaded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.matchMedia?.("(max-width: 760px)").matches ?? false);
   const [presetMenu, setPresetMenu] = useState<{ game: PresetListItem; x: number; y: number; trigger: HTMLElement | null } | null>(null);
   const presetMenuRef = useRef<HTMLDivElement | null>(null);
@@ -796,11 +787,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
       .then((response) => {
         if (controller.signal.aborted) return;
         setGames(response.presets);
+        setGamesLoaded(true);
         setShellError(null);
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
         setShellError(err instanceof Error ? err.message : "Could not load sidebar games");
+        setGamesLoaded(true);
       });
     return () => controller.abort();
   }, [location.pathname]);
@@ -955,22 +948,27 @@ function AppShell({ children }: { children: React.ReactNode }) {
               type="button"
               aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="workspace-navigation"
               onClick={() => setSidebarCollapsed((value) => !value)}
             >
               {sidebarCollapsed ? <PanelLeftOpen size={19} strokeWidth={2.2} /> : <PanelLeftClose size={19} strokeWidth={2.2} />}
             </button>
           </div>
-          <nav className="sidebar-nav" inert={sidebarCollapsed} aria-hidden={sidebarCollapsed}>
+          <nav id="workspace-navigation" className="sidebar-nav" aria-label="Workspace" inert={sidebarCollapsed} aria-hidden={sidebarCollapsed}>
             <NavLink to="/dash" end>
               <LayoutDashboard size={18} /> <span className="nav-label">Games</span>
             </NavLink>
-            {games.length > 0 ? (
+            {!gamesLoaded ? (
+              <SidebarSkeleton />
+            ) : games.length > 0 ? (
               <div className="sidebar-subnav" aria-label="Active games">
                 {games.map((game) => (
                   <NavLink
                     key={game.id}
                     to={`/dash/presets/${game.id}`}
                     aria-label={game.name}
+                    title={game.name}
                     onMouseDown={(event) => {
                       if (event.button !== 2) return;
                       event.preventDefault();
@@ -990,12 +988,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     aria-haspopup="menu"
                     aria-expanded={presetMenu?.game.id === game.id}
                   >
+                    <CircleDot size={16} aria-hidden="true" />
                     <span className="nav-label">{game.name}</span>
                   </NavLink>
                 ))}
               </div>
             ) : null}
-            <NavLink to="/dash/teams">
+            <NavLink to="/dash/teams" className="sidebar-library-start">
               <Users size={18} /> <span className="nav-label">Teams</span>
             </NavLink>
             <NavLink to="/dash/media">
@@ -1182,6 +1181,8 @@ function Dashboard() {
     }
   }
 
+  if (loading) return <PageSkeleton variant="games" title="Games" />;
+
   return (
     <>
       <div className="page-title">
@@ -1190,11 +1191,6 @@ function Dashboard() {
       {error ? (
         <div className="error" role="alert">
           {error}
-        </div>
-      ) : null}
-      {loading ? (
-        <div className="loading-state" role="status">
-          Loading games…
         </div>
       ) : null}
       <section className="preset-grid game-card-grid">
@@ -1290,6 +1286,7 @@ function Dashboard() {
 }
 
 export function TeamsLibrary() {
+  const [loading, setLoading] = useState(true);
   const [teams, setTeams] = useState<TeamLibraryEntry[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1344,6 +1341,7 @@ export function TeamsLibrary() {
     draftRef.current = nextDraft;
     setSelectedId(selectedIdRef.current);
     setDraft(nextDraft);
+    setLoading(false);
     setSaveStatuses({});
     const recoveredCount = teamsResponse.teams.filter((team) => team.dataRecovered).length;
     if (recoveredCount > 0) {
@@ -1362,7 +1360,10 @@ export function TeamsLibrary() {
   useEffect(() => {
     const controller = new AbortController();
     void load(controller.signal).catch((err) => {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load teams");
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setError(err instanceof Error ? err.message : "Could not load teams");
+      }
     });
     return () => controller.abort();
   }, [load]);
@@ -1473,6 +1474,7 @@ export function TeamsLibrary() {
       const nextDraft = structuredClone(response.team);
       selectedIdRef.current = response.team.id;
       draftRef.current = nextDraft;
+      setLoading(false);
       setTeams(teamsRef.current);
       setSelectedId(response.team.id);
       setDraft(nextDraft);
@@ -1489,6 +1491,7 @@ export function TeamsLibrary() {
     setError(null);
     const current = draftRef.current?.id === teamId ? draftRef.current : teamsRef.current.find((team) => team.id === teamId);
     if (!current) return;
+    loadGenerationRef.current += 1;
     const next = mergeTeamPatch(current, patch);
     draftRef.current = draftRef.current?.id === teamId ? next : draftRef.current;
     teamsRef.current = teamsRef.current.map((team) => (team.id === teamId ? next : team));
@@ -1513,6 +1516,7 @@ export function TeamsLibrary() {
     const pendingSnapshot = pendingTeamIdsRef.current.has(id) ? structuredClone(draftRef.current?.id === id ? draftRef.current : (target ?? null)) : null;
     setError(null);
     try {
+      loadGenerationRef.current += 1;
       teamSaveDebouncerRef.current?.cancel(id);
       conflictedTeamIdsRef.current.add(id);
       setDeletingTeamIds((current) => new Set(current).add(id));
@@ -1573,7 +1577,7 @@ export function TeamsLibrary() {
           </button>
         </div>
       ) : null}
-      <div className={`team-library-layout ${draft ? "" : "empty"}`}>
+      <div className={`team-library-layout ${draft || loading ? "" : "empty"}`}>
         <section className="team-list">
           <button
             type="button"
@@ -1591,6 +1595,7 @@ export function TeamsLibrary() {
             </span>
             <strong>New Team</strong>
           </button>
+          {loading ? <TeamListSkeleton /> : null}
           {teams.map((team) => (
             <button
               key={team.id}
@@ -1616,6 +1621,7 @@ export function TeamsLibrary() {
             </button>
           ))}
         </section>
+        {loading && !draft ? <TeamEditorSkeleton /> : null}
         {draft ? (
           <section
             className="panel team-editor-panel"
@@ -1745,9 +1751,14 @@ export function PresetEditor() {
     setDebugEvents(null);
     setError(null);
     setPresetDeleted(false);
-    replacePreset(null);
-    setMedia([]);
-    setTeams([]);
+    // A returning page can paint its last state immediately. Its HTTP request
+    // and realtime subscription refresh it without another skeleton.
+    if (presetRef.current?.id !== requestedPresetId) {
+      replacePreset(null);
+      setMedia([]);
+      setTeams([]);
+    }
+    const loadSaveSequence = localSaveSequenceRef.current;
     setPendingSoccerTextUpdate(null);
     pendingSoccerTextUpdateRef.current = null;
     bufferedSocketPresetRef.current = null;
@@ -1767,10 +1778,21 @@ export function PresetEditor() {
       const bufferedRevision = buffered ? (getPresetRevision(buffered) ?? Number.MAX_SAFE_INTEGER) : -1;
       const loadedPreset = buffered && bufferedRevision >= fetchedRevision ? buffered : fetchedPreset;
       bufferedSocketPresetRef.current = null;
-      replacePreset(loadedPreset);
-      resetHistory(loadedPreset.state);
-      const serverRevision = getPresetRevision(loadedPreset);
-      if (serverRevision !== undefined) serverRevisionByPresetRef.current[loadedPreset.id] = serverRevision;
+      const current = presetRef.current;
+      const localChangeDuringLoad =
+        localSaveSequenceRef.current !== loadSaveSequence ||
+        hasPendingPresetSaveRef.current ||
+        mutationBusyRef.current ||
+        pendingSoccerTextUpdateRef.current ||
+        autosaveFailedRef.current;
+      // A cached editor remains usable during refresh. Late HTTP must not
+      // overwrite an edit or a newer realtime snapshot received meanwhile.
+      if (!localChangeDuringLoad && (!current || loadedPreset.revision >= current.revision)) {
+        replacePreset(loadedPreset);
+        if (!current || loadedPreset.revision !== current.revision) resetHistory(loadedPreset.state);
+        const serverRevision = getPresetRevision(loadedPreset);
+        if (serverRevision !== undefined) serverRevisionByPresetRef.current[loadedPreset.id] = serverRevision;
+      }
       const [mediaResult, teamsResult] = await optionalResults;
       if (controller.signal.aborted || routeGenerationRef.current !== generation) return;
       if (mediaResult.status === "fulfilled") setMedia(mediaResult.value.media);
@@ -2186,19 +2208,16 @@ export function PresetEditor() {
     );
   }
 
-  if (!preset) {
+  if (!preset || preset.id !== presetId) {
+    if (!error || (preset && preset.id !== presetId)) return <PageSkeleton variant="editor" />;
     return (
       <div className="live-game-page">
-        {error ? (
-          <div className="error" role="alert">
-            <p>Could not load game: {error}</p>
-            <button className="button" type="button" onClick={() => setReloadKey((value) => value + 1)}>
-              Retry
-            </button>
-          </div>
-        ) : (
-          "Loading game..."
-        )}
+        <div className="error" role="alert">
+          <p>Could not load game: {error}</p>
+          <button className="button" type="button" onClick={() => setReloadKey((value) => value + 1)}>
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -4373,6 +4392,7 @@ function teamLibraryToSoccerTeam(team: TeamLibraryEntry): SoccerState["home"] {
 }
 
 export function MediaLibrary() {
+  const [loading, setLoading] = useState(true);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -4398,6 +4418,8 @@ export function MediaLibrary() {
       if (!signal?.aborted && loadGenerationRef.current === generation) {
         setError(`${failureMessage}${err instanceof Error ? `: ${err.message}` : "."}`);
       }
+    } finally {
+      if (!signal?.aborted && loadGenerationRef.current === generation) setLoading(false);
     }
   }, []);
 
@@ -4506,7 +4528,14 @@ export function MediaLibrary() {
       {error ? (
         <div className="error" role="alert">
           {error}{" "}
-          <button className="button" type="button" onClick={() => void load(componentAbortRef.current?.signal)}>
+          <button
+            className="button"
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              void load(componentAbortRef.current?.signal);
+            }}
+          >
             Retry media
           </button>
         </div>
@@ -4540,7 +4569,8 @@ export function MediaLibrary() {
           }}
         />
       </label>
-      <section className="media-grid" style={{ marginTop: 18 }}>
+      {loading ? <PageSkeleton variant="media" contentOnly /> : null}
+      <section className="media-grid" style={{ marginTop: loading ? 0 : 18 }}>
         {media.map((item) => (
           <article className="media-card" key={item.id}>
             <div className="media-thumb">
